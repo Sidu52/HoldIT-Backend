@@ -1,0 +1,105 @@
+import Joi from 'joi';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../utils/constants.js';
+import { GENDER_OPTIONS } from '../utils/constants.js';
+
+export const loginSchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    'string.email': 'Please provide a valid email address',
+    'string.empty': 'Email is required',
+    'any.required': 'Email is required',
+  }),
+  password: Joi.string().min(8).max(50).required().messages({
+    'string.empty': 'Password is required',
+    'any.required': 'Password is required',
+  }),
+});
+
+export const updatePasswordSchema = Joi.object({
+  oldPassword: Joi.string().min(8).max(50).required()
+    .messages({
+      'string.empty': 'Old password is required',
+      'any.required': 'Old password is required',
+    }),
+  newPassword: Joi.string().min(8).max(50).required()
+    .messages({
+      'string.min': `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`,
+      'string.max': `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters`,
+      'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+      'string.empty': 'New password is required',
+      'any.required': 'New password is required',
+    }),
+  confirmPassword: Joi.ref('newPassword'),
+});
+
+export const updateAccountSchema = Joi.object({
+  status: Joi.string().valid("ACTIVE", "BLOCKED", "DELETED", "PENDING").required(),
+  email: Joi.string().email().optional(),
+  phone: Joi.string().min(10).max(15).allow('', null).optional(),
+})
+  .or('email', 'phone');
+
+export const signupSchema = Joi.object({
+  username: Joi.string()
+    .min(2)
+    .max(100)
+    .required()
+    .messages({
+      'string.min': 'Name must be at least 2 characters long',
+      'string.max': 'Name cannot exceed 100 characters',
+      'string.empty': 'Name is required',
+      'any.required': 'Name is required',
+    }),
+  password: Joi.string()
+    .min(PASSWORD_MIN_LENGTH)
+    .max(PASSWORD_MAX_LENGTH)
+    .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]'))
+    .required()
+    .messages({
+      'string.min': `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`,
+      'string.max': `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters`,
+      'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+      'string.empty': 'Password is required',
+      'any.required': 'Password is required',
+    }),
+  confirmPassword: Joi.string()
+    .valid(Joi.ref('password'))
+    .required()
+    .messages({
+      'any.only': 'Passwords do not match',
+      'string.empty': 'Confirm password is required',
+      'any.required': 'Confirm password is required',
+    }),
+  gender: Joi.string()
+    .valid(...GENDER_OPTIONS)
+    .required()
+    .messages({
+      'any.only': `Gender must be one of: ${GENDER_OPTIONS.join(', ')}`,
+      'string.empty': 'Gender is required',
+      'any.required': 'Gender is required',
+    }),
+  phone: Joi.string()
+    .min(10)
+    .max(15)
+    .allow('', null)
+    .required(),
+  address: Joi.string()
+    .min(10)
+    .max(100)
+    .allow('', null)
+    .required(),
+  dateOfBirth: Joi.date()
+    .allow('', null)
+    .required()
+});
+
+
+export const inviteSchema = Joi.object({
+  email: Joi.string()
+    .email()
+    .required()
+    .messages({
+      'string.email': 'Please provide a valid email address',
+      'string.empty': 'Email is required',
+      'any.required': 'Email is required',
+    }),
+});

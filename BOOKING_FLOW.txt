@@ -1,0 +1,134 @@
+✅ Step 10: Create Booking API (User)
+Why first booking API?
+
+Because everything else depends on booking existence.
+
+What it does
+
+Validate user
+
+Create booking
+
+Status = CREATED
+
+Push job to queue
+
+❌ No driver logic here
+✅ Only create booking
+
+⚙️ PHASE 5 — ASYNC LOGIC (BullMQ)
+✅ Step 11: Driver Assignment Worker
+Why async?
+
+Driver matching is:
+
+Slow
+
+Retry-based
+
+Location dependent
+
+Flow
+Booking created
+→ Queue job
+→ Find nearest driver
+→ Lock driver
+→ Update booking
+
+✅ Step 12: Pickup Confirmation API (Driver)
+Why?
+
+This is where billing starts
+
+What it does
+
+Verify booking assigned to driver
+
+Set pickup_time
+
+Status = PICKED_UP
+
+🔥 Important:
+This timestamp is billing start
+
+🏪 PHASE 6 — STORE FLOW
+✅ Step 13: Store Acceptance API
+Why separate?
+
+Store owner must confirm storage.
+
+What it does
+
+Verify store owner
+
+Upload photos
+
+Assign locker
+
+Status = STORED
+
+🔄 PHASE 7 — RETURN FLOW
+✅ Step 14: Return Request API (User)
+Why?
+
+User controls return.
+
+What it does
+
+Validate distance ≤ 5 km
+
+Update status
+
+Push return job
+
+✅ Step 15: Return Driver Assignment Worker
+
+Same as pickup driver logic
+But different queue
+
+✅ Step 16: Delivery Confirmation API
+Why final?
+
+This:
+
+Stops billing
+
+Calculates total charge
+
+Completes booking
+
+💰 PHASE 8 — BILLING (LAST)
+✅ Step 17: Pricing Engine
+Why last?
+
+Pricing depends on:
+
+Time
+
+Distance
+
+Business rules
+
+Formula
+Total = Hours × Rate + Distance Charge
+
+🛡️ PHASE 9 — SECURITY & HARDENING
+✅ Step 18: Fraud Prevention
+
+Pickup OTP
+
+Return OTP
+
+Photo proof
+
+Rate limiting
+
+🧠 FINAL ADVICE (Very Important)
+DO THIS ORDER
+Auth → Roles → Driver/Store → Booking → Async → Billing
+
+DO NOT:
+
+❌ Start with booking UI
+❌ Hardcode driver assignment
+❌ Mix controller & DB logic

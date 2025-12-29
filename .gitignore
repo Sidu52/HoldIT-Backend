@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+API_DATABASE.txt
+API_DOC.txt
+API_FLOW.txt
+package-lock.json
+TASK.txt
