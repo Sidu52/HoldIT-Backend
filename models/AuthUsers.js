@@ -1,22 +1,25 @@
 import mongoose from "mongoose";
+import { ACCOUNT_STATUS, USER_ROLES } from "../utils/constants.js";
 
 const AuthUserSchema = new mongoose.Schema(
     {
         phone: { type: String, unique: true, index: true, sparse: true },
         role: {
             type: String,
-            enum: ["USER", "DRIVER", "STORE_KEEPER"],
+            enum: Object.values(USER_ROLES),
+            index: true
         },
         last_login_at: Date,
-        isVerified: { type: Boolean, default: false },
+        last_active_at: { type: Date, index: true },
+
+        isVerified: { type: Boolean, default: false, index: true },
+
         update_by: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
-        status: {
-            type: String,
-            enum: ["ACTIVE", "BLOCKED", "DELETED", "PENDING"],
-        }
     },
     { timestamps: true }
 );
+
+AuthUserSchema.index({ createdAt: 1 });
 
 const AuthUser = mongoose.model("Auth", AuthUserSchema);
 export default AuthUser;

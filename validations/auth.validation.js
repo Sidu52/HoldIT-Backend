@@ -39,15 +39,25 @@ export const updateAccountSchema = Joi.object({
   .or('email', 'phone');
 
 export const signupSchema = Joi.object({
-  username: Joi.string()
+  first_name: Joi.string()
     .min(2)
     .max(100)
     .required()
     .messages({
-      'string.min': 'Name must be at least 2 characters long',
-      'string.max': 'Name cannot exceed 100 characters',
-      'string.empty': 'Name is required',
-      'any.required': 'Name is required',
+      'string.min': 'First Name must be at least 2 characters long',
+      'string.max': 'FirstName cannot exceed 100 characters',
+      'string.empty': 'First Name is required',
+      'any.required': 'First Name is required',
+    }),
+    last_name: Joi.string()
+    .min(2)
+    .max(100)
+    .required()
+    .messages({
+      'string.min': 'Last Name must be at least 2 characters long',
+      'string.max': 'Last Name cannot exceed 100 characters',
+      'string.empty': 'Last Name is required',
+      'any.required': 'Last Name is required',
     }),
   password: Joi.string()
     .min(PASSWORD_MIN_LENGTH)

@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { GENDER_OPTIONS } from "../utils/constants.js";
+import { ACCOUNT_STATUS, GENDER_OPTIONS } from "../utils/constants.js";
 
 const UserSchema = new mongoose.Schema(
   {
@@ -18,6 +18,28 @@ const UserSchema = new mongoose.Schema(
       default: false,
     },
     last_login_at: Date,
+    service_area_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ServiceArea",
+      index: true
+    },
+    is_serviceable: {
+      type: Boolean,
+      default: true,
+      index: true
+    },
+    is_active: {
+      type: Boolean,
+      default: true,
+      index: true
+    },
+    status: {
+      type: String,
+      enum: Object.values(ACCOUNT_STATUS),
+      default: ACCOUNT_STATUS.PENDING,
+      index: true
+    },
+
   },
   { timestamps: true }
 );

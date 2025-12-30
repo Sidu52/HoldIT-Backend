@@ -24,11 +24,41 @@ const ACCOUNT_STATUS = {
   INACTIVE: 'inactive',
 };
 
+const BOOKING_STATUS = {
+  CREATED: 'created',
+  DRIVER_ASSIGNED: 'driver_assigned',
+  DRIVER_ARRIVED: 'driver_arrived',
+  PICKED_UP: 'picked_up',
+  STORED: 'stored',
+  RETURN_REQUESTED: 'return_requested',
+  OUT_FOR_RETURN: 'out_for_return',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
+};
+
+const VERIFICATION_STATUS = {
+  PENDING: 'pending',
+  VERIFIED: 'verified',
+  REJECTED: 'rejected',
+}
+
 const TOKEN_TYPES = {
   ACCESS: 'access',
   REFRESH: 'refresh',
   INVITE: 'invite',
 };
+
+const ASSIGNMENT_TYPES = {
+  PICKUP: 'PICKUP',
+  DELIVERY: 'DELIVERY',
+  RETURN: 'RETURN',
+}
+
+const ON_BOARDING_STATUS = {
+  DEMO: 'demo',
+  DOCUMENTS_PENDING: 'documents_pending',
+  ACTIVE: 'active',
+}
 
 const INVITE_TOKEN_EXPIRY = 1 * 60 * 60; // 1 hours in seconds
 const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
@@ -49,5 +79,9 @@ export {
   PASSWORD_MIN_LENGTH,
   PASSWORD_MAX_LENGTH,
   GENDER_OPTIONS,
+  ASSIGNMENT_TYPES,
+  BOOKING_STATUS,
+  VERIFICATION_STATUS,
+  ON_BOARDING_STATUS,
 };
 

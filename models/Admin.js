@@ -3,7 +3,12 @@ import { ACCOUNT_STATUS, GENDER_OPTIONS, USER_ROLES } from "../utils/constants.j
 
 const adminSchema = new mongoose.Schema(
     {
-        name: {
+        first_name: {
+            type: String,
+            trim: true,
+            maxlength: 100,
+        },
+        last_name: {
             type: String,
             trim: true,
             maxlength: 100,
@@ -76,6 +81,6 @@ adminSchema.virtual('created_date').get(function () {
     return this.created_at.toLocaleDateString();
 });
 
-const Admin = mongoose.model('Admin', adminSchema);
+const Admin = mongoose.model('admin', adminSchema);
 
 export default Admin;

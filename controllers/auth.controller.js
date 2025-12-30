@@ -8,7 +8,7 @@ import Driver from "../models/Driver.js";
 import StoreOwner from "../models/StoreOwner.js";
 import { ACCOUNT_STATUS, STATUS_CODES, USER_ROLES } from "../utils/constants.js";
 import { addJobToQueue, cancelJob } from "../services/jobService.js";
-import Admin from "../models/admin.js";
+import Admin from "../models/Admin.js";
 
 // AUTH USER
 export const authUser = async (req, res, role) => {
@@ -229,22 +229,3 @@ export const verifyUsersAccount = async (req, res) => {
   }
 };
 
-// Update account
-export const updateAccount = async (req, res) => {
-  try {
-    const { status, email, phone } = req.body;
-
-    const authUser = await AuthUser.findOne({ email, phone });
-    if (!authUser) {
-      return sendResponse({ res, message: "User not found", statusCode: 404 });
-    }
-
-    Object.assign(authUser, { status });
-    await authUser.save();
-    sendResponse({ res, message: "Account updated successfully" });
-
-  } catch (err) {
-    console.error("Update Account Error:", err);
-    sendResponse({ res, message: "Update Account failed", statusCode: 500 });
-  }
-};  

@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { sendError, sendResponse } from "../utils/apiResponse.js";
+import { sendResponse } from "../utils/apiResponse.js";
 import { STATUS_CODES } from "../utils/constants.js";
 
 export const authMiddleware = async (req, res, next) => {
@@ -9,7 +9,7 @@ export const authMiddleware = async (req, res, next) => {
     if (!authHeader) {
       return sendResponse({
         res,
-        message: "Unauthorized 1",
+        message: "Unauthorized",
         statusCode: STATUS_CODES.UNAUTHORIZED
       });
     }
@@ -43,7 +43,7 @@ export const roleMiddleware = (...allowedRoles) => {
     if (!req.user || !req.user.role) {
       return sendResponse({
         res,
-        message: "Unauthorized2",
+        message: "Unauthorized",
         statusCode: STATUS_CODES.UNAUTHORIZED
       });
     }

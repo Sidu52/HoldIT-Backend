@@ -6,10 +6,9 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 // Route
+import AdminRoutes from "./routes/admin/index.js";
 import main from "./routes/index.js";
-import auth from "./routes/auth.routes.js";
 import User from "./routes/user.route.js";
-import Admin from "./routes/admin.route.js";
 import Driver from "./routes/driver.route.js";
 import Store from "./routes/store.route.js";
 import Booking from "./routes/booking.route.js";
@@ -60,17 +59,12 @@ initializeWorkers();
 
 // Routes
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    service: 'admin-auth-service',
-  });
-});
+app.get("/health", (req, res) => res.json({ message: "OK" }));
+
+AdminRoutes(app);
+
 app.use('/api/v1', main);
-app.use('/api/v1/auth', auth);
 app.use('/api/v1/user', User);
-app.use('/api/v1/admin', Admin);
 app.use('/api/v1/driver', Driver);
 app.use('/api/v1/store', Store);
 app.use('/api/v1/booking', Booking);
