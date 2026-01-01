@@ -59,6 +59,32 @@ const adminSchema = new mongoose.Schema(
         last_login_at: {
             type: Date,
         },
+        // permissions: {
+        //     dashboard: {
+        //         view: { type: Boolean, default: false },
+        //     },
+
+        //     users: {
+        //         view: { type: Boolean, default: false },
+        //         create: { type: Boolean, default: false },
+        //         update: { type: Boolean, default: false },
+        //         delete: { type: Boolean, default: false },
+        //     },
+
+        //     booking: {
+        //         view: { type: Boolean, default: false },
+        //         create: { type: Boolean, default: false },
+        //         assign: { type: Boolean, default: false },
+        //         cancel: { type: Boolean, default: false },
+        //     },
+
+        //     stores: {
+        //         view: { type: Boolean, default: false },
+        //         create: { type: Boolean, default: false },
+        //         update: { type: Boolean, default: false },
+        //         delete: { type: Boolean, default: false },
+        //     },
+        // },
         isVerified: { type: Boolean, default: false },
         invited_by: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
     },

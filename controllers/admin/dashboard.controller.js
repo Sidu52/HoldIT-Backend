@@ -2,6 +2,8 @@ import Booking from "../../models/Booking.js";
 import User from "../../models/User.js";
 import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
+import { sendError, sendResponse } from "../../utils/apiResponse.js";
+import { getDateRange, normalizeChartData } from "../../utils/helper.js";
 
 export const getDashboardSummary = async (req, res) => {
     try {
@@ -84,8 +86,9 @@ export const getDashboardSummary = async (req, res) => {
             ])
         ]);
 
-        return res.json({
-            success: true,
+        return sendResponse({
+            res,
+            message: "Dashboard summary fetched successfully",
             data: {
                 booking: {
                     totalToday: bookingStats[0].totalToday[0]?.count || 0,
@@ -106,13 +109,58 @@ export const getDashboardSummary = async (req, res) => {
                     online: storeStats[0].online[0]?.count || 0,
                     offline: storeStats[0].offline[0]?.count || 0
                 }
-            }
+            },
         });
+
     } catch (error) {
         console.error("Dashboard summary error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Dashboard data fetch failed"
-        });
+        return sendError(res, "Failed to fetch dashboard summary");
     }
+};
+
+export const getChartData = async (req, res) => {
+  try {
+    const { entity = "booking", range = "week" } = req.query;
+
+    const { start, end } = getDateRange(range);
+
+    const Model = entity === "user" ? User : Booking;
+
+    // Group format based on range
+    const groupFormat =
+      range === "today"
+        ? { hour: { $hour: "$createdAt" } }
+        : { day: { $dayOfWeek: "$createdAt" } };
+
+    const data = await Model.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $group: {
+          _id: groupFormat,
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { "_id.day": 1, "_id.hour": 1 }
+      }
+    ]);
+
+    return res.json({
+      success: true,
+      entity,
+      range,
+      chart: normalizeChartData(data, range)
+    });
+
+  } catch (error) {
+    console.error("Chart API error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch chart data"
+    });
+  }
 };

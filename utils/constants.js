@@ -15,6 +15,8 @@ const USER_ROLES = {
   STORE_KEEPER: "store_keeper",
   ADMIN: "admin",
   SUPER_ADMIN: "super_admin",
+  OPRATION_MANAGER:"opration_manager",
+  CUSTOMER_SUPPORT:"customer_support"
 };
 
 const ACCOUNT_STATUS = {

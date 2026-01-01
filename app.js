@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 // Route
 import AdminRoutes from "./routes/admin/index.js";
+import userRoutes from './routes/users/index.js';
 import main from "./routes/index.js";
 import User from "./routes/user.route.js";
 import Driver from "./routes/driver.route.js";
@@ -35,20 +36,15 @@ app.use(helmet({
 }));
 
 // CORS configuration
-// const corsOptions = {
-//   origin: process.env.CLIENT_URL || 'http://localhost:3000',
-//   credentials: true,
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-//   exposedHeaders: ['set-cookie'],
-//   maxAge: 86400, // 24 hours
-// };
-app.use(cors(
-  {
-    origin: process.env.CLIENT_URL,
-    credentials: true,
-  }
-));
+const corsOptions = {
+  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['set-cookie'],
+  maxAge: 86400, // 24 hours
+};
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
@@ -62,6 +58,7 @@ initializeWorkers();
 app.get("/health", (req, res) => res.json({ message: "OK" }));
 
 AdminRoutes(app);
+userRoutes(app);
 
 app.use('/api/v1', main);
 app.use('/api/v1/user', User);

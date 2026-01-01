@@ -14,7 +14,7 @@ const AuthUserSchema = new mongoose.Schema(
 
         isVerified: { type: Boolean, default: false, index: true },
 
-        update_by: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+        update_by: { type: mongoose.Schema.Types.ObjectId, ref: "admin" },
     },
     { timestamps: true }
 );

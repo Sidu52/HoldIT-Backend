@@ -1,11 +1,15 @@
 import Joi from "joi";
-import { GENDER_OPTIONS } from "../utils/constants.js";
+import { GENDER_OPTIONS, ACCOUNT_STATUS, USER_ROLES } from "../utils/constants.js";
 
-// Validation for updating user details
 export const updateUserSchema = Joi.object({
-    name: Joi.string().min(2).max(50).required(),
-    gender: Joi.string().valid('male', 'female', 'other', 'prefer_not_to_say').optional(),
-    dob: Joi.date().less("now").optional(),
-    address: Joi.string().max(255).optional(),
-    email: Joi.string().email().required(),
+    id: Joi.string().required(),
+    first_name: Joi.string().min(2).optional(),
+    last_name: Joi.string().min(2).optional(),
+    email: Joi.string().email().optional(),
+    phone: Joi.string().min(8).optional(),
+    gender: Joi.string().valid(...Object.values(GENDER_OPTIONS)).optional(),
+    dob: Joi.date().optional(),
+    address: Joi.string().optional(),
+    status: Joi.string().valid(...Object.values(ACCOUNT_STATUS)).optional(),
+    role: Joi.string().valid(...Object.values(USER_ROLES)).optional(),
 });

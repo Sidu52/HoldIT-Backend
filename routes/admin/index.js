@@ -6,7 +6,7 @@ import adminStoresRoutes from "./stores.routes.js";
 import adminBookingsRoutes from "./bookings.routes.js";
 import adminAdminsRoutes from "./admins.routes.js";
 
-export default function adminRoutes(app) {
+const adminRoutes = (app) => {
     // Admin
     app.use("/api/v1/admin/auth", adminAuthRoutes);
     app.use("/api/v1/admin/dashboard", adminDashboardRoutes);
@@ -17,3 +17,5 @@ export default function adminRoutes(app) {
     app.use("/api/v1/admin/admins", adminAdminsRoutes);
 
 }
+
+export default adminRoutes;

@@ -2,7 +2,9 @@ import express from "express";
 import { authMiddleware, roleMiddleware } from "../../middlewares/auth.middleware.js";
 import { apiLimiter } from "../../config/rateLimiter.js";
 import { USER_ROLES } from "../../utils/constants.js";
-import { getUsers } from "../../controllers/admin/user.admin.controller.js";
+import { getUsers, getUserById, updateUserProfile } from "../../controllers/admin/user.admin.controller.js";
+import { validate } from "../../middlewares/validate.middleware.js";
+import { updateUserSchema } from "../../validations/user.validation.js";
 
 const router = express.Router();
 
@@ -13,6 +15,22 @@ router.get(
   apiLimiter,
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   getUsers
+);
+
+router.get(
+  "/:id",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  validate(updateUserSchema),
+  getUserById
+);
+
+router.put(
+  "/update",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  validate(updateUserSchema),
+  updateUserProfile
 );
 
 export default router;

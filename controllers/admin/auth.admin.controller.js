@@ -47,7 +47,6 @@ export const adminLogin = async (req, res) => {
             type: "refresh",
         });
 
-        console.log("IDSD", `refresh:${admin._id}:${tokenId}`)
         await set(
             `refresh:${admin._id}:${tokenId}`,
             "valid",
@@ -148,82 +147,6 @@ export const signUp = async (req, res) => {
         sendError(res, "Signup failed");
     }
 };
-
-
-// Refresh Token
-export const refresh = async (req, res) => {
-    try {
-        console.log("1")
-        const refreshToken = req.cookies.refreshToken;
-        if (!refreshToken) {
-            return sendError(res, "Refresh token missing", STATUS_CODES.UNAUTHORIZED);
-        }
-        console.log("2")
-        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-
-        if (decoded.type !== "refresh") {
-            return sendError(res, "Invalid refresh token", STATUS_CODES.UNAUTHORIZED);
-        }
-
-        const redisKey = `refresh:${decoded.auth_id}:${decoded.token_id}`;
-
-        console.log("3", redisKey)
-        const exists = await get(redisKey);
-        console.log("4", exists)
-        if (!exists) {
-            return sendError(res, "Token reuse detected", STATUS_CODES.FORBIDDEN);
-        }
-        console.log("5")
-        const admin = await Admin.findById(decoded.auth_id).lean();
-        if (!admin || admin.status !== ACCOUNT_STATUS.ACTIVE) {
-            return sendError(res, "Unauthorized", STATUS_CODES.UNAUTHORIZED);
-        }
-        console.log("6")
-        // Rotate token
-        await del(redisKey);
-        console.log("7")
-        const newTokenId = uuidv4();
-
-        const newRefreshToken = generateRefreshToken({
-            auth_id: admin._id,
-            token_id: newTokenId,
-            type: "refresh",
-        });
-        console.log("8")
-        await set(
-            `refresh:${admin._id}:${newTokenId}`,
-            "valid",
-            "EX",
-            REFRESH_TOKEN_EXPIRY
-        );
-        console.log("9")
-        const newAccessToken = generateAccessToken({
-            auth_id: admin._id,
-            role: admin.role,
-            type: "access",
-        });
-
-        res.cookie("accessToken", newAccessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            maxAge: ACCESS_TOKEN_EXPIRY * 1000,
-        });
-        console.log("10")
-        res.cookie("refreshToken", newRefreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            maxAge: REFRESH_TOKEN_EXPIRY * 1000,
-        });
-        console.log("11")
-        sendResponse({ res, message: "Token refreshed" });
-    } catch (err) {
-        console.error("Refresh Error:", err);
-        sendError(res, "Session expired", STATUS_CODES.UNAUTHORIZED);
-    }
-};
-
 
 // Admin Logout
 export const adminLogout = async (req, res) => {

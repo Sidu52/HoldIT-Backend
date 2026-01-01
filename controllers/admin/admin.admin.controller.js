@@ -22,8 +22,9 @@ export const getProfile = async (req, res) => {
 
         // Fetch from DB
         const admin = await Admin.findById(auth_id)
-            .select("-password -__v")
-            .lean();
+            .select("-password_hash -__v")
+            .lean()
+            .populate("role");
 
         if (!admin) {
             return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);

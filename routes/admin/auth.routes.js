@@ -4,7 +4,6 @@ import { validate } from "../../middlewares/validate.middleware.js";
 import {
     adminLogin,
     signUp,
-    refresh,
     adminLogout,
     updatePassword,
     verifyAdminInviteToken
@@ -16,6 +15,8 @@ import {
 } from "../../validations/auth.validation.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { sendResponse } from "../../utils/apiResponse.js";
+import { refresh } from "../../controllers/common/auth.commin.controller.js";
+import { USER_ROLES } from "../../utils/constants.js";
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ const router = express.Router();
 router.post("/login", apiLimiter, validate(loginSchema), adminLogin);
 router.post("/signup", apiLimiter, validate(signupSchema), signUp);
 router.get("/verify-invite", verifyAdminInviteToken);
-router.get("/refresh", apiLimiter, refresh);
+router.get("/refresh", apiLimiter, (req, res) => refresh(req, res, USER_ROLES.ADMIN));
 
 // Protected
 router.use(authMiddleware);

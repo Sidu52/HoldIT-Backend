@@ -1,11 +1,11 @@
 import User from "../models/User.js";
+import Driver from "../models/Driver.js";
+import AuthUser from "../models/AuthUsers.js";
+import StoreOwner from "../models/StoreOwner.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
 import redis from "../services/redisService.js";
 import { generateOTP } from "../utils/otp.js";
-import { sendResponse } from "../utils/apiResponse.js";
-import AuthUser from "../models/AuthUsers.js";
-import Driver from "../models/Driver.js";
-import StoreOwner from "../models/StoreOwner.js";
+import { sendResponse, sendError } from "../utils/apiResponse.js";
 import { ACCOUNT_STATUS, STATUS_CODES, USER_ROLES } from "../utils/constants.js";
 import { addJobToQueue, cancelJob } from "../services/jobService.js";
 import Admin from "../models/Admin.js";
@@ -52,9 +52,7 @@ export const authUser = async (req, res, role) => {
       removeOnComplete: true,
       removeOnFail: true,
     });
-
-    sendResponse({ res, data: { otp }, message: "OTP sent successfully" });
-
+    sendResponse({ res, message: "OTP sent successfully", data: { otp } });
   } catch (err) {
     console.error("Auth Error:", err);
     sendResponse({ res, message: "Auth failed", statusCode: STATUS_CODES.INTERNAL_SERVER_ERROR });
@@ -122,7 +120,6 @@ export const verifyOTP = async (req, res) => {
     );
 
     // Generate tokens
-    console.log("authUser", authUser._id);
     const accessToken = generateAccessToken({ auth_id: authUser._id, role: authUser.role });
     const refreshToken = generateRefreshToken({ auth_id: authUser._id });
 
@@ -215,7 +212,6 @@ export const verifyUsersAccount = async (req, res) => {
     const { phone, email } = req.body;
     const { role } = req.user;
     const authUser = await AuthUser.findOneAndUpdate({ phone }, { $set: { isVerified: true } }, { new: true });
-    console.log("authUser", authUser);
     if (authUser) return sendResponse({ res, message: "User verified successfully" });
     const adminUpdate = await Admin.findOneAndUpdate({ email }, { $set: { isVerified: true, status: ACCOUNT_STATUS.ACTIVE } }, { new: true });
 
