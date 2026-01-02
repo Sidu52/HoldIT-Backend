@@ -15,8 +15,8 @@ const USER_ROLES = {
   STORE_KEEPER: "store_keeper",
   ADMIN: "admin",
   SUPER_ADMIN: "super_admin",
-  OPRATION_MANAGER:"opration_manager",
-  CUSTOMER_SUPPORT:"customer_support"
+  OPRATION_MANAGER: "opration_manager",
+  CUSTOMER_SUPPORT: "customer_support"
 };
 
 const ACCOUNT_STATUS = {
@@ -62,6 +62,13 @@ const ON_BOARDING_STATUS = {
   ACTIVE: 'active',
 }
 
+const VEHICLE_TYPES = {
+  CAR: 'car',
+  MOTORCYCLE: 'motorcycle',
+  CYCLE: 'cycle',
+  SCOOTER: 'scooter',
+};
+
 const INVITE_TOKEN_EXPIRY = 1 * 60 * 60; // 1 hours in seconds
 const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
 const ACCESS_TOKEN_EXPIRY = 1 * 60; // 15 minutes in seconds
@@ -85,5 +92,6 @@ export {
   BOOKING_STATUS,
   VERIFICATION_STATUS,
   ON_BOARDING_STATUS,
+  VEHICLE_TYPES,
 };
 

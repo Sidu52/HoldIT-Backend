@@ -7,7 +7,8 @@ import {
     getSuperAdmins,
     createAdminInvite,
     getProfile,
-    updateAccountStatus
+    updateAccountStatus,
+    updateProfile
 } from "../../controllers/admin/admin.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import { inviteSchema, updateAccountSchema } from "../../validations/auth.validation.js";
@@ -37,6 +38,13 @@ router.get(
     roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
     getProfile
 );
+
+router.put(
+    "/profile",
+    apiLimiter,
+    roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+    updateProfile
+)
 
 router.get(
     "/super",

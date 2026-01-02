@@ -12,7 +12,6 @@ export const getBookings = async (req, res) => {
         } = req.query;
 
         const skip = (page - 1) * limit;
-
         const filter = {};
         if (status) filter.status = status;
         if (userId) filter.user_id = userId;
@@ -61,5 +60,111 @@ export const getBookings = async (req, res) => {
     } catch (err) {
         console.error("Get Bookings Error:", err);
         sendError(res, "Failed to fetch bookings");
+    }
+};
+
+// Create Booking
+export const createBooking = async (req, res) => {
+    try {
+        const { userId, booking } = req.body;
+
+        if (!userId) {
+            return sendError(res, "User ID is required", 400);
+        }
+
+        if (!booking || typeof booking !== "object") {
+            return sendError(res, "Valid booking data is required", 400);
+        }
+
+        // Build booking payload safely
+        const bookingData = {
+            user_id: userId,
+            ...booking,
+        };
+
+        const bookingDoc = await Booking.create(bookingData);
+
+        sendResponse({
+            res,
+            message: "Booking created successfully",
+            data: bookingDoc,
+        });
+
+    } catch (err) {
+        console.error("Create Booking Error:", err);
+
+        // Handle mongoose validation errors explicitly
+        if (err.name === "ValidationError") {
+            return sendError(res, err.message, 400);
+        }
+
+        sendError(res, "Failed to create booking");
+    }
+};
+
+// Delete Booking
+export const deleteBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        if (!bookingId) {
+            return sendError(res, "Booking ID is required", 400);
+        }
+
+        const booking = await Booking.findByIdAndDelete(bookingId);
+
+        if (!booking) {
+            return sendError(res, "Booking not found", 404);
+        }
+
+        sendResponse({
+            res,
+            message: "Booking deleted successfully",
+            data: booking,
+        });
+
+    } catch (err) {
+        console.error("Delete Booking Error:", err);
+        sendError(res, "Failed to delete booking");
+    }
+};
+
+
+// Update Booking (Optimized)
+export const updateBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { status } = req.body;
+
+        if (!bookingId) {
+            return sendError(res, "Booking ID is required", 400);
+        }
+
+        if (!status) {
+            return sendError(res, "Status is required", 400);
+        }
+
+        const booking = await Booking.findByIdAndUpdate(
+            bookingId,
+            { $set: { status } },
+            {
+                new: true,
+                runValidators: true
+            }
+        );
+
+        if (!booking) {
+            return sendError(res, "Booking not found", 404);
+        }
+
+        sendResponse({
+            res,
+            message: "Booking updated successfully",
+            data: booking,
+        });
+
+    } catch (err) {
+        console.error("Update Booking Error:", err);
+        sendError(res, "Failed to update booking");
     }
 };

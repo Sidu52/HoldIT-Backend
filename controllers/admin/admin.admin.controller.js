@@ -44,6 +44,65 @@ export const getProfile = async (req, res) => {
     }
 };
 
+// Update Admin Profile
+export const updateProfile = async (req, res) => {
+    try {
+        const { auth_id } = req.user;
+
+        if (!auth_id) {
+            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        // Allow only updatable fields
+        const allowedFields = [
+            "first_name",
+            "last_name",
+            "email",
+            "phone",
+            "role",
+            "status",
+            "department",
+            "job_title",
+            "address",
+            "permissions",
+        ];
+
+        // Build update object dynamically
+        const updates = {};
+        allowedFields.forEach((field) => {
+            if (req.body[field] !== undefined) {
+                updates[field] = req.body[field];
+            }
+        });
+
+        if (Object.keys(updates).length === 0) {
+            return sendError(res, "No fields to update", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const admin = await Admin.findByIdAndUpdate(
+            auth_id,
+            { $set: updates },
+            {
+                new: true,          // return updated document
+                runValidators: true // enforce schema validation
+            }
+        );
+
+        if (!admin) {
+            return sendError(res, "Admin not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        sendResponse({
+            res,
+            message: "Admin profile updated successfully",
+            data: admin,
+        });
+
+    } catch (err) {
+        console.error("Update Admin Profile Error:", err);
+        sendError(res, "Failed to update profile");
+    }
+};
 
 // Get Admins
 const getAdminsByRole = async (role, res) => {
@@ -153,7 +212,6 @@ export const createAdminInvite = async (req, res) => {
         sendError(res, "Failed to create admin invite");
     }
 };
-
 
 // Update account
 export const updateAccountStatus = async (req, res) => {
