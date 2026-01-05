@@ -4,7 +4,7 @@ import StoreOwner from "../../models/StoreOwner.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set } from "../../services/redisService.js";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
-import { updateStoreSchema } from "../../validations/store_owner.validation.js";
+import { updateStoreOwnerSchema, updateStoreSchema } from "../../validations/store_owner.validation.js";
 
 export const getStores = async (req, res) => {
   try {
@@ -86,7 +86,7 @@ export const getStoreById = async (req, res) => {
       });
     }
 
-    const store = await Store.findById(id).lean();
+    const store = await Store.findById(id).lean().populate("store_owner_id");
     if (!store) {
       return sendError(res, "Store not found", 404);
     }
@@ -140,6 +140,7 @@ export const createStore = async (req, res) => {
         coordinates: [lng, lat],
         address: store_address,
       },
+      last_active_at: new Date(),
       service_area_id,
       store_owner_id,
       status: ACCOUNT_STATUS.PENDING,
@@ -253,7 +254,7 @@ export const deleteStore = async (req, res) => {
 };
 
 
-// Strore Owner
+// Store Owner
 export const getStoreOwners = async (req, res) => {
   try {
     const { page = 1, limit = 10, search } = req.query;

@@ -69,9 +69,9 @@ const VEHICLE_TYPES = {
   SCOOTER: 'scooter',
 };
 
-const INVITE_TOKEN_EXPIRY = 1 * 60 * 60; // 1 hours in seconds
+const INVITE_TOKEN_EXPIRY =  24 * 60 * 60; // 24 hours in seconds
 const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
-const ACCESS_TOKEN_EXPIRY = 1 * 60; // 15 minutes in seconds
+const ACCESS_TOKEN_EXPIRY = 15 * 60; // 15 minutes in seconds
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 100;

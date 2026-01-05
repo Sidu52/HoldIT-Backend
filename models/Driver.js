@@ -40,10 +40,6 @@ const DriverSchema = new mongoose.Schema(
       default: false,
       index: true
     },
-    last_active_at: {
-      type: Date,
-      index: true
-    },
     isSignUp: {
       type: Boolean,
       default: false,
@@ -58,13 +54,13 @@ const DriverSchema = new mongoose.Schema(
       default: true,
       index: true
     },
-    vehicleType: {
+    vehicle_type: {
       type: String,
       enum: Object.values(VEHICLE_TYPES),
       default: VEHICLE_TYPES.SCOOTER,
       index: true
     },
-    licenseNumber: String,
+    license_number: String,
     status: {
       type: String,
       enum: Object.values(ACCOUNT_STATUS),

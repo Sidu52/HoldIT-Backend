@@ -8,7 +8,7 @@ import { generateOTP } from "../utils/otp.js";
 // Driver Update
 export const updateDriverDetails = async (req, res) => {
     try {
-        const { name, gender, dob, address, email, vehicleType, licenseNumber, currentLocation } = req.body;
+        const { name, gender, dob, address, email, vehicle_type, license_number, currentLocation } = req.body;
         const { auth_id } = req.user;
 
         const driver = await Driver.findOne({ auth_id });
@@ -16,7 +16,7 @@ export const updateDriverDetails = async (req, res) => {
             return sendResponse({ res, message: "Driver not found", statusCode: 404 });
         }
 
-        Object.assign(driver, { name, gender, dob, address, email, vehicleType, licenseNumber, currentLocation });
+        Object.assign(driver, { name, gender, dob, address, email, vehicle_type, license_number, currentLocation });
         if (!driver.isSignUp) {
             driver.isSignUp = true;
         }

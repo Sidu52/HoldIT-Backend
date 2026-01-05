@@ -39,7 +39,6 @@ export const authMiddleware = async (req, res, next) => {
 
 export const roleMiddleware = (...allowedRoles) => {
   return (req, res, next) => {
-    console.log("object", req.user);
     if (!req.user || !req.user.role) {
       return sendResponse({
         res,

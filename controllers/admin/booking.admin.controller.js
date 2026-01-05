@@ -49,7 +49,7 @@ export const getBookings = async (req, res) => {
             },
         };
 
-        // Store in Redis (short TTL)
+        // Store in Redis
         await set(cacheKey, JSON.stringify(responseData), "EX", 120); // 2 minutes
 
         sendResponse({
@@ -93,7 +93,6 @@ export const createBooking = async (req, res) => {
     } catch (err) {
         console.error("Create Booking Error:", err);
 
-        // Handle mongoose validation errors explicitly
         if (err.name === "ValidationError") {
             return sendError(res, err.message, 400);
         }
@@ -130,7 +129,7 @@ export const deleteBooking = async (req, res) => {
 };
 
 
-// Update Booking (Optimized)
+// Update Booking
 export const updateBooking = async (req, res) => {
     try {
         const { bookingId } = req.params;

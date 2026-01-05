@@ -8,8 +8,8 @@ export const updateDriverSchema = Joi.object({
     dob: Joi.date().less("now").optional(),
     address: Joi.string().max(255).optional(),
     email: Joi.string().email().required(),
-    vehicleType: Joi.string().max(50).required(),
-    licenseNumber: Joi.string().max(50).required(),
+    vehicle_type: Joi.string().max(50).required(),
+    license_number: Joi.string().max(50).required(),
     currentLocation: Joi.object({
         lat: Joi.number().min(-90).max(90).required(),
         lng: Joi.number().min(-180).max(180).required(),

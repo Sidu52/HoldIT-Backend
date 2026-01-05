@@ -19,8 +19,14 @@ export const getUsers = async (req, res) => {
 
         const filter = {};
         if (status) filter.status = status;
-        if (search) filter.phone = { $regex: search, $options: "i" };
-
+        if (search) {
+            filter.$or = [
+                { phone: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } },
+                { first_name: { $regex: search, $options: "i" } },
+                { last_name: { $regex: search, $options: "i" } },
+            ];
+        }
         const cacheKey = `users:${page}:${limit}:${status || "all"}:${search || "none"}`;
 
         const cached = await get(cacheKey);
@@ -192,6 +198,53 @@ export const updateUserProfile = async (req, res) => {
     }
 };
 
+// Update User Status
+export const updateUserStatus = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { user_id: id } = req.params;
+        const { status } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return sendError(res, "Invalid user ID", 400);
+        }
+
+        const user = await User.findById(id).session(session);
+        if (!user) {
+            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        user.status = status;
+
+        await user.save({ session });
+
+        await session.commitTransaction();
+        session.endSession();
+
+        // Invalidate cache
+        await set(`user:${id}`, "", "EX", 1);
+
+        sendResponse({
+            res,
+            message: "User status updated successfully",
+            data: user,
+        });
+    } catch (err) {
+        await session.abortTransaction();
+        session.endSession();
+
+        if (err.code === 11000) {
+            const field = Object.keys(err.keyPattern)[0];
+            return sendError(res, `${field} already exists`, STATUS_CODES.CONFLICT);
+        }
+
+        console.error("Update User Status Error:", err);
+        sendError(res, "Failed to update user status");
+    }
+};
+
 // Create User
 export const createUser = async (req, res) => {
     const session = await mongoose.startSession();
@@ -271,46 +324,67 @@ export const createUser = async (req, res) => {
 };
 
 
-// Delete User
-export const deleteUser = async (req, res) => {
+// Bulk Delete Users
+export const bulkDeleteUsers = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-        const { user_id: id } = req.params;
+        const { ids } = req.body;
 
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return sendError(res, "Invalid user ID", STATUS_CODES.BAD_REQUEST);
+        // Validate input
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return sendError(res, "User IDs are required", STATUS_CODES.BAD_REQUEST);
         }
 
-        const user = await User.findById(id).session(session);
-        if (!user) {
-            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return sendError(res, "No valid user IDs provided", STATUS_CODES.BAD_REQUEST);
         }
 
+        // Fetch users once
+        const users = await User.find(
+            { _id: { $in: validIds } },
+            { auth_user_id: 1 }
+        ).session(session);
+
+        if (!users.length) {
+            return sendError(res, "Users not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        const authUserIds = users
+            .map(u => u.auth_user_id)
+            .filter(Boolean);
+
+        // Bulk delete
         await Promise.all([
-            User.findByIdAndDelete(id).session(session),
-            AuthUser.findByIdAndDelete(user.auth_user_id).session(session),
+            User.deleteMany({ _id: { $in: validIds } }).session(session),
+            AuthUser.deleteMany({ _id: { $in: authUserIds } }).session(session)
         ]);
 
+        // Commit transaction
         await session.commitTransaction();
         session.endSession();
 
-        // Invalidate cache
-        await Promise.all([
-            set(`user:${id}`, "", "EX", 1),
-            set("users:*", "", "EX", 1),
-        ]);
+        // Cache invalidation (non-blocking)
+        Promise.all([
+            ...validIds.map(id => set(`user:${id}`, "", "EX", 1)),
+            set("users:*", "", "EX", 1)
+        ]).catch(console.error);
 
         sendResponse({
             res,
-            message: "User deleted successfully",
+            message: "Users deleted successfully",
+            data: {
+                deletedUsers: validIds.length
+            }
         });
 
     } catch (err) {
         await session.abortTransaction();
         session.endSession();
-        console.error("Delete User Error:", err);
-        sendError(res, "Failed to delete user");
+        console.error("Bulk Delete Users Error:", err);
+        sendError(res, "Failed to delete users");
     }
 };
+

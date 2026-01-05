@@ -24,14 +24,13 @@ export const getProfile = async (req, res) => {
         const admin = await Admin.findById(auth_id)
             .select("-password_hash -__v")
             .lean()
-            .populate("role");
 
         if (!admin) {
             return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
 
         // Store in Redis
-        await set(cacheKey, JSON.stringify(admin), "EX", 300);
+        await set(cacheKey, JSON.stringify(admin), "EX", 300); // Cache for 5 minutes
 
         sendResponse({
             res,
@@ -48,7 +47,6 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
     try {
         const { auth_id } = req.user;
-
         if (!auth_id) {
             return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
@@ -59,12 +57,9 @@ export const updateProfile = async (req, res) => {
             "last_name",
             "email",
             "phone",
-            "role",
-            "status",
-            "department",
-            "job_title",
+            "gender",
             "address",
-            "permissions",
+            "date_of_birth",
         ];
 
         // Build update object dynamically
@@ -83,10 +78,11 @@ export const updateProfile = async (req, res) => {
             auth_id,
             { $set: updates },
             {
-                new: true,          // return updated document
+                new: true, // return updated document
                 runValidators: true // enforce schema validation
             }
-        );
+        ).lean().select("-password_hash -invited_by -__v")
+            ;
 
         if (!admin) {
             return sendError(res, "Admin not found", STATUS_CODES.NOT_FOUND);
@@ -118,7 +114,7 @@ const getAdminsByRole = async (role, res) => {
     }
 
     const admins = await Admin.find({ role })
-        .select("-password -__v")
+        .select("-password_hash -invited_by -__v")
         .lean();
 
     await set(cacheKey, JSON.stringify(admins), "EX", 300);
@@ -140,11 +136,11 @@ export const getSuperAdmins = (req, res) =>
 // Create admin invite
 export const createAdminInvite = async (req, res) => {
     try {
-        const { email } = req.body;
+        const { email, role } = req.body;
         const { auth_id: inviterId } = req.user;
 
-        if (!email) {
-            return sendError(res, "Email is required", STATUS_CODES.BAD_REQUEST);
+        if (!email || !role) {
+            return sendError(res, "Email and Role is required", STATUS_CODES.BAD_REQUEST);
         }
 
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -168,7 +164,7 @@ export const createAdminInvite = async (req, res) => {
         if (!admin) {
             admin = await Admin.create({
                 email,
-                role: USER_ROLES.ADMIN,
+                role,
                 isVerified: false,
                 invited_by: inviterId,
                 status: ACCOUNT_STATUS.PENDING,

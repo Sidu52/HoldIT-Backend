@@ -1,6 +1,7 @@
 import Driver from "../../models/Driver.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set } from "../../services/redisService.js";
+import AuthUser from "../../models/AuthUsers.js";
 
 // Get Drivers (List)
 export const getDrivers = async (req, res) => {
@@ -82,8 +83,9 @@ export const getDriverById = async (req, res) => {
         }
 
         const driver = await Driver.findById(id)
-            .select("-__v -password_hash")
-            .lean();
+            .select("-__v -password_hash -service_area_id")
+            .lean()
+            .populate("auth_user_id");
 
         if (!driver) {
             return sendError(res, "Driver not found", 404);
@@ -109,8 +111,10 @@ export const createDriver = async (req, res) => {
         const {
             first_name,
             last_name,
-            phone,
             email,
+            gender,
+            dob,
+            address,
             vehicle_type,
             license_number,
         } = req.body;
@@ -119,15 +123,26 @@ export const createDriver = async (req, res) => {
             return sendError(res, "Phone and license number are required", 400);
         }
 
+        const driverAuthUser = await AuthUser.create({
+            phone,
+            role: "driver",
+            last_login_at: new Date(),
+            last_active_at: new Date(),
+            isVerified: false,
+            update_by: req.auth_id
+        })
+
         const driver = await Driver.create({
             first_name,
             last_name,
-            phone,
             email,
+            gender,
+            dob,
+            address,
             vehicle_type,
             license_number,
-            status: "active",
-            is_available: true,
+            status: ACCOUNT_STATUS.ACTIVE,
+            auth_user_id: driverAuthUser._id,
         });
 
         // Invalidate drivers cache
@@ -161,11 +176,13 @@ export const updateDriver = async (req, res) => {
         const allowedFields = [
             "first_name",
             "last_name",
-            "phone",
             "email",
+            "gender",
+            "dob",
+            "address",
             "vehicle_type",
+            "license_number",
             "status",
-            "is_available",
         ];
 
         const updates = {};

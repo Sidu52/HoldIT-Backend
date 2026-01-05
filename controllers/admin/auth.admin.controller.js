@@ -27,7 +27,6 @@ export const adminLogin = async (req, res) => {
         if (admin.status !== ACCOUNT_STATUS.ACTIVE) {
             return sendError(res, "Account is not active", STATUS_CODES.FORBIDDEN);
         }
-        console.log("PAS", admin)
         const isMatch = await bcrypt.compare(password, admin.password_hash);
         if (!isMatch) {
             return sendError(res, "Invalid email or password", STATUS_CODES.UNAUTHORIZED);
@@ -204,8 +203,18 @@ export const updatePassword = async (req, res) => {
         admin.password_hash = await bcrypt.hash(newPassword, 12);
         await admin.save();
 
-        // 🔥 Invalidate all refresh tokens
+        // Invalidate all refresh tokens
         await del(`refresh:${auth_id}:*`);
+
+        // Clear cookies
+        const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            path: "/",
+        };
+        res.clearCookie("accessToken", cookieOptions);
+        res.clearCookie("refreshToken", cookieOptions);
 
         sendResponse({ res, message: "Password updated successfully" });
     } catch (err) {
@@ -213,7 +222,6 @@ export const updatePassword = async (req, res) => {
         sendError(res, "Password update failed");
     }
 };
-
 
 // Verify the invite token
 export const verifyAdminInviteToken = async (req, res) => {
