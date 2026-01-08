@@ -1,5 +1,5 @@
 import Joi from 'joi';
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../utils/constants.js';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, USER_ROLES } from '../utils/constants.js';
 import { GENDER_OPTIONS } from '../utils/constants.js';
 
 export const loginSchema = Joi.object({
@@ -49,7 +49,7 @@ export const signupSchema = Joi.object({
       'string.empty': 'First Name is required',
       'any.required': 'First Name is required',
     }),
-    last_name: Joi.string()
+  last_name: Joi.string()
     .min(2)
     .max(100)
     .required()
@@ -111,5 +111,44 @@ export const inviteSchema = Joi.object({
       'string.email': 'Please provide a valid email address',
       'string.empty': 'Email is required',
       'any.required': 'Email is required',
+    }),
+  role: Joi.string()
+    .required()
+    .valid(USER_ROLES.CUSTOMER_SUPPORT, USER_ROLES.OPERATION_MANAGER, USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN)
+    .messages({
+      'any.only': `Role must be one of: ${USER_ROLES.CUSTOMER_SUPPORT}, ${USER_ROLES.OPERATION_MANAGER}, ${USER_ROLES.ADMIN}, ${USER_ROLES.SUPER_ADMIN}`,
+      'string.empty': 'Role is required',
+      'any.required': 'Role is required',
+    }),
+});
+
+export const forgotPasswordSchema = Joi.object({
+  email: Joi.string()
+    .email()
+    .required()
+    .messages({
+      'string.email': 'Please provide a valid email address',
+      'string.empty': 'Email is required',
+      'any.required': 'Email is required',
+    }),
+});
+
+export const resetPasswordSchema = Joi.object({
+  token: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'Token is required',
+      'any.required': 'Token is required',
+    }),
+  newPassword: Joi.string()
+    .min(8)
+    .max(50)
+    .required()
+    .messages({
+      'string.min': `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`,
+      'string.max': `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters`,
+      'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+      'string.empty': 'New password is required',
+      'any.required': 'New password is required',
     }),
 });

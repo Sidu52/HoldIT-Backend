@@ -12,8 +12,7 @@ export const getStores = async (req, res) => {
       page = 1,
       limit = 10,
       status,
-      verification_status,
-      is_online,
+      search,
     } = req.query;
 
     const pageNum = Number(page);
@@ -22,10 +21,9 @@ export const getStores = async (req, res) => {
 
     const filter = {};
     if (status) filter.status = status;
-    if (verification_status) filter.verification_status = verification_status;
-    if (is_online !== undefined) filter.is_online = is_online === "true";
+    if (search) filter.$or = [{ store_name: { $regex: search, $options: "i" } }, { store_address: { $regex: search, $options: "i" } }];
 
-    const cacheKey = `stores:${pageNum}:${limitNum}:${status || "all"}:${verification_status || "all"}:${is_online ?? "all"}`;
+    const cacheKey = `stores:${pageNum}:${limitNum}:${status|| "all"}:${search || "all"}`;
 
     const cached = await get(cacheKey);
     if (cached) {
@@ -47,12 +45,12 @@ export const getStores = async (req, res) => {
 
     const responseData = {
       stores,
-      pagination: {
-        total,
-        page: pageNum,
-        limit: limitNum,
+      pagination: { 
+        currentPage: Number(page),
         totalPages: Math.ceil(total / limitNum),
-      },
+        totalItems: total,
+        itemsPerPage: Number(limitNum), 
+        },
     };
 
     await set(cacheKey, JSON.stringify(responseData), "EX", 120);
@@ -101,63 +99,6 @@ export const getStoreById = async (req, res) => {
   } catch (err) {
     console.error("Get Store Error:", err);
     sendError(res, "Failed to fetch store");
-  }
-};
-
-export const createStore = async (req, res) => {
-  try {
-    const { error, value } = updateStoreSchema.validate(req.body);
-    if (error) {
-      return sendError(res, error.details[0].message, 400);
-    }
-
-    const {
-      store_name,
-      store_address,
-      store_capacity,
-      store_open_time,
-      store_close_time,
-      store_description,
-      lat,
-      lng,
-    } = value;
-
-    const { store_owner_id, service_area_id } = req.body;
-
-    if (!store_owner_id) {
-      return sendError(res, "Store owner ID is required", 400);
-    }
-
-    const store = await Store.create({
-      store_name,
-      store_address,
-      store_capacity,
-      store_open_time,
-      store_close_time,
-      store_description,
-      location: {
-        type: "Point",
-        coordinates: [lng, lat],
-        address: store_address,
-      },
-      last_active_at: new Date(),
-      service_area_id,
-      store_owner_id,
-      status: ACCOUNT_STATUS.PENDING,
-      verification_status: VERIFICATION_STATUS.PENDING,
-    });
-
-    // Invalidate cache
-    await set("stores:*", "", "EX", 1);
-
-    sendResponse({
-      res,
-      message: "Store created successfully",
-      data: store,
-    });
-  } catch (err) {
-    console.error("Create Store Error:", err);
-    sendError(res, "Failed to create store");
   }
 };
 
@@ -291,11 +232,11 @@ export const getStoreOwners = async (req, res) => {
     const responseData = {
       owners,
       pagination: {
-        total,
-        page: pageNum,
-        limit: limitNum,
+        currentPage: Number(page),
         totalPages: Math.ceil(total / limitNum),
-      },
+        totalItems: total,
+        itemsPerPage: Number(limitNum),
+        },
     };
 
     await set(cacheKey, JSON.stringify(responseData), "EX", 120);

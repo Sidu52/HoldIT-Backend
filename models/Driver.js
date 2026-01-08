@@ -3,13 +3,6 @@ import { ACCOUNT_STATUS, VEHICLE_TYPES, VERIFICATION_STATUS, GENDER_OPTIONS } fr
 
 const DriverSchema = new mongoose.Schema(
   {
-    auth_user_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Auth",
-      required: true,
-      unique: true,
-      index: true
-    },
     first_name: {
       type: String,
       trim: true,
@@ -20,16 +13,21 @@ const DriverSchema = new mongoose.Schema(
       trim: true,
       maxlength: 100,
     },
+    phone: { type: String,
+       unique: true,
+        index: true,
+         sparse: true,
+         required: true,
+        },
     email: {
       type: String,
-      required: true,
       unique: true,
       lowercase: true,
       trim: true,
       index: true,
     },
     gender: { type: String, enum: GENDER_OPTIONS },
-    dob: { type: Date },
+    date_of_birth: { type: Date },
     address: {
       type: String,
       trim: true,
@@ -40,9 +38,27 @@ const DriverSchema = new mongoose.Schema(
       default: false,
       index: true
     },
-    isSignUp: {
+    is_active: {
+      type: Boolean,
+      default: true,
+      index: true
+    },
+    last_login_at: {
+      type: Date,
+    },
+    last_active_at: {
+      type: Date,
+      index: true
+    },
+    is_verified: {
       type: Boolean,
       default: false,
+      index: true
+    },
+    update_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "admin",
+      index: true
     },
     service_area_id: {
       type: mongoose.Schema.Types.ObjectId,

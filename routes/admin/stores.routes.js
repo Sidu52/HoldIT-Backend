@@ -2,8 +2,8 @@ import express from "express";
 import { authMiddleware, roleMiddleware } from "../../middlewares/auth.middleware.js";
 import { apiLimiter } from "../../config/rateLimiter.js";
 import { USER_ROLES } from "../../utils/constants.js";
-import { getStores, getStoreById, createStore, updateStore, deleteStore } from "../../controllers/admin/store.admin.controller.js";
-import { getStoreOwners, getStoreOwnerById, createStoreOwner, updateStoreOwner, deleteStoreOwner } from "../../controllers/admin/store.admin.controller.js";
+import { getStores, getStoreById, updateStore, deleteStore } from "../../controllers/admin/store.admin.controller.js";
+import { getStoreOwners, getStoreOwnerById, updateStoreOwner, deleteStoreOwner } from "../../controllers/admin/store.admin.controller.js";
 
 const router = express.Router();
 
@@ -21,13 +21,6 @@ router.get(
   apiLimiter,
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   getStoreById
-);
-
-router.post(
-  "/",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  createStore
 );
 
 router.put(
@@ -56,13 +49,6 @@ router.get(
   apiLimiter,
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   getStoreOwnerById
-);
-
-router.post(
-  "/owners",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  createStoreOwner
 );
 
 router.put(

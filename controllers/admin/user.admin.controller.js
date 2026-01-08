@@ -1,7 +1,6 @@
 import User from "../../models/User.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set } from "../../services/redisService.js";
-import AuthUser from "../../models/AuthUsers.js";
 import { STATUS_CODES, USER_ROLES } from "../../utils/constants.js";
 import mongoose from "mongoose";
 
@@ -27,6 +26,7 @@ export const getUsers = async (req, res) => {
                 { last_name: { $regex: search, $options: "i" } },
             ];
         }
+        // filter.is_active = true;
         const cacheKey = `users:${page}:${limit}:${status || "all"}:${search || "none"}`;
 
         const cached = await get(cacheKey);
@@ -38,24 +38,22 @@ export const getUsers = async (req, res) => {
             });
         }
 
-        const [users, total] = await Promise.all([
-            User.find(filter)
-                .select("-__v -password")
-                .populate("auth_user_id", "phone role isVerified")
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(Number(limit))
-                .lean(),
-            User.countDocuments(filter),
-        ]);
+        const users = await User.find(filter)
+            .select("-__v -password")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(Number(limit))
+            .lean();
+
+        const total = await User.countDocuments(filter);
 
         const responseData = {
             users,
             pagination: {
-                total,
-                page: Number(page),
-                limit: Number(limit),
+                currentPage: Number(page),
                 totalPages: Math.ceil(total / limit),
+                totalItems: total,
+                itemsPerPage: Number(limit),
             },
         };
 
@@ -77,7 +75,7 @@ export const getUserById = async (req, res) => {
     try {
         const { user_id: id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return sendError(res, "Invalid user ID", 400);
+            return sendError(res, "Invalid user ID", STATUS_CODES.BAD_REQUEST);
         }
 
         const cacheKey = `user:${id}`;
@@ -92,7 +90,6 @@ export const getUserById = async (req, res) => {
 
         const user = await User.findById(id)
             .select("-__v -password")
-            .populate("auth_user_id", "phone role isVerified")
             .lean();
 
         if (!user) {
@@ -118,9 +115,9 @@ export const updateUserProfile = async (req, res) => {
     session.startTransaction();
 
     try {
-        const { id } = req.body;
+        const { user_id: id } = req.params;
         if (!id) {
-            return sendError(res, "User ID is required", 400);
+            return sendError(res, "User ID is required", STATUS_CODES.BAD_REQUEST);
         }
 
         const user = await User.findById(id).session(session);
@@ -128,13 +125,8 @@ export const updateUserProfile = async (req, res) => {
             return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
 
-        const authUser = await AuthUser.findById(user.auth_user_id).session(session);
-        if (!authUser) {
-            return sendError(res, "Auth user not found", STATUS_CODES.NOT_FOUND);
-        }
-
-        if (!authUser.isVerified) {
-            return sendError(res, "User not verified", STATUS_CODES.BAD_REQUEST);
+        if (!user.is_active) {
+            return sendError(res, "User is not active", STATUS_CODES.FORBIDDEN);
         }
 
         // Whitelisted fields
@@ -143,9 +135,9 @@ export const updateUserProfile = async (req, res) => {
             "last_name",
             "email",
             "gender",
+            "phone",
             "dob",
             "address",
-            "status",
         ];
 
         userFields.forEach((field) => {
@@ -153,10 +145,6 @@ export const updateUserProfile = async (req, res) => {
                 user[field] = req.body[field];
             }
         });
-
-        if (req.body.phone !== undefined) {
-            authUser.phone = req.body.phone;
-        }
 
         if (
             req.body.role &&
@@ -167,7 +155,6 @@ export const updateUserProfile = async (req, res) => {
 
         await Promise.all([
             user.save({ session }),
-            authUser.save({ session }),
         ]);
 
         await session.commitTransaction();
@@ -205,18 +192,20 @@ export const updateUserStatus = async (req, res) => {
 
     try {
         const { user_id: id } = req.params;
-        const { status } = req.body;
+        const { status, reason, is_active } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return sendError(res, "Invalid user ID", 400);
         }
 
-        const user = await User.findById(id).session(session);
+        const user = await User.findById(id, { is_active: true }).session(session);
         if (!user) {
             return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
 
-        user.status = status;
+        status && (user.status = status)
+        reason && (user.account_deactivated_reason = reason)
+        is_active != undefined && (user.is_active = is_active)
 
         await user.save({ session });
 
@@ -245,85 +234,6 @@ export const updateUserStatus = async (req, res) => {
     }
 };
 
-// Create User
-export const createUser = async (req, res) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-        const {
-            first_name,
-            last_name,
-            email,
-            phone,
-            gender,
-            dob,
-            address,
-            role,
-        } = req.body;
-
-        if (!email || !phone) {
-            return sendError(res, "Email and phone are required", STATUS_CODES.BAD_REQUEST);
-        }
-
-        // Create Auth User
-        const authUser = await AuthUser.create(
-            [{
-                phone,
-                role: Object.values(USER_ROLES).includes(role)
-                    ? role
-                    : USER_ROLES.USER,
-                isVerified: true,
-            }],
-            { session }
-        );
-
-        // Create User profile
-        const user = await User.create(
-            [{
-                auth_user_id: authUser[0]._id,
-                first_name,
-                last_name,
-                email,
-                gender,
-                dob,
-                address,
-                status: "active",
-            }],
-            { session }
-        );
-
-        await session.commitTransaction();
-        session.endSession();
-
-        // Invalidate users cache
-        await set("users:*", "", "EX", 1);
-
-        sendResponse({
-            res,
-            message: "User created successfully",
-            data: user[0],
-        });
-
-    } catch (err) {
-        await session.abortTransaction();
-        session.endSession();
-
-        if (err.code === 11000) {
-            const field = Object.keys(err.keyPattern)[0];
-            return sendError(
-                res,
-                `${field} already exists`,
-                STATUS_CODES.CONFLICT
-            );
-        }
-
-        console.error("Create User Error:", err);
-        sendError(res, "Failed to create user");
-    }
-};
-
-
 // Bulk Delete Users
 export const bulkDeleteUsers = async (req, res) => {
     const session = await mongoose.startSession();
@@ -345,21 +255,15 @@ export const bulkDeleteUsers = async (req, res) => {
         // Fetch users once
         const users = await User.find(
             { _id: { $in: validIds } },
-            { auth_user_id: 1 }
         ).session(session);
 
         if (!users.length) {
             return sendError(res, "Users not found", STATUS_CODES.NOT_FOUND);
         }
 
-        const authUserIds = users
-            .map(u => u.auth_user_id)
-            .filter(Boolean);
-
-        // Bulk delete
+        // Bulk Inactivate
         await Promise.all([
-            User.deleteMany({ _id: { $in: validIds } }).session(session),
-            AuthUser.deleteMany({ _id: { $in: authUserIds } }).session(session)
+            User.updateMany({ _id: { $in: validIds } }, { is_active: false }).session(session),
         ]);
 
         // Commit transaction

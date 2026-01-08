@@ -17,6 +17,14 @@ const router = express.Router();
 
 router.use(authMiddleware);
 
+// Get profile
+router.get(
+    "/profile",
+    apiLimiter,
+    getProfile
+);
+
+// Invite user
 router.post(
     "/invite",
     apiLimiter,
@@ -25,34 +33,28 @@ router.post(
     createAdminInvite
 );
 
+// Get admins
 router.get(
     "/",
     apiLimiter,
-    roleMiddleware(USER_ROLES.SUPER_ADMIN),
     getAdmins
 );
 
-router.get(
-    "/profile",
-    apiLimiter,
-    roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-    getProfile
-);
-
+// Update profile
 router.put(
     "/profile",
     apiLimiter,
-    roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
     updateProfile
 )
 
+// Get super admins
 router.get(
     "/super",
     apiLimiter,
-    roleMiddleware(USER_ROLES.SUPER_ADMIN),
     getSuperAdmins
 );
 
+// Update account status
 router.put(
     "/account_status",
     apiLimiter,

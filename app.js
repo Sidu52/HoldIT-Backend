@@ -6,13 +6,13 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 // Route
+import BulkUpload from "./routes/bulk_upload/bulk_upload.js";
+
 import AdminRoutes from "./routes/admin/index.js";
 import userRoutes from './routes/users/index.js';
-import main from "./routes/index.js";
-import User from "./routes/user.route.js";
-import Driver from "./routes/driver.route.js";
-import Store from "./routes/store.route.js";
-import Booking from "./routes/booking.route.js";
+
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './swagger.js';
 
 import { initializeWorkers } from './workers/initializeWorkers.js';
 
@@ -59,12 +59,9 @@ app.get("/health", (req, res) => res.json({ message: "OK" }));
 
 AdminRoutes(app);
 userRoutes(app);
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api/v1/', BulkUpload);
 
-app.use('/api/v1', main);
-app.use('/api/v1/user', User);
-app.use('/api/v1/driver', Driver);
-app.use('/api/v1/store', Store);
-app.use('/api/v1/booking', Booking);
 
 // Error handler
 app.use((err, req, res, next) => {
@@ -90,38 +87,3 @@ const server = app.listen(process.env.PORT || 3000, () => {
 
 // Initialize Socket.IO
 const io = initSocket(server);
-
-
-// const findMidValue = () => {
-//   const array = [2, 3, 1, -4, 9];
-//   const sumOfArray = array.reduce((a, b) => a + b);
-//   console.log("sumOfArray", sumOfArray)
-//   let left = 0;
-//   let right = sumOfArray;
-
-//   for (let i = 0; i < array.length; i++) {
-//     right =right- array[i];
-//     console.log("SUM", i, left, right)
-//     if (left == right) {
-//       return i;
-//     }
-//     left =left+ array[i];
-//   }
-//   return -1
-// }
-
-// Recursion
-// const findMidValue = (array, i = 0, left, right) => {
-//   right=right-array[i]
-//   if(left==right){
-//     return i;
-//   }
-//   if(i==array.length-1){
-//     return -1;
-//   }
-
-//  return findMidValue(array, i+1, left+array[i],right );
-// }
-
-// const array = [2,-1,1];
-// console.log("findMidValueIndex", findMidValue(array,0,0,array.reduce((a, b) => a + b)))

@@ -2,7 +2,7 @@ import express from "express";
 import { authMiddleware, roleMiddleware } from "../../middlewares/auth.middleware.js";
 import { apiLimiter } from "../../config/rateLimiter.js";
 import { USER_ROLES } from "../../utils/constants.js";
-import { getDrivers, getDriverById, createDriver, updateDriver, deleteDriver } from "../../controllers/admin/driver.admin.controller.js";
+import { getDrivers, getDriverById, updateDriver, deleteDriver } from "../../controllers/admin/driver.admin.controller.js";
 
 const router = express.Router();
 
@@ -20,13 +20,6 @@ router.get(
   apiLimiter,
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   getDriverById
-);
-
-router.post(
-  "/",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  createDriver
 );
 
 router.put(

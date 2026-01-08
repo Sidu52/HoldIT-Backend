@@ -1,5 +1,4 @@
 import User from "../../models/User.js";
-import AuthUser from "../../models/AuthUsers.js";
 import Driver from "../../models/Driver.js";
 import StoreOwner from "../../models/StoreOwner.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";

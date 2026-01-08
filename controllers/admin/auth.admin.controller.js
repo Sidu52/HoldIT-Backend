@@ -6,6 +6,43 @@ import bcrypt from "bcryptjs";
 import { generateAccessToken, generateRefreshToken } from "../../utils/token.js";
 import { v4 as uuidv4 } from 'uuid';
 import jwt from "jsonwebtoken";
+import sendEmail from "../../mailer/emailService.js";
+
+// Verify the invite token
+export const verifyAdminInviteToken = async (req, res) => {
+    try {
+        const { token } = req.query;
+
+        if (!token) {
+            return sendError(res, "Token is required", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const inviteDataStr = await get(`admin-invite:${token}`);
+        if (!inviteDataStr) {
+            return sendError(res, "Invalid or expired invite token", STATUS_CODES.UNAUTHORIZED);
+        }
+
+        const inviteData = JSON.parse(inviteDataStr);
+        const admin = await Admin.findOne({ email: inviteData.email }).lean();
+
+        if (!admin || admin.isVerified) {
+            return sendError(res, "Invite no longer valid", STATUS_CODES.CONFLICT);
+        }
+
+        sendResponse({
+            res,
+            message: "Token verified successfully",
+            data: {
+                email: admin.email,
+                role: admin.role,
+                expiresIn: await ttl(`admin-invite:${token}`),
+            },
+        });
+    } catch (err) {
+        console.error("Verify Invite Error:", err);
+        sendError(res, "Verification failed");
+    }
+};
 
 // Admin Login
 export const adminLogin = async (req, res) => {
@@ -132,8 +169,7 @@ export const signUp = async (req, res) => {
                 password_hash: passwordHash,
                 gender,
                 isVerified: true,
-                status: ACCOUNT_STATUS.ACTIVE,
-                last_login_at: new Date(),
+                status: ACCOUNT_STATUS.ACTIVE
             }
         );
 
@@ -180,11 +216,134 @@ export const adminLogout = async (req, res) => {
     }
 };
 
+// Forgot password
+export const createAdminForgotPasswordToken = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return sendError(res, "Email is required", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const admin = await Admin.findOne({ email });
+        if (!admin) {
+            return sendError(res, "Admin not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        // prevent multiple active tokens
+        const existingToken = await get(`admin:forgot:email:${email}`);
+        if (existingToken) {
+            return sendError(res, "Reset link already sent. Please check your email.", STATUS_CODES.CONFLICT);
+        }
+
+        const token = crypto.randomBytes(32).toString("hex");
+
+        const payload = {
+            adminId: admin._id,
+            email: admin.email,
+        };
+
+        await Promise.all([
+            set(`admin:forgot:token:${token}`, JSON.stringify(payload), "EX", INVITE_TOKEN_EXPIRY),
+            set(`admin:forgot:email:${email}`, token, "EX", INVITE_TOKEN_EXPIRY),
+        ]);
+
+        const resetLink = `${process.env.ADMIN_UI_URL}/admin/reset-password?token=${token}`;
+
+        // Send email
+        sendEmail(
+            admin.email,
+            'Password Reset Request',
+            'password-reset-email.html',
+            { first_name: 'John', reset_link: resetLink }
+        );
+
+        return sendResponse({
+            res,
+            message: "Password reset link sent successfully",
+        });
+
+    } catch (error) {
+        console.error("Forgot password error:", error);
+        return sendError(res, "Failed to send reset password link");
+    }
+};
+
 // Update password
-export const updatePassword = async (req, res) => {
+export const updateAdminPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+
+        if (!token || !newPassword) {
+            return sendError(res, "Token and new password are required", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const data = await get(`admin:forgot:token:${token}`);
+        if (!data) {
+            return sendError(res, "Invalid or expired token", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const { adminId, email } = JSON.parse(data);
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        await Admin.findByIdAndUpdate(adminId, {
+            password: hashedPassword,
+        });
+
+        // destroy token
+        await Promise.all([
+            del(`admin:forgot:token:${token}`),
+            del(`admin:forgot:email:${email}`),
+        ]);
+
+        return sendResponse({
+            res,
+            message: "Password updated successfully",
+        });
+
+    } catch (error) {
+        console.error("Update password error:", error);
+        return sendError(res, "Failed to update password");
+    }
+};
+
+// Verify forgot password token
+export const verifyAdminForgotPasswordToken = async (req, res) => {
+    try {
+        const { token } = req.query;
+
+        if (!token) {
+            return sendError(res, "Token is required", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const data = await get(`admin:forgot:token:${token}`);
+
+        if (!data) {
+            return sendError(res, "Invalid or expired token", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const payload = JSON.parse(data);
+
+        return sendResponse({
+            res,
+            message: "Token is valid",
+            data: {
+                adminId: payload.adminId,
+                email: payload.email,
+            },
+        });
+
+    } catch (error) {
+        console.error("Verify token error:", error);
+        return sendError(res, "Token verification failed");
+    }
+};
+
+// Update password
+export const resetPassword = async (req, res) => {
     try {
         const { oldPassword, newPassword } = req.body;
-        const { auth_id } = req.user;
 
         if (!oldPassword || !newPassword) {
             return sendError(res, "Passwords are required", STATUS_CODES.BAD_REQUEST);
@@ -223,38 +382,3 @@ export const updatePassword = async (req, res) => {
     }
 };
 
-// Verify the invite token
-export const verifyAdminInviteToken = async (req, res) => {
-    try {
-        const { token } = req.query;
-
-        if (!token) {
-            return sendError(res, "Token is required", STATUS_CODES.BAD_REQUEST);
-        }
-
-        const inviteDataStr = await get(`admin-invite:${token}`);
-        if (!inviteDataStr) {
-            return sendError(res, "Invalid or expired invite token", STATUS_CODES.UNAUTHORIZED);
-        }
-
-        const inviteData = JSON.parse(inviteDataStr);
-        const admin = await Admin.findOne({ email: inviteData.email }).lean();
-
-        if (!admin || admin.isVerified) {
-            return sendError(res, "Invite no longer valid", STATUS_CODES.CONFLICT);
-        }
-
-        sendResponse({
-            res,
-            message: "Token verified successfully",
-            data: {
-                email: admin.email,
-                role: admin.role,
-                expiresIn: await ttl(`admin-invite:${token}`),
-            },
-        });
-    } catch (err) {
-        console.error("Verify Invite Error:", err);
-        sendError(res, "Verification failed");
-    }
-};

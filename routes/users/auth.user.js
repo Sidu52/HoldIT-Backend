@@ -1,7 +1,7 @@
 import express from "express";
 import { apiLimiter } from "../../config/rateLimiter.js";
 import { authMiddleware, roleMiddleware } from "../../middlewares/auth.middleware.js";
-import { authUser, refresh, sendOTP, verifyOTP } from "../../controllers/common/auth.commin.controller.js";
+import { authUser, refresh, sendOTP, verifyOTP } from "../../controllers/common/auth.common.controller.js";
 import { USER_ROLES } from "../../utils/constants.js";
 
 const router = express.Router();

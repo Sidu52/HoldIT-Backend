@@ -1,8 +1,92 @@
-import { set, get } from "../../services/redisService.js";
+import { set, get, del } from "../../services/redisService.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import Admin from "../../models/Admin.js";
 import { ACCOUNT_STATUS, USER_ROLES, STATUS_CODES, INVITE_TOKEN_EXPIRY } from "../../utils/constants.js";
 import crypto from "crypto";
+import sendEmail from "../../mailer/emailService.js";
+
+// Create admin invite
+export const createAdminInvite = async (req, res) => {
+    try {
+        const { email, role } = req.body;
+        const { auth_id: inviterId } = req.user;
+
+        if (!email || !role) {
+            return sendError(res, "Email and Role is required", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return sendError(res, "Invalid email format", STATUS_CODES.BAD_REQUEST);
+        }
+        // Prevent duplicate active invites
+        const inviteExists = await get(`admin-invite-email:${email}`);
+        if (inviteExists) {
+            return sendError(res, "Invite already sent", STATUS_CODES.CONFLICT);
+        }
+
+        // Check admin existence
+        let admin = await Admin.findOne({ email });
+
+        if (admin?.isVerified) {
+            return sendError(res, "Admin already exists", STATUS_CODES.CONFLICT);
+        }
+
+        if (!admin) {
+            admin = await Admin.create({
+                email,
+                role,
+                isVerified: false,
+                invited_by: inviterId,
+                status: ACCOUNT_STATUS.PENDING,
+            });
+        }
+
+        // Generate unique token
+        const token = crypto.randomBytes(32).toString("hex");
+
+        const invitePayload = {
+            email,
+            adminId: admin._id,
+            inviterId,
+        };
+
+        // Store in Redis
+        await Promise.all([
+            set(
+                `admin-invite:${token}`,
+                JSON.stringify(invitePayload),
+                "EX",
+                INVITE_TOKEN_EXPIRY
+            ),
+            set(
+                `admin-invite-email:${email}`,
+                token,
+                "EX",
+                INVITE_TOKEN_EXPIRY
+            ),
+        ]);
+
+        const inviteLink = `${process.env.CLIENT_URL}/signup?token=${token}`;
+
+        // Send email
+        sendEmail(
+            email,
+            'Invitation to Join Holdit',
+            'invite-email.html',
+            { first_name: "", invitation_link: inviteLink }
+        );
+
+        sendResponse({
+            res,
+            message: "Admin invite sent successfully",
+            data: { inviteLink },
+        });
+    } catch (err) {
+        console.error("Create Admin Invite Error:", err);
+        sendError(res, "Failed to create admin invite");
+    }
+};
 
 // Get Admin Profile
 export const getProfile = async (req, res) => {
@@ -132,82 +216,6 @@ export const getAdmins = (req, res) =>
 export const getSuperAdmins = (req, res) =>
     getAdminsByRole(USER_ROLES.SUPER_ADMIN, res);
 
-
-// Create admin invite
-export const createAdminInvite = async (req, res) => {
-    try {
-        const { email, role } = req.body;
-        const { auth_id: inviterId } = req.user;
-
-        if (!email || !role) {
-            return sendError(res, "Email and Role is required", STATUS_CODES.BAD_REQUEST);
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            return sendError(res, "Invalid email format", STATUS_CODES.BAD_REQUEST);
-        }
-
-        // Prevent duplicate active invites
-        const inviteExists = await get(`admin-invite-email:${email}`);
-        if (inviteExists) {
-            return sendError(res, "Invite already sent", STATUS_CODES.CONFLICT);
-        }
-
-        // Check admin existence
-        let admin = await Admin.findOne({ email });
-
-        if (admin?.isVerified) {
-            return sendError(res, "Admin already exists", STATUS_CODES.CONFLICT);
-        }
-
-        if (!admin) {
-            admin = await Admin.create({
-                email,
-                role,
-                isVerified: false,
-                invited_by: inviterId,
-                status: ACCOUNT_STATUS.PENDING,
-            });
-        }
-
-        // Generate unique token
-        const token = crypto.randomBytes(32).toString("hex");
-
-        const invitePayload = {
-            email,
-            adminId: admin._id,
-            inviterId,
-        };
-
-        // Store in Redis
-        await Promise.all([
-            set(
-                `admin-invite:${token}`,
-                JSON.stringify(invitePayload),
-                "EX",
-                INVITE_TOKEN_EXPIRY
-            ),
-            set(
-                `admin-invite-email:${email}`,
-                token,
-                "EX",
-                INVITE_TOKEN_EXPIRY
-            ),
-        ]);
-
-        const inviteLink = `${process.env.ADMIN_UI_URL}/admin/signup?token=${token}`;
-
-        sendResponse({
-            res,
-            message: "Admin invite sent successfully",
-            data: { inviteLink },
-        });
-    } catch (err) {
-        console.error("Create Admin Invite Error:", err);
-        sendError(res, "Failed to create admin invite");
-    }
-};
 
 // Update account
 export const updateAccountStatus = async (req, res) => {
