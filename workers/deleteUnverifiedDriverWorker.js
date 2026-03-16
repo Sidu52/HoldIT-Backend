@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { redisConnectionConfig } from "../services/redisService.js";
 import Driver from "../models/Driver.js";
-import { JOB_QUEUES } from "../utils/constants.js";
+import { ACCOUNT_STATUS, JOB_QUEUES } from "../utils/constants.js";
 
 let worker;
 
@@ -20,7 +20,7 @@ export const createDeleteUnverifiedDriverWorker = () => {
                 const deletedDriver = await Driver.findOneAndDelete({
                     phone,
                     is_verified: false,
-                    status: "PENDING",
+                    status: ACCOUNT_STATUS.PENDING,
                 });
 
                 if (deletedDriver) {

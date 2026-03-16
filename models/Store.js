@@ -1,9 +1,28 @@
+// models/Store.js
+
 import mongoose from "mongoose";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../utils/constants.js";
-import { addStoreToRedis, removeStoreFromRedis } from "../services/storeServices.js";
 
 const StoreSchema = new mongoose.Schema(
     {
+        // ── Auth ──────────────────────────────────────────────────────
+        // Phone is the login identifier for OTP auth, same pattern as Driver/User.
+        // store_contact_number is kept separately as the public-facing contact.
+        phone: {
+            type: String,
+            required: true,
+            unique: true,
+            trim: true,
+            index: true,
+        },
+        isVerified: {
+            type: Boolean,
+            default: false,
+        },
+        last_login_at: Date,
+        last_active_at: Date,
+
+        // ── Store Info ────────────────────────────────────────────────
         store_name: {
             type: String,
             required: true,
@@ -15,12 +34,8 @@ const StoreSchema = new mongoose.Schema(
             trim: true,
             maxlength: 500,
         },
-        store_open_time: {
-            type: String,
-        },
-        store_close_time: {
-            type: String,
-        },
+        store_open_time: String,
+        store_close_time: String,
         store_description: {
             type: String,
             maxlength: 1000,
@@ -29,6 +44,8 @@ const StoreSchema = new mongoose.Schema(
             type: String,
             maxlength: 15,
         },
+
+        // ── Location ──────────────────────────────────────────────────
         location: {
             type: {
                 type: String,
@@ -37,21 +54,32 @@ const StoreSchema = new mongoose.Schema(
                 required: true,
             },
             coordinates: {
-                type: [Number],
+                type: [Number],   // [lng, lat] — GeoJSON order
                 required: true,
             },
             address: String,
         },
+
+        // ── Service area ──────────────────────────────────────────────
         service_area_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "ServiceableArea",
             index: true,
         },
+
+        // ── Online / Active state ─────────────────────────────────────
         is_online: {
             type: Boolean,
             default: false,
             index: true,
         },
+        is_active: {
+            type: Boolean,
+            default: true,
+            index: true,
+        },
+
+        // ── Verification & Status ─────────────────────────────────────
         verification_status: {
             type: String,
             enum: Object.values(VERIFICATION_STATUS),
@@ -64,6 +92,12 @@ const StoreSchema = new mongoose.Schema(
             default: ACCOUNT_STATUS.PENDING,
             index: true,
         },
+        verified_by: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Admin",
+        },
+
+        // ── Capacity & Rating ─────────────────────────────────────────
         booking_assigned_count: {
             type: Number,
             default: 0,
@@ -84,49 +118,42 @@ const StoreSchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
-        last_active_at: {
-            type: Date,
-            index: true,
-        },
-        store_deactivated_reason: {
-            type: String,
-            maxlength: 500,
-        },
-        is_active: {
-            type: Boolean,
-            default: true,
-            index: true,
-        },
+
+        // ── Ownership ─────────────────────────────────────────────────
         store_owner_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "StoreOwner",
-            required: true,
             index: true,
         },
-        verified_by: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Admin",
+
+        store_deactivated_reason: {
+            type: String,
+            maxlength: 500,
         },
     },
     { timestamps: true }
 );
 
-StoreSchema.post("save", async function () {
-    try {
-        if (this.is_active && this.is_online) {
-            await addStoreToRedis(this);
-        } else {
-            await removeStoreFromRedis(this._id, this.service_area_id);
-        }
-    } catch (err) {
-        console.error(`[Store Hook] Redis sync failed for ${this._id}:`, err.message);
-    }
-});
+// ── Indexes ───────────────────────────────────────────────────────────────────
+StoreSchema.index({ location: "2dsphere" });
+StoreSchema.index({ service_area_id: 1, is_active: 1, is_online: 1 });
+StoreSchema.index({ status: 1, verification_status: 1 });
 
-StoreSchema.post("findOneAndUpdate", async function (doc) {
+// ── Redis sync hooks ──────────────────────────────────────────────────────────
+const syncStoreToRedis = async (doc) => {
     if (!doc) return;
     try {
-        if (doc.is_active && doc.is_online) {
+        const { addStoreToRedis, removeStoreFromRedis } = await import(
+            "../services/storeServices.js"
+        );
+
+        const shouldBeInRedis =
+            doc.is_active &&
+            doc.is_online &&
+            doc.status === ACCOUNT_STATUS.ACTIVE &&
+            doc.verification_status === VERIFICATION_STATUS.VERIFIED;
+
+        if (shouldBeInRedis) {
             await addStoreToRedis(doc);
         } else {
             await removeStoreFromRedis(doc._id, doc.service_area_id);
@@ -134,11 +161,10 @@ StoreSchema.post("findOneAndUpdate", async function (doc) {
     } catch (err) {
         console.error(`[Store Hook] Redis sync failed for ${doc._id}:`, err.message);
     }
-});
+};
 
-StoreSchema.index({ location: "2dsphere" });
-StoreSchema.index({ service_area_id: 1, is_active: 1, is_online: 1 });
-StoreSchema.index({ store_owner_id: 1, status: 1 });
+StoreSchema.post("save", function () { return syncStoreToRedis(this); });
+StoreSchema.post("findOneAndUpdate", function (doc) { return syncStoreToRedis(doc); });
 
 const Store = mongoose.model("Store", StoreSchema);
 export default Store;

@@ -1,26 +1,22 @@
-// workers/autoCancelWorker.js
-
 import { Worker } from "bullmq";
 import { createBullConnection } from "../services/redisService.js";
 import { del } from "../services/redisService.js";
 import { cancelJob } from "../services/jobService.js";
 import Booking from "../models/Booking.js";
 import Store from "../models/Store.js";
-import { BOOKING_STATUS } from "../utils/constants.js";
+import { BOOKING_STATUS, JOB_QUEUES } from "../utils/constants.js";
 
 let worker;
 
 export const createAutoCancelWorker = () => {
     worker = new Worker(
-        "booking-auto-cancel",
+        JOB_QUEUES.BOOKING_AUTO_CANCEL,
         async (job) => {
             const { bookingId, reason, cancelledBy } = job.data;
 
             console.log(`[Auto Cancel] Checking booking: ${bookingId}`);
 
-            // ──────────────────────────────────────
-            // STEP 1: Check if cancellation needed
-            // ──────────────────────────────────────
+            // Check if cancellation needed
             const booking = await Booking.findById(bookingId)
                 .select("status storeId isActive")
                 .lean();
@@ -29,7 +25,7 @@ export const createAutoCancelWorker = () => {
                 return { success: false, reason: "not_found" };
             }
 
-            // Already progressed past driver assignment → skip
+            // Already progressed past driver assignment
             const skipStatuses = [
                 BOOKING_STATUS.DRIVER_ARRIVED,
                 BOOKING_STATUS.PICKED_UP,
@@ -51,16 +47,14 @@ export const createAutoCancelWorker = () => {
                 const pendingPickup = await import("../services/redisService.js").then(m => m.get(acceptKeyPickup));
                 const pendingDelivery = await import("../services/redisService.js").then(m => m.get(acceptKeyDelivery));
 
-                // If no pending acceptance keys, driver has accepted → skip
+                // If no pending acceptance keys, driver has accepted
                 if (!pendingPickup && !pendingDelivery) {
                     console.log(`[Auto Cancel] Driver already accepted for ${bookingId}, skipping`);
                     return { success: false, reason: "driver_accepted" };
                 }
             }
 
-            // ──────────────────────────────────────
-            // STEP 2: Cancel the booking
-            // ──────────────────────────────────────
+            // Cancel the booking
             const now = new Date();
 
             const updated = await Booking.findOneAndUpdate(
@@ -70,8 +64,6 @@ export const createAutoCancelWorker = () => {
                         $in: [
                             BOOKING_STATUS.CREATED,
                             BOOKING_STATUS.STORE_ASSIGNED,
-                            BOOKING_STATUS.DRIVER_SEARCH,
-                            BOOKING_STATUS.DRIVER_ASSIGNED,
                         ],
                     },
                 },
@@ -100,9 +92,7 @@ export const createAutoCancelWorker = () => {
                 return { success: false, reason: "update_failed" };
             }
 
-            // ──────────────────────────────────────
-            // STEP 3: Release store capacity
-            // ──────────────────────────────────────
+            // Release store capacity
             if (booking.storeId) {
                 await Store.findByIdAndUpdate(booking.storeId, {
                     $inc: { booking_assigned_count: -1 },
@@ -110,9 +100,7 @@ export const createAutoCancelWorker = () => {
                 console.log(`[Auto Cancel] Released capacity for store ${booking.storeId}`);
             }
 
-            // ──────────────────────────────────────
-            // STEP 4: Clean up all related jobs
-            // ──────────────────────────────────────
+            // Clean up all related jobs
             await Promise.all([
                 cancelJob("driver-assign", `driver-pickup-${bookingId}`),
                 cancelJob("driver-assign", `check-accept-${bookingId}-pickup`),
@@ -128,7 +116,7 @@ export const createAutoCancelWorker = () => {
             //     reason,
             // });
 
-            console.log(`[Auto Cancel] ✅ Booking ${bookingId} cancelled: ${reason}`);
+            console.log(`[Auto Cancel] Booking ${bookingId} cancelled: ${reason}`);
 
             return { success: true, bookingId };
         },

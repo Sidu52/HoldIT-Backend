@@ -400,7 +400,7 @@ export const updateAddress = async (req, res) => {
             user.addresses.forEach(addr => {
                 addr.is_default = String(addr._id) === String(id);
             });
-        } 
+        }
         else if (is_default === false && address.is_default) {
             const defaultCount = user.addresses.filter(a => a.is_default).length;
 
@@ -443,7 +443,7 @@ export const updateAddress = async (req, res) => {
 
 export const deleteAddress = async (req, res) => {
     try {
-       const userId = req.user.auth_id;
+        const userId = req.user.auth_id;
         const { id } = req.params;
 
         const user = await User.findById(userId).select("addresses");
@@ -518,44 +518,76 @@ export const deleteAddress = async (req, res) => {
 // GET NEAREST STORE
 export const getNearestStore = async (req, res) => {
     try {
-        const { lat, lng, max_distance = 5000 } = req.query;
-        console.log("req.params",req.query)
-        const latNum = Number(lat);
-        const lngNum = Number(lng);
-        const maxDist = Number(max_distance);
+        const userId = req.user.auth_id;
 
-        // Cache key based on rounded coordinates (grid-based caching)
-        const roundedLat = Math.round(latNum * 100) / 100;
-        const roundedLng = Math.round(lngNum * 100) / 100;
-        const cacheKey = `nearest_store:${roundedLat}:${roundedLng}:${maxDist}`;
+        // ── 1. Get user's current location ────────────────────────────
+        const user = await User.findById(userId)
+            .select("location is_active status")
+            .lean();
 
-        const cached = await get(cacheKey);
+        if (!user) {
+            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        // With this:
+        const [lng, lat] = user.location?.coordinates ?? [];
+
+        if (
+            typeof lat !== "number" || typeof lng !== "number" ||
+            isNaN(lat) || isNaN(lng)
+        ) {
+            return sendError(
+                res,
+                "Your location is not set. Please update your location and try again.",
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
+
+        // ── 2. Check cache ─────────────────────────────────────────────
+        // Key includes rounded coords (2 decimal places ≈ 1.1 km precision)
+        // so nearby users share the same cache entry
+        const cacheKey = `nearest_stores:${lat.toFixed(2)}:${lng.toFixed(2)}`;
+
+        const cached = await get(cacheKey).catch(() => null);
         if (cached) {
             return sendResponse({
                 res,
-                message: "Nearest store fetched successfully",
+                message: "Nearest stores fetched successfully",
                 data: JSON.parse(cached),
             });
         }
 
-        // Use $geoNear for distance calculation
+        // ── 3. Aggregate nearest stores ───────────────────────────────
         const stores = await Store.aggregate([
             {
                 $geoNear: {
                     near: {
                         type: "Point",
-                        coordinates: [lngNum, latNum],
+                        coordinates: [lng, lat],    // GeoJSON: [lng, lat]
                     },
-                    distanceField: "distance",
+                    key: "location",       // explicit — model has multiple indexes
+                    distanceField: "distance",       // metres
                     spherical: true,
-                    maxDistance: maxDist,
+                    maxDistance: 5 * 1000,
                     query: {
-                        store_is_active: true,
-                        is_deleted: { $ne: true },
+                        is_active: true,
+                        is_online: true,
+                        verification_status: "verified",
+                        status:  ACCOUNT_STATUS.ACTIVE,
                     },
                 },
             },
-            { $limit: 5 }, // Return top 5 nearest
+            {
+                // Compute available capacity inline
+                $addFields: {
+                    availableSlots: {
+                        $subtract: [
+                            { $ifNull: ["$max_booking_capacity", 50] },
+                            { $ifNull: ["$booking_assigned_count", 0] },
+                        ],
+                    },
+                },
+            },
             {
                 $project: {
                     _id: 1,
@@ -564,46 +596,49 @@ export const getNearestStore = async (req, res) => {
                     store_open_time: 1,
                     store_close_time: 1,
                     location: 1,
-                    distance: {
-                        $round: [
-                            { $divide: ["$distance", 1000] },
-                            2,
-                        ],
-                    }, // Convert to km, round 2 decimals
+                    availableSlots: 1,
+                    rating: 1,
+                    // Convert metres → km, round to 2 decimal places
+                    distanceKm: {
+                        $round: [{ $divide: ["$distance", 1000] }, 2],
+                    },
                 },
             },
         ]);
 
-        if (stores.length === 0) {
+        if (!stores.length) {
             return sendError(
                 res,
-                "No stores found near your location",
+                "No stores found near your location. Please try again later.",
                 STATUS_CODES.NOT_FOUND
             );
         }
 
+        // ── 4. Shape response ──────────────────────────────────────────
         const responseData = {
             nearest: stores[0],
             alternatives: stores.slice(1),
             total: stores.length,
         };
 
-        // Cache for 10 minutes
+        // ── 5. Cache result ────────────────────────────────────────────
         await set(
             cacheKey,
             JSON.stringify(responseData),
             "EX",
-            STORE_CACHE_TTL
+            600
+        ).catch((err) =>
+            console.warn("[getNearestStore] Cache write failed:", err.message)
         );
 
         return sendResponse({
             res,
-            message: "Nearest store fetched successfully",
+            message: "Nearest stores fetched successfully",
             data: responseData,
         });
     } catch (err) {
-        console.error("Get Nearest Store Error:", err);
-        return sendError(res, "Failed to find nearest store");
+        console.error("[getNearestStore] Error:", err.message);
+        return sendError(res, "Failed to find nearest stores");
     }
 };
 
@@ -626,7 +661,7 @@ export const getStoreById = async (req, res) => {
 
         const store = await Store.findOne({
             _id: store_id,
-            store_is_active: true,
+            is_active: true,
             is_deleted: { $ne: true },
         })
             .select(
@@ -657,5 +692,75 @@ export const getStoreById = async (req, res) => {
     } catch (err) {
         console.error("Get Store By ID Error:", err);
         return sendError(res, "Failed to fetch store");
+    }
+};
+
+// UPDATE USER LOCATION
+export const updateLocation = async (req, res) => {
+    try {
+        const userId = req.user.auth_id;
+        const { lat, lng } = req.body;
+
+        // Validate coordinates
+        if (
+            typeof lat !== "number" ||
+            typeof lng !== "number" ||
+            isNaN(lat) ||
+            isNaN(lng) ||
+            lat < -90 ||
+            lat > 90 ||
+            lng < -180 ||
+            lng > 180
+        ) {
+            return sendError(
+                res,
+                "Invalid coordinates",
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
+
+        // Find user
+        const user = await User.findById(userId).select("addresses");
+
+        if (!user) {
+            return sendError(
+                res,
+                STATUS_CODES.NOT_FOUND,
+                "User not found"
+            );
+        }
+
+        // Find address by ID
+        const address = user.addresses.find(
+            addr => String(addr._id) === String(req.body.address_id)
+        );
+
+        if (!address) {
+            return sendError(
+                res,
+                STATUS_CODES.NOT_FOUND,
+                "Address not found"
+            );
+        }
+
+        // Update address
+        address.coordinates = [lng, lat];
+        await address.save();
+
+        // Sync user location
+        await syncUserLocationWithAddress(userId, address);
+
+        return sendResponse({
+            res,
+            message: "Location updated",
+            data: address
+        });
+    } catch (error) {
+        console.error("Update location error:", error);
+        return sendError(
+            res,
+            "Failed to update location",
+            error.message
+        );
     }
 };

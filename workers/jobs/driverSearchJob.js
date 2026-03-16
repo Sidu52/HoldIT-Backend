@@ -2,7 +2,6 @@ import { Worker } from "bullmq";
 import { createBullConnection } from "../../services/redisService.js";
 import redis from "../../services/redisService.js";
 import Driver from "../../models/Driver.js";
-import { BOOKING_STATUS } from "../../utils/constants.js";
 import {
     DRIVER_ASSIGNMENT,
     DRIVER_JOB_NAMES,
@@ -89,142 +88,104 @@ const JOB_HANDLERS = {
 async function handleSearchDrivers(job) {
     const { bookingId, type = "PICKUP" } = job.data;
 
-    console.log(`\n[Search] ══════════════════════════════════════`);
-    console.log(`[Search] Starting ${type} driver search for ${bookingId}`);
+    console.log(`\n[Search] ═══════════════════════════════`);
+    console.log(`[Search] bookingId=${bookingId} type=${type}`);
 
-    // Prevent duplicate searches
     const searchLocked = await markSearchActive(bookingId);
+    console.log(`[Search] searchLocked=${searchLocked}`);
+
     if (!searchLocked) {
-        console.log(`[Search] Search already active for ${bookingId}. Skipping.`);
+        console.log(`[Search] Already active for ${bookingId} — skipping`);
         return { success: false, reason: "search_already_active" };
     }
 
     try {
-        // Pre-check BookingDetail
         const { awaiting, reason } = await isBookingAwaitingDriver(bookingId);
+        console.log(`[Search] isBookingAwaitingDriver: awaiting=${awaiting} reason=${reason}`);
 
         if (!awaiting) {
-            console.log(`[Search] Booking ${bookingId} doesn't need driver: ${reason}`);
             await clearSearchActive(bookingId);
             return { success: false, reason };
         }
 
-        // Get booking details
         const booking = await getBookingForDriverSearch(bookingId);
+        console.log(`[Search] booking:`, JSON.stringify({
+            status: booking?.status,
+            storeId: booking?.storeId,
+            serviceAreaId: booking?.serviceAreaId,
+            pickupLocation: booking?.pickupLocation,
+        }));
 
         if (!booking) {
             await clearSearchActive(bookingId);
             return { success: false, reason: "booking_not_found" };
         }
 
-        if (booking.status === BOOKING_STATUS.CANCELLED) {
-            await clearSearchActive(bookingId);
-            return { success: false, reason: "booking_cancelled" };
-        }
-
-        if (type === "PICKUP" && !booking.storeId) {
-            console.log(`[Search] No store assigned for ${bookingId}`);
-            await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.NO_STORE_ASSIGNED);
-            await clearSearchActive(bookingId);
-            return { success: false, reason: "no_store" };
-        }
-
-        // Get location
         const location = type === "PICKUP"
             ? booking.pickupLocation
             : booking.deliveryLocation;
 
+        console.log(`[Search] location for type=${type}:`, JSON.stringify(location));
+
         if (!location?.lat || !location?.lng) {
-            console.log(`[Search] Invalid location for ${bookingId}`);
+            console.log(`[Search] Invalid location — cancelling`);
             await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.INVALID_LOCATION);
             await clearSearchActive(bookingId);
             return { success: false, reason: "invalid_location" };
         }
 
-        // Update status to DRIVER_SEARCH
-        await updateBookingStatus(
-            bookingId,
-            BOOKING_STATUS.DRIVER_SEARCH,
-            `Searching for ${type.toLowerCase()} driver`
-        );
-
-        // Search Redis geo keys
         const geoKeys = await getDriverGeoKeys(booking.serviceAreaId);
-        console.log(`[Search] Scanning ${geoKeys.length} geo keys`);
+        console.log(`[Search] geoKeys:`, geoKeys);
 
         const nearbyDrivers = await searchNearbyDrivers(
             geoKeys,
-            location.lng,
-            location.lat,
+            location.lng,   // ← lng first
+            location.lat,   // ← lat second
             bookingId
         );
 
-        console.log(`[Search] Redis found ${nearbyDrivers.length} candidates`);
+        console.log(`[Search] nearbyDrivers from Redis: ${nearbyDrivers.length}`);
 
         if (nearbyDrivers.length === 0) {
-            console.log(`[Search] No drivers nearby for ${bookingId}`);
             await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.NO_DRIVER_FOUND);
             await clearSearchActive(bookingId);
             return { success: false, reason: "no_drivers_nearby" };
         }
 
-        // Verify in MongoDB
         const driverIds = nearbyDrivers.map((d) => d.driverId);
         const verifiedDrivers = await verifyDriversInDB(driverIds);
+
+        console.log(`[Search] verifiedDrivers: ${verifiedDrivers.length}`);
+
         const verifiedSet = new Set(verifiedDrivers.map((d) => d._id.toString()));
-
-        // Identify and clean stale Redis entries
         const staleIds = driverIds.filter((id) => !verifiedSet.has(id));
-        if (staleIds.length > 0) {
-            await cleanStaleDrivers(geoKeys, staleIds);
-            console.log(`[Search] Cleaned ${staleIds.length} stale drivers`);
-        }
 
-        // Build verified candidate list
-        const verifiedMap = new Map(
-            verifiedDrivers.map((d) => [d._id.toString(), d])
-        );
+        if (staleIds.length > 0) {
+            console.log(`[Search] Cleaning ${staleIds.length} stale driver(s):`, staleIds);
+            await cleanStaleDrivers(geoKeys, staleIds);
+        }
 
         const validCandidates = nearbyDrivers
             .filter((d) => verifiedSet.has(d.driverId))
-            .slice(0, DRIVER_ASSIGNMENT.MAX_OFFER_ATTEMPTS)
-            .map((d) => ({
-                ...d,
-                name: getDriverName(verifiedMap.get(d.driverId)),
-            }));
+            .slice(0, DRIVER_ASSIGNMENT.MAX_OFFER_ATTEMPTS);
 
-        console.log(`[Search] ${validCandidates.length} verified candidates:`);
-        validCandidates.forEach((d, i) => {
-            console.log(`  ${i + 1}. ${d.name} — ${d.distanceKm}km`);
-        });
+        console.log(`[Search] validCandidates: ${validCandidates.length}`);
 
         if (validCandidates.length === 0) {
-            console.log(`[Search] No verified drivers for ${bookingId}`);
             await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.NO_DRIVER_FOUND);
             await clearSearchActive(bookingId);
             return { success: false, reason: "no_verified_drivers" };
         }
 
-        // Store candidates in Redis
-        const storedCount = await storeCandidates(
-            bookingId,
-            validCandidates.map((d) => d.driverId)
-        );
-
-        console.log(`[Search] Stored ${storedCount} candidates in Redis`);
-
-        // Start offering to first driver
+        await storeCandidates(bookingId, validCandidates.map((d) => d.driverId));
         await scheduleOfferNextDriver(bookingId, type, 1);
 
-        console.log(`[Search] ══════════════════════════════════════\n`);
+        console.log(`[Search] ✅ Search complete — ${validCandidates.length} candidate(s) queued`);
+        console.log(`[Search] ═══════════════════════════════\n`);
 
-        return {
-            success: true,
-            candidateCount: validCandidates.length,
-            bookingId,
-        };
+        return { success: true, candidateCount: validCandidates.length, bookingId };
     } catch (err) {
-        console.error(`[Search] Error for ${bookingId}:`, err);
+        console.error(`[Search] FATAL ERROR for ${bookingId}:`, err);
         await clearSearchActive(bookingId);
         throw err;
     }
@@ -283,10 +244,11 @@ async function handleOfferNextDriver(job) {
     }
 
     // Create offer in Redis
-    const { created, reason: offerReason } = await createDriverOffer(
-        bookingId,
-        nextDriverId
-    );
+  const { created, reason: offerReason } = await createDriverOffer(
+    bookingId,
+    nextDriverId,
+    attemptNumber
+);
 
     if (!created) {
         console.log(`[Offer] Cannot offer to ${nextDriverId}: ${offerReason}`);

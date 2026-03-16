@@ -179,7 +179,7 @@ export const getStoreOwnerById = async (req, res) => {
             store_owner_id: store_owner_id,
             is_deleted: { $ne: true },
         })
-            .select("store_name store_address store_is_active")
+            .select("store_name store_address is_active")
             .lean();
 
         const responseData = { ...owner, stores };
@@ -312,7 +312,7 @@ export const updateStoreOwnerStatus = async (req, res) => {
                 { store_owner_id, is_deleted: { $ne: true } },
                 {
                     $set: {
-                        store_is_active: false,
+                        is_active: false,
                         deactivation_reason: "Owner account blocked",
                     },
                 }
@@ -367,7 +367,7 @@ export const deleteStoreOwner = async (req, res) => {
         // Check for active stores
         const activeStores = await Store.countDocuments({
             store_owner_id,
-            store_is_active: true,
+            is_active: true,
             is_deleted: { $ne: true },
         });
 
@@ -395,7 +395,7 @@ export const deleteStoreOwner = async (req, res) => {
             {
                 $set: {
                     is_deleted: true,
-                    store_is_active: false,
+                    is_active: false,
                     deleted_by: auth_id,
                     deleted_at: new Date(),
                 },

@@ -57,7 +57,7 @@ const StoreOwnerSchema = new mongoose.Schema(
         onboarding_status: {
             type: String,
             enum: Object.values(ON_BOARDING_STATUS),
-            default: ON_BOARDING_STATUS.DEMO || "DEMO",
+            default: ON_BOARDING_STATUS.DEMO,
             index: true,
         },
         status: {

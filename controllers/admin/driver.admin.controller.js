@@ -289,7 +289,7 @@ export const updateDriverStatus = async (req, res) => {
             if (driver.is_active === is_active) {
                 return sendError(
                     res,
-                    `Driver is already ${is_active ? "active" : "inactive"}`,
+                    `Driver is already ${is_active ? ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
                     STATUS_CODES.CONFLICT
                 );
             }

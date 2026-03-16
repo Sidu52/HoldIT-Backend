@@ -6,7 +6,7 @@ import {
   delByPattern,
 } from "../../services/redisService.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
-import { STATUS_CODES } from "../../utils/constants.js";
+import { ACCOUNT_STATUS, STATUS_CODES } from "../../utils/constants.js";
 
 // Cache TTLs and constants
 const LIST_CACHE_TTL = 300; // 5 minutes
@@ -376,7 +376,7 @@ export const toggleServiceableAreaStatus = async (req, res) => {
     if (area.is_active === is_active) {
       return sendError(
         res,
-        `Area is already ${is_active ? "active" : "inactive"}`,
+        `Area is already ${is_active ?  ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
         STATUS_CODES.CONFLICT
       );
     }

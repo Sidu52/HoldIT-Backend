@@ -6,17 +6,14 @@ const LocationSchema = new mongoose.Schema(
     {
         lat: { type: Number, required: true },
         lng: { type: Number, required: true },
-        address: { type: String, required: true, maxlength: 500 },
+        address: { type: String, default: "", maxlength: 500 },
     },
     { _id: false }
 );
 
 const DriverAssignmentSchema = new mongoose.Schema(
     {
-        driverId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Driver",
-        },
+        driverId: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" },
         assignedAt: Date,
         acceptedAt: Date,
         startedAt: Date,
@@ -53,6 +50,7 @@ const TimelineEntrySchema = new mongoose.Schema(
     { _id: false }
 );
 
+// BOOKING SCHEMA
 const BookingSchema = new mongoose.Schema(
     {
         userId: {
@@ -74,6 +72,7 @@ const BookingSchema = new mongoose.Schema(
         bookingCode: {
             type: String,
             unique: true,
+            index: true,
         },
         status: {
             type: String,
@@ -92,46 +91,53 @@ const BookingSchema = new mongoose.Schema(
             default: true,
             index: true,
         },
+
+        // Luggage
         luggage: {
             small: { type: Number, default: 0, min: 0 },
             medium: { type: Number, default: 0, min: 0 },
             large: { type: Number, default: 0, min: 0 },
             other: { type: Number, default: 0, min: 0 },
-            totalCount: {
-                type: Number,
-                min: 1,
-            },
+            totalCount: { type: Number, min: 1 },
         },
         luggagePhotos: {
             pickup: [{ type: String, maxlength: 500 }],
             store: [{ type: String, maxlength: 500 }],
             delivery: [{ type: String, maxlength: 500 }],
         },
-        pickupLocation: {
-            type: LocationSchema,
-            required: true,
+
+        // Notes
+        notes: {
+            type: String,
+            maxlength: 500,
+            default: "",
         },
-        deliveryLocation: {
-            type: LocationSchema,
-            default: null,
-        },
+
+        // Locations
+        pickupLocation: { type: LocationSchema, required: true },
+        deliveryLocation: { type: LocationSchema, default: null },
+
+        // Pickup
         pickup: {
             scheduledAt: Date,
             assignment: DriverAssignmentSchema,
         },
+
+        // Storage
         storage: {
             storedAt: Date,
-            expectedDurationHours: {
-                type: Number,
-                min: 1,
-            },
+            expectedDurationHours: { type: Number, min: 1 },
             releasedAt: Date,
         },
+
+        // Delivery
         delivery: {
             requestedAt: Date,
             scheduledAt: Date,
             assignment: DriverAssignmentSchema,
         },
+
+        // Pricing
         pricing: {
             perHourRate: { type: Number, min: 0 },
             storageHours: { type: Number, min: 0 },
@@ -143,26 +149,25 @@ const BookingSchema = new mongoose.Schema(
                 ref: "PricingRule",
             },
         },
+
+        // Payment
         payment: {
             status: {
                 type: String,
-                enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
-                default: "PENDING",
+                enum: ["pending", "paid", "failed", "refunded"],
+                default: "pending",
                 index: true,
             },
             paidAt: Date,
-            transactionId: {
-                type: String,
-                sparse: true,
-            },
+            transactionId: { type: String, sparse: true },
             refundedAt: Date,
-            refundAmount: {
-                type: Number,
-                min: 0,
-            },
+            refundAmount: { type: Number, min: 0 },
         },
+
+        // Timeline
         timeline: [TimelineEntrySchema],
 
+        // Cancellation
         cancelledAt: Date,
         cancelledBy: {
             type: String,
@@ -180,47 +185,54 @@ const BookingSchema = new mongoose.Schema(
     }
 );
 
-// Auto generate booking code
+// Generate unique booking code on first save
 BookingSchema.pre("save", async function () {
-    if (!this.bookingCode) {
-        this.bookingCode =
+    if (this.bookingCode) return;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const code =
             "HLD-" +
             Date.now().toString(36).toUpperCase() +
             "-" +
-            crypto.randomBytes(3).toString("hex").toUpperCase();
+            crypto.randomBytes(4).toString("hex").toUpperCase();
+
+        const existing = await mongoose.model("Booking").findOne(
+            { bookingCode: code },
+            { bookingCode: 1 }
+        );
+
+        if (!existing) {
+            this.bookingCode = code;
+            return;
+        }
     }
+
+    throw new Error("Failed to generate unique booking code — please retry");
 });
 
-// Luggage validation & total count
+// Only runs when luggage is actually modified
 BookingSchema.pre("save", async function () {
     if (!this.isModified("luggage")) return;
 
-    if (this.luggage) {
-        const { small = 0, medium = 0, large = 0, other = 0 } = this.luggage;
-        const total = small + medium + large + other;
+    const {
+        small = 0,
+        medium = 0,
+        large = 0,
+        other = 0,
+    } = this.luggage;
 
-        if (total < 1) {
-            throw new Error("At least one luggage item is required");
-        }
+    const total = small + medium + large + other;
 
-        this.luggage.totalCount = total;
+    if (total < 1) {
+        throw new Error("At least one luggage item is required");
     }
+
+    this.luggage.totalCount = total;
 });
 
-// Auto-track status changes in timeline
-BookingSchema.pre("save", async function () {
-    if (this.isModified("status")) {
-        this.timeline.push({
-            status: this.status,
-            note: "Status updated",
-            createdAt: new Date(),
-        });
-        this.lastStatusUpdatedAt = new Date();
-    }
-});
-
-// Indexes
+// INDEXES
 BookingSchema.index({ userId: 1, createdAt: -1 });
+BookingSchema.index({ userId: 1, status: 1, isActive: 1 });
 BookingSchema.index({ status: 1, isActive: 1 });
 BookingSchema.index({ storeId: 1, status: 1 });
 BookingSchema.index({ "pickup.assignment.driverId": 1, status: 1 });

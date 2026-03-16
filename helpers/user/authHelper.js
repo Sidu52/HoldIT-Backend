@@ -12,6 +12,7 @@ import {
     OTP_EXPIRY,
     OTP_MAX_REQUESTS_PER_HOUR,
     REFRESH_TOKEN_EXPIRY,
+    TOKEN_TYPES,
 } from "../../utils/constants.js";
 import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
 // 4 day set
@@ -43,13 +44,13 @@ export const generateTokenPair = async (userId) => {
 
     const accessToken = generateAccessToken({
         auth_id: userId,
-        type: "access",
+        type: TOKEN_TYPES.ACCESS,
     });
 
     const refreshToken = generateRefreshToken({
         auth_id: userId,
         token_id: tokenId,
-        type: "refresh",
+        type: TOKEN_TYPES.REFRESH,
     });
 
     await set(

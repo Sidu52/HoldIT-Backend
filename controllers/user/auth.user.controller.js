@@ -15,14 +15,14 @@ import {
     OTP_MAX_ATTEMPTS,
     OTP_COOLDOWN,
     JOB_QUEUES,
+    TOKEN_TYPES,
+    OTP_FAIL_WINDOW_SECONDS,
+    UNVERIFIED_USER_CLEANUP_DELAY_MS
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 
-// DERIVED TIME VALUES
-const OTP_FAIL_WINDOW_SECONDS = 15 * 60;
-const UNVERIFIED_USER_CLEANUP_DELAY_MS = 24 * 60 * 60 * 1000;
 
 // LOGIN / REGISTER
 export const authUser = async (req, res) => {
@@ -78,7 +78,7 @@ export const authUser = async (req, res) => {
             res,
             message: "OTP sent successfully",
             // ...(process.env.NODE_ENV === "development" && {
-                data: { otp },
+            data: { otp },
             // }),
         });
     } catch (err) {
@@ -145,7 +145,7 @@ export const sendOTP = async (req, res) => {
             res,
             message: "OTP sent successfully",
             // ...(process.env.NODE_ENV === "development" && {
-                data: { otp },
+            data: { otp },
             // }),
         });
     } catch (err) {
@@ -329,7 +329,7 @@ export const refreshToken = async (req, res) => {
             );
         }
 
-        if (decoded.type !== "refresh") {
+        if (decoded.type !== TOKEN_TYPES.REFRESH) {
             return sendError(
                 res,
                 "Invalid token type",
@@ -465,7 +465,7 @@ export const updateUserDetails = async (req, res) => {
                     },
                     isSignUp: true,
                     is_serviceable: isServiceable,
-                    service_area_id: serviceAreaId, 
+                    service_area_id: serviceAreaId,
                     last_active_at: new Date(),
                 },
             },
