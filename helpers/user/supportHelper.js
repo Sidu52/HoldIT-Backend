@@ -1,0 +1,168 @@
+import SupportTicket from "../../models/SupportTicket.js";
+import Booking from "../../models/Booking.js";
+import { get, set, del, delByPattern } from "../../services/redisService.js";
+import { addJobToQueue } from "../../services/jobService.js";
+import {
+    SUPPORT_CACHE,
+    OPEN_TICKET_STATUSES,
+    SUPPORT_LIMITS,
+    SUPPORT_JOB_OPTIONS,
+} from "../../constants/user/support.js";
+
+
+export const getCachedData = async (cacheKey) => {
+    try {
+        const cached = await get(cacheKey);
+        return cached ? JSON.parse(cached) : null;
+    } catch (err) {
+        console.error("Support cache read error:", err);
+        return null;
+    }
+};
+
+
+export const setCacheData = async (cacheKey, data, ttl) => {
+    try {
+        await set(cacheKey, JSON.stringify(data), "EX", ttl);
+    } catch (err) {
+        console.error("Support cache write error:", err);
+    }
+};
+
+
+export const invalidateTicketCache = async (userId, ticketId = null) => {
+    try {
+        const promises = [delByPattern(SUPPORT_CACHE.LIST_PATTERN(userId))];
+        if (ticketId) {
+            promises.push(del(SUPPORT_CACHE.DETAIL_KEY(userId, ticketId)));
+        }
+        await Promise.all(promises);
+    } catch (err) {
+        console.error("Support cache invalidation error:", err);
+    }
+};
+
+export const checkOpenTicketLimit = async (userId) => {
+    const count = await SupportTicket.countDocuments({
+        userId,
+        status: { $in: OPEN_TICKET_STATUSES },
+    });
+
+    return {
+        hasReachedLimit: count >= SUPPORT_LIMITS.MAX_OPEN_TICKETS,
+        currentCount: count,
+    };
+};
+
+
+export const verifyBookingOwnership = async (bookingId, userId) => {
+    if (!bookingId) return { valid: true, booking: null };
+
+    const booking = await Booking.findOne({
+        _id: bookingId,
+        userId,
+    })
+        .select("_id bookingCode status")
+        .lean();
+
+    return {
+        valid: !!booking,
+        booking,
+    };
+};
+
+
+export const canReplyToTicket = (ticket, replyableStatuses) => {
+    if (!replyableStatuses.includes(ticket.status)) {
+        return { canReply: false, reason: "CLOSED" };
+    }
+
+    if (ticket.messages && ticket.messages.length >= SUPPORT_LIMITS.MAX_MESSAGES_PER_TICKET) {
+        return { canReply: false, reason: "MAX_MESSAGES" };
+    }
+
+    return { canReply: true, reason: null };
+};
+
+
+export const findUserTicket = async (ticketId, userId, selectFields = "") => {
+    return SupportTicket.findOne({
+        _id: ticketId,
+        userId,
+    })
+        .select(selectFields)
+        .lean();
+};
+
+
+export const findMutableUserTicket = async (ticketId, userId, selectFields = "") => {
+    return SupportTicket.findOne({
+        _id: ticketId,
+        userId,
+    }).select(selectFields);
+};
+
+
+export const buildMessage = (senderId, senderModel, message, attachments = []) => {
+    return {
+        senderId,
+        senderModel,
+        message: message.trim(),
+        attachments: attachments.slice(0, SUPPORT_LIMITS.MAX_ATTACHMENTS_PER_MESSAGE),
+        isRead: false,
+    };
+};
+
+
+export const buildTicketData = (userId, body, initialMessage) => {
+    return {
+        userId,
+        subject: body.subject.trim(),
+        category: body.category,
+        priority: body.priority || undefined,
+        bookingId: body.bookingId || null,
+        messages: [initialMessage],
+    };
+};
+
+export const getUnreadCount = (messages, userId) => {
+    if (!messages || messages.length === 0) return 0;
+
+    return messages.filter(
+        (msg) =>
+            msg.senderModel === "Admin" &&
+            !msg.isRead &&
+            msg.senderId.toString() !== userId.toString()
+    ).length;
+};
+
+export const enrichTicketList = (tickets, userId) => {
+    return tickets.map((ticket) => ({
+        ...ticket,
+        unreadCount: getUnreadCount(ticket.messages, userId),
+        messages: undefined,
+    }));
+};
+
+
+export const buildPagination = (page, limit, total) => {
+    const totalPages = Math.ceil(total / limit);
+    return {
+        currentPage: page,
+        totalPages,
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+    };
+};
+
+export const queueSupportJob = (queueName, jobName, data) => {
+    const jobId = `${queueName}-${data.ticketId || Date.now()}`;
+
+    addJobToQueue(
+        queueName,
+        { name: jobName, data },
+        { jobId, ...SUPPORT_JOB_OPTIONS }
+    ).catch((err) => console.error(`Failed to queue ${jobName}:`, err));
+};

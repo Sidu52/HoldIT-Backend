@@ -10,38 +10,98 @@ import {
     createAdminForgotPasswordToken,
     updateAdminPassword,
     verifyAdminForgotPasswordToken,
+    verifyAuth,
 } from "../../controllers/admin/auth.admin.controller.js";
 import {
     forgotPasswordSchema,
     loginSchema,
     resetPasswordSchema,
     signupSchema,
-    updatePasswordSchema
-} from "../../validations/auth.validation.js";
+    updatePasswordSchema,
+    tokenQuerySchema,
+} from "../../validations/admin/auth.validation.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
-import { sendResponse } from "../../utils/apiResponse.js";
 import { refresh } from "../../controllers/common/auth.common.controller.js";
 import { USER_ROLES } from "../../utils/constants.js";
 
 const router = express.Router();
 
-// Public
-router.post("/login", apiLimiter, validate(loginSchema), adminLogin);
-router.post("/signup", apiLimiter, validate(signupSchema), signUp);
-router.get("/verify-invite", verifyAdminInviteToken);
-router.get("/refresh", apiLimiter, (req, res) => refresh(req, res, USER_ROLES.ADMIN));
-router.post("/forgot-password", apiLimiter, validate(forgotPasswordSchema), createAdminForgotPasswordToken);
-router.post("/reset-password", apiLimiter, validate(resetPasswordSchema), updateAdminPassword);
-router.get("/verify-forgot-password", verifyAdminForgotPasswordToken);
-// Protected
+// Login
+router.post(
+    "/login",
+    apiLimiter,
+    validate(loginSchema),
+    adminLogin
+);
+
+// Signup via invite
+router.post(
+    "/signup",
+    apiLimiter,
+    validate(signupSchema),
+    signUp
+);
+
+// Verify invite token
+router.get(
+    "/verify-invite",
+    apiLimiter,
+    validate(tokenQuerySchema, "query"),
+    verifyAdminInviteToken
+);
+
+// Refresh access token
+router.post(
+    "/refresh",
+    apiLimiter,
+    (req, res) => refresh(req, res, USER_ROLES.ADMIN)
+);
+
+// Request password reset email
+router.post(
+    "/forgot-password",
+    apiLimiter,
+    validate(forgotPasswordSchema),
+    createAdminForgotPasswordToken
+);
+
+// Verify reset token (from email link)
+router.get(
+    "/verify-reset-token",
+    apiLimiter,
+    validate(tokenQuerySchema, "query"),
+    verifyAdminForgotPasswordToken
+);
+
+// Set new password with reset token
+router.post(
+    "/forgot-password/reset",
+    apiLimiter,
+    validate(resetPasswordSchema),
+    updateAdminPassword
+);
+
 router.use(authMiddleware);
-router.get("/verify", (req, res) => {
-    sendResponse({
-        res,
-        message: "User is valid",
-    });
-});
-router.post("/logout", adminLogout);
-router.put("/reset-password", validate(updatePasswordSchema), resetPassword);
+
+// Verify current session
+router.get(
+    "/verify",
+    verifyAuth
+);
+
+// Logout
+router.post(
+    "/logout",
+    apiLimiter,
+    adminLogout
+);
+
+// Change password
+router.put(
+    "/change-password",
+    apiLimiter,
+    validate(updatePasswordSchema),
+    resetPassword
+);
 
 export default router;

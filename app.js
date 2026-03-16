@@ -9,19 +9,21 @@ import helmet from 'helmet';
 import BulkUpload from "./routes/bulk_upload/bulk_upload.js";
 
 import AdminRoutes from "./routes/admin/index.js";
-import userRoutes from './routes/users/index.js';
+import UserRoutes from './routes/users/index.js';
+import DriverRoutes from './routes/driver/index.js';
 
 import swaggerUi from 'swagger-ui-express';
-import swaggerSpec from './swagger.js';
+// import swaggerSpec from './swagger.js';
+import { adminSwaggerSpec, userSwaggerSpec } from './swagger.js';
 
 import { initializeWorkers } from './workers/initializeWorkers.js';
-
+import { syncStoresToRedis } from "./services/storeSync.js";
+import { syncDriversToRedis } from "./services/driverSync.js";
 dotenv.config();
 
 const app = express();
 // Use cookie-parser middleware to parse cookies
 app.use(cookieParser());
-
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -37,7 +39,7 @@ app.use(helmet({
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
@@ -47,19 +49,42 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // MongoDB Connection
 connectMongo();
 
 initializeWorkers();
 
+
+// Sync stores to Redis on startup
+
+await syncStoresToRedis();
+await syncDriversToRedis();
+
+
 // Routes
 // Health check endpoint
 app.get("/health", (req, res) => res.json({ message: "OK" }));
 
+
 AdminRoutes(app);
-userRoutes(app);
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+DriverRoutes(app);
+UserRoutes(app);
+
+
+// app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use(
+  "/admin/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(adminSwaggerSpec)
+);
+
+app.use(
+  "/user/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(userSwaggerSpec)
+);
 app.use('/api/v1/', BulkUpload);
 
 

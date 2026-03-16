@@ -1,19 +1,71 @@
 import express from "express";
 import { apiLimiter } from "../../config/rateLimiter.js";
-import { authMiddleware, roleMiddleware } from "../../middlewares/auth.middleware.js";
-import { authUser, refresh, sendOTP, verifyOTP } from "../../controllers/common/auth.common.controller.js";
-import { USER_ROLES } from "../../utils/constants.js";
+import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { validate } from "../../middlewares/validate.middleware.js";
+import {
+    authUser,
+    refreshToken,
+    sendOTP,
+    verifyOTP,
+    updateUserDetails,
+    logout,
+} from "../../controllers/user/auth.user.controller.js";
+import {
+    loginSchema,
+    verifyOTPSchema,
+    resendOTPSchema,
+    updateUserDetailsSchema,
+} from "../../validations/user/auth.validation.js";
 
 const router = express.Router();
 
-// Public
-router.post("/login", apiLimiter, (req, res) => authUser(req, res, USER_ROLES.USER));
-router.post("/signup", apiLimiter, (req, res) => authUser(req, res, USER_ROLES.USER));
-router.post("/refresh", apiLimiter, (req, res) => refresh(req, res, USER_ROLES.USER));
-router.post("/resend-otp", apiLimiter, sendOTP);
-router.post("/verify-otp", apiLimiter, verifyOTP);
+// Login / Register
+router.post(
+    "/login",
+    apiLimiter,
+    validate(loginSchema),
+    authUser
+);
 
-// Protected
-// router.use(authMiddleware);
+// Resend OTP
+router.post(
+    "/resend-otp",
+    apiLimiter,
+    validate(resendOTPSchema),
+    sendOTP
+);
+
+// Verify OTP
+router.post(
+    "/verify-otp",
+    apiLimiter,
+    validate(verifyOTPSchema),
+    verifyOTP
+);
+
+// Refresh token
+router.post(
+    "/refresh",
+    apiLimiter,
+    refreshToken
+);
+
+// PROTECTED ROUTES
+router.use(authMiddleware);
+
+// Complete profile
+router.put(
+    "/complete-profile",
+    apiLimiter,
+    validate(updateUserDetailsSchema),
+    updateUserDetails
+);
+
+// Logout
+router.post(
+    "/logout",
+    apiLimiter,
+    logout
+);
 
 export default router;

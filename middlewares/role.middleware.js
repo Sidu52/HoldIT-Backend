@@ -1,19 +1,21 @@
 import { sendResponse } from "../utils/apiResponse.js";
+import { STATUS_CODES } from "../utils/constants.js";
 
 export const roleMiddleware = (...allowedRoles) => {
   return (req, res, next) => {
-    if (!req.user || !req.user.role) {
+    if (!req.user?.role) {
       return sendResponse({
         res,
-        message: "Unauthorized",
-        statusCode: 401
+        message: "Authentication required",
+        statusCode: STATUS_CODES.UNAUTHORIZED,
       });
     }
+
     if (!allowedRoles.includes(req.user.role)) {
       return sendResponse({
         res,
-        message: "Forbidden: Access denied",
-        statusCode: 403
+        message: "Insufficient permissions",
+        statusCode: STATUS_CODES.FORBIDDEN,
       });
     }
 

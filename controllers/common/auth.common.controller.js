@@ -59,9 +59,9 @@ export const authUser = async (req, res, role) => {
             .exec();
 
         // Manage auto-delete job
-        await cancelJob("delete-unverified-user", `delete-user-${phone}`);
+        await cancelJob( JOB_QUEUES.DELETE_UNVERIFIED_USER, `delete-user-${phone}`);
         // Schedule the new auto-delete job for the unverified user after 24 hours
-        await addJobToQueue("delete-unverified-user", { name: "delete-unverified-user", data: { phone } }, {
+        await addJobToQueue( JOB_QUEUES.DELETE_UNVERIFIED_USER, { name:  JOB_QUEUES.DELETE_UNVERIFIED_USER, data: { phone } }, {
             delay: 24 * 60 * 60 * 1000,
             jobId: `delete-user-${phone}`,
             removeOnComplete: true,
@@ -167,7 +167,7 @@ export const verifyOTP = async (req, res) => {
         });
 
         await redis.del(`otp:${phone}`);
-        await cancelJob("delete-unverified-user", `delete-user-${phone}`);
+        await cancelJob( JOB_QUEUES.DELETE_UNVERIFIED_USER, `delete-user-${phone}`);
 
         await Model.findOneAndUpdate(
             { auth_user_id: authUser._id },

@@ -1,85 +1,212 @@
+// services/redisService.js
+
 import Redis from "ioredis";
 import dotenv from "dotenv";
 dotenv.config();
 
-const redis = new Redis({
-  host: process.env.REDIS_HOST,
-  port: Number(process.env.REDIS_PORT),
-  username: process.env.REDIS_USERNAME,
-  password: process.env.REDIS_PASSWORD,
-  maxRetriesPerRequest: null,
-});
+// ============================================
+// CONFIGURATION & VALIDATION
+// ============================================
+const getRedisConfig = () => {
+    // Option 1: Full URL (Upstash, Redis Cloud, Railway, Render, etc.)
+    if (process.env.REDIS_URL) {
+        return {
+            url: process.env.REDIS_URL,
+            maxRetriesPerRequest: null,
+            ...(process.env.REDIS_TLS === "true" && {
+                tls: { rejectUnauthorized: false },
+            }),
+        };
+    }
 
-// Events
-redis.on("connect", () => console.log("🔌 Redis connected"));
-redis.on("ready", () => console.log("Redis ready"));
-redis.on("error", (err) => console.log("Redis Error:", err));
-redis.on("reconnecting", () => console.log("Redis reconnecting"));
+    // Option 2: Individual params
+    if (!process.env.REDIS_HOST || !process.env.REDIS_PORT) {
+        console.error("❌ Either REDIS_URL or (REDIS_HOST + REDIS_PORT) must be defined in .env");
+        process.exit(1);
+    }
 
-// Test read/write
-await redis.set("foo", "bar");
-await redis.get("foo");
+    return {
+        host: process.env.REDIS_HOST,
+        port: Number(process.env.REDIS_PORT),
+        username: process.env.REDIS_USERNAME || undefined,
+        password: process.env.REDIS_PASSWORD || undefined,
+        maxRetriesPerRequest: null,
+        ...(process.env.REDIS_TLS === "true" && {
+            tls: { rejectUnauthorized: false },
+        }),
+    };
+};
 
+// ============================================
+// EXPORTED CONFIG (used by BullMQ workers)
+// ============================================
+export const redisConnectionConfig = getRedisConfig();
+
+// ============================================
+// CREATE REDIS INSTANCE
+// ============================================
+const createRedisClient = (config, label = "Redis") => {
+    let client;
+
+    if (config.url) {
+        client = new Redis(config.url, {
+            maxRetriesPerRequest: config.maxRetriesPerRequest,
+            tls: config.tls,
+            lazyConnect: true,
+            connectTimeout: 10000,
+            retryStrategy(times) {
+                if (times > 10) {
+                    console.error(`[${label}] Max reconnection attempts reached`);
+                    return null;
+                }
+                return Math.min(times * 200, 5000);
+            },
+        });
+    } else {
+        client = new Redis({
+            ...config,
+            lazyConnect: true,
+            connectTimeout: 10000,
+            retryStrategy(times) {
+                if (times > 10) {
+                    console.error(`[${label}] Max reconnection attempts reached`);
+                    return null;
+                }
+                return Math.min(times * 200, 5000);
+            },
+        });
+    }
+
+    // Events
+    client.on("connect", () => console.log(`✅ [${label}] Connected`));
+    client.on("ready", () => console.log(`✅ [${label}] Ready`));
+    client.on("error", (err) => console.error(`❌ [${label}] Error:`, err.message));
+    client.on("reconnecting", () => console.log(`🔄 [${label}] Reconnecting...`));
+    client.on("close", () => console.warn(`⚠️  [${label}] Connection closed`));
+
+    return client;
+};
+
+// Main Redis instance
+const redis = createRedisClient(redisConnectionConfig, "Redis");
+
+// ============================================
+// BULLMQ CONNECTION FACTORY
+// Each BullMQ Queue/Worker needs its own connection
+// ============================================
+export const createBullConnection = (label = "BullMQ") => {
+    return createRedisClient(redisConnectionConfig, label);
+};
+
+// ============================================
+// INITIALIZATION
+// ============================================
+export const initRedis = async () => {
+    try {
+        await redis.connect();
+        await redis.ping();
+        console.log("✅ [Redis] Connection verified (PONG)");
+    } catch (err) {
+        console.error("❌ [Redis] Initialization failed:", err.message);
+        process.exit(1);
+    }
+};
+
+// ============================================
+// BASIC OPERATIONS
+// ============================================
+export const set = async (key, value, type, expiration) => {
+    if (!key || value === undefined || value === null) {
+        throw new Error("Redis SET: key and value are required");
+    }
+    if (type && expiration) {
+        return redis.set(key, value, type, expiration);
+    }
+    return redis.set(key, value);
+};
+
+export const get = async (key) => {
+    if (!key) throw new Error("Redis GET: key is required");
+    return redis.get(key);
+};
+
+export const del = async (key) => {
+    if (!key) throw new Error("Redis DEL: key is required");
+    return redis.del(key);
+};
+
+export const exists = async (key) => {
+    if (!key) throw new Error("Redis EXISTS: key is required");
+    return redis.exists(key);
+};
+
+export const ttl = async (key) => {
+    if (!key) throw new Error("Redis TTL: key is required");
+    return redis.ttl(key);
+};
+
+// ============================================
+// PATTERN-BASED OPERATIONS
+// ============================================
+
+/**
+ * Scan for keys matching a pattern
+ * Uses SCAN (non-blocking) instead of KEYS (blocking)
+ */
+export const scanKeys = async (pattern) => {
+    if (!pattern) throw new Error("Redis SCAN: pattern is required");
+
+    const keys = [];
+    let cursor = "0";
+
+    do {
+        const [nextCursor, foundKeys] = await redis.scan(
+            cursor,
+            "MATCH",
+            pattern,
+            "COUNT",
+            100
+        );
+        cursor = nextCursor;
+        keys.push(...foundKeys);
+    } while (cursor !== "0");
+
+    return { keys };
+};
+
+/**
+ * Delete all keys matching a pattern
+ */
+export const delByPattern = async (pattern) => {
+    if (!pattern) throw new Error("Redis DEL_PATTERN: pattern is required");
+
+    const { keys } = await scanKeys(pattern);
+
+    if (keys.length === 0) return 0;
+
+    const BATCH_SIZE = 100;
+    let deleted = 0;
+
+    for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+        const batch = keys.slice(i, i + BATCH_SIZE);
+        const result = await redis.del(...batch);
+        deleted += result;
+    }
+
+    return deleted;
+};
+
+// ============================================
+// SAFETY
+// ============================================
+export const flushall = async () => {
+    if (process.env.NODE_ENV === "production") {
+        throw new Error("flushall is disabled in production");
+    }
+    return redis.flushall();
+};
+
+// ============================================
+// DEFAULT EXPORT
+// ============================================
 export default redis;
-
-
-// Set key with expiration time
-export const set = (key, value, type ,expiration) => {
-  return new Promise((resolve, reject) => {
-    redis.set(key, value, type, expiration, (err, reply) => {
-      if (err) reject(err);
-      resolve(reply);
-    });
-  });
-};
-
-// Get key
-export const get = (key) => {
-  return new Promise((resolve, reject) => {
-    redis.get(key, (err, reply) => {
-      if (err) reject(err);
-      resolve(reply);
-    });
-  });
-};
-
-// Delete key
-export const del = (key) => {
-  return new Promise((resolve, reject) => {
-    redis.del(key, (err, reply) => {
-      if (err) reject(err);
-      resolve(reply);
-    });
-  });
-};
-
-// Exist key
-export const exists = (key) => {
-  return new Promise((resolve, reject) => {
-    redis.exists(key, (err, reply) => {
-      if (err) reject(err);
-      resolve(reply);
-    });
-  });
-};
-
-// Delete all keys
-export const flushall = () => {
-  return new Promise((resolve, reject) => {
-    redis.flushall((err, reply) => {
-      if (err) reject(err);
-      resolve(reply);
-    });
-  });
-};
-
-// ttl
-export const ttl = (key) => {
-  return new Promise((resolve, reject) => {
-    redis.ttl(key, (err, reply) => {
-      if (err) reject(err);
-      resolve(reply);
-    });
-  });
-};
-

@@ -1,29 +1,96 @@
-import mongoose from "mongoose";
-import Store from "../../models/Store.js";
-import StoreOwner from "../../models/StoreOwner.js";
-import { sendError, sendResponse } from "../../utils/apiResponse.js";
-import { get, set } from "../../services/redisService.js";
-import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
-import { updateStoreOwnerSchema, updateStoreSchema } from "../../validations/store_owner.validation.js";
+// controllers/admin/store.admin.controller.js
 
+import Store from "../../models/Store.js";
+import { sendError, sendResponse } from "../../utils/apiResponse.js";
+import { get, set, del, delByPattern } from "../../services/redisService.js";
+import { STATUS_CODES } from "../../utils/constants.js";
+
+// ============================================
+// CONSTANTS
+// ============================================
+const LIST_CACHE_TTL = 120;
+const DETAIL_CACHE_TTL = 300;
+const EXCLUDED_FIELDS = "-__v";
+
+const ALLOWED_UPDATE_FIELDS = [
+  "store_name",
+  "store_address",
+  "store_capacity",
+  "store_open_time",
+  "store_close_time",
+  "store_description",
+  "lat",
+  "lng",
+];
+
+// ============================================
+// HELPERS
+// ============================================
+const escapeRegex = (str) =>
+  str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const buildCacheKey = (prefix, params) => {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}:${v}`);
+  return `${prefix}:${parts.join(":")}`;
+};
+
+const invalidateStoreCache = async (storeId = null) => {
+  try {
+    const promises = [delByPattern("stores:*")];
+    if (storeId) promises.push(del(`store:${storeId}`));
+    await Promise.all(promises);
+  } catch (err) {
+    console.error("Store cache invalidation error:", err);
+  }
+};
+
+// ============================================
+// 1. GET STORES (Paginated)
+// ============================================
 export const getStores = async (req, res) => {
   try {
     const {
       page = 1,
       limit = 10,
       status,
+      is_active,
       search,
+      sort_by = "createdAt",
+      sort_order = "desc",
     } = req.query;
 
     const pageNum = Number(page);
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const filter = {};
-    if (status) filter.status = status;
-    if (search) filter.$or = [{ store_name: { $regex: search, $options: "i" } }, { store_address: { $regex: search, $options: "i" } }];
+    const filter = { is_deleted: { $ne: true } };
 
-    const cacheKey = `stores:${pageNum}:${limitNum}:${status|| "all"}:${search || "all"}`;
+    if (status) filter.status = status;
+    if (is_active !== undefined) filter.store_is_active = is_active;
+
+    if (search) {
+      const escaped = escapeRegex(search.trim());
+      filter.$or = [
+        { store_name: { $regex: escaped, $options: "i" } },
+        { store_address: { $regex: escaped, $options: "i" } },
+      ];
+    }
+
+    const sortDir = sort_order === "asc" ? 1 : -1;
+    const sort = { [sort_by]: sortDir };
+
+    const cacheKey = buildCacheKey("stores", {
+      page: pageNum,
+      limit: limitNum,
+      status,
+      is_active,
+      search,
+      sort_by,
+      sort_order,
+    });
 
     const cached = await get(cacheKey);
     if (cached) {
@@ -36,45 +103,50 @@ export const getStores = async (req, res) => {
 
     const [stores, total] = await Promise.all([
       Store.find(filter)
-        .sort({ createdAt: -1 })
+        .select(EXCLUDED_FIELDS)
+        .populate("store_owner_id", "name email phone")
+        .sort(sort)
         .skip(skip)
         .limit(limitNum)
         .lean(),
       Store.countDocuments(filter),
     ]);
 
+    const totalPages = Math.ceil(total / limitNum);
+
     const responseData = {
       stores,
-      pagination: { 
-        currentPage: Number(page),
-        totalPages: Math.ceil(total / limitNum),
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
         totalItems: total,
-        itemsPerPage: Number(limitNum), 
-        },
+        itemsPerPage: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      },
     };
 
-    await set(cacheKey, JSON.stringify(responseData), "EX", 120);
+    await set(cacheKey, JSON.stringify(responseData), "EX", LIST_CACHE_TTL);
 
-    sendResponse({
+    return sendResponse({
       res,
       message: "Stores fetched successfully",
       data: responseData,
     });
   } catch (err) {
     console.error("Get Stores Error:", err);
-    sendError(res, "Failed to fetch stores");
+    return sendError(res, "Failed to fetch stores");
   }
 };
 
+// ============================================
+// 2. GET STORE BY ID
+// ============================================
 export const getStoreById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { store_id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return sendError(res, "Invalid store ID", 400);
-    }
-
-    const cacheKey = `store:${id}`;
+    const cacheKey = `store:${store_id}`;
     const cached = await get(cacheKey);
     if (cached) {
       return sendResponse({
@@ -84,299 +156,216 @@ export const getStoreById = async (req, res) => {
       });
     }
 
-    const store = await Store.findById(id).lean().populate("store_owner_id");
+    const store = await Store.findOne({
+      _id: store_id,
+      is_deleted: { $ne: true },
+    })
+      .select(EXCLUDED_FIELDS)
+      .populate("store_owner_id", "name email phone")
+      .lean();
+
     if (!store) {
-      return sendError(res, "Store not found", 404);
+      return sendError(
+        res,
+        "Store not found",
+        STATUS_CODES.NOT_FOUND
+      );
     }
 
-    await set(cacheKey, JSON.stringify(store), "EX", 120);
+    await set(cacheKey, JSON.stringify(store), "EX", DETAIL_CACHE_TTL);
 
-    sendResponse({
+    return sendResponse({
       res,
       message: "Store fetched successfully",
       data: store,
     });
   } catch (err) {
-    console.error("Get Store Error:", err);
-    sendError(res, "Failed to fetch store");
+    console.error("Get Store By ID Error:", err);
+    return sendError(res, "Failed to fetch store");
   }
 };
 
+// ============================================
+// 3. UPDATE STORE
+// ============================================
 export const updateStore = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { store_id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return sendError(res, "Invalid store ID", 400);
-    }
+    const updates = {};
+    ALLOWED_UPDATE_FIELDS.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    });
 
-    const { error, value } = updateStoreSchema.validate(req.body);
-    if (error) {
-      return sendError(res, error.details[0].message, 400);
-    }
-
-    const {
-      store_name,
-      store_address,
-      store_capacity,
-      store_open_time,
-      store_close_time,
-      store_description,
-      lat,
-      lng,
-    } = value;
-
-    const updates = {
-      store_name,
-      store_address,
-      store_capacity,
-      store_open_time,
-      store_close_time,
-      store_description,
-      location: {
+    // Build location if lat/lng provided
+    if (updates.lat !== undefined && updates.lng !== undefined) {
+      updates.location = {
         type: "Point",
-        coordinates: [lng, lat],
-        address: store_address,
-      },
-    };
+        coordinates: [updates.lng, updates.lat],
+        address: updates.store_address || undefined,
+      };
+      delete updates.lat;
+      delete updates.lng;
+    } else if (
+      updates.lat !== undefined ||
+      updates.lng !== undefined
+    ) {
+      return sendError(
+        res,
+        "Both lat and lng are required to update location",
+        STATUS_CODES.BAD_REQUEST
+      );
+    }
 
-    const store = await Store.findByIdAndUpdate(
-      id,
+    if (Object.keys(updates).length === 0) {
+      return sendError(
+        res,
+        "No valid fields to update",
+        STATUS_CODES.BAD_REQUEST
+      );
+    }
+
+    updates.updated_by = req.user.auth_id;
+    updates.updated_at = new Date();
+
+    const store = await Store.findOneAndUpdate(
+      { _id: store_id, is_deleted: { $ne: true } },
       { $set: updates },
       { new: true, runValidators: true }
-    );
+    )
+      .select(EXCLUDED_FIELDS)
+      .lean();
 
     if (!store) {
-      return sendError(res, "Store not found", 404);
+      return sendError(
+        res,
+        "Store not found",
+        STATUS_CODES.NOT_FOUND
+      );
     }
 
-    await Promise.all([
-      set(`store:${id}`, "", "EX", 1),
-      set("stores:*", "", "EX", 1),
-    ]);
+    await invalidateStoreCache(store_id);
 
-    sendResponse({
+    return sendResponse({
       res,
       message: "Store updated successfully",
       data: store,
     });
   } catch (err) {
     console.error("Update Store Error:", err);
-    sendError(res, "Failed to update store");
+    return sendError(res, "Failed to update store");
   }
 };
 
+// ============================================
+// 4. TOGGLE STORE STATUS
+// ============================================
+export const toggleStoreStatus = async (req, res) => {
+  try {
+    const { store_id } = req.params;
+    const { is_active, reason } = req.body;
+    const { auth_id } = req.user;
+
+    const store = await Store.findOne({
+      _id: store_id,
+      is_deleted: { $ne: true },
+    })
+      .select("store_is_active store_name")
+      .lean();
+
+    if (!store) {
+      return sendError(
+        res,
+        "Store not found",
+        STATUS_CODES.NOT_FOUND
+      );
+    }
+
+    if (store.store_is_active === is_active) {
+      return sendError(
+        res,
+        `Store is already ${is_active ? "active" : "inactive"}`,
+        STATUS_CODES.CONFLICT
+      );
+    }
+
+    const updateData = {
+      store_is_active: is_active,
+      status_updated_by: auth_id,
+      status_updated_at: new Date(),
+    };
+
+    if (!is_active && reason) {
+      updateData.deactivation_reason = reason;
+    }
+
+    if (is_active) {
+      updateData.deactivation_reason = null;
+    }
+
+    const updatedStore = await Store.findByIdAndUpdate(
+      store_id,
+      { $set: updateData },
+      { new: true }
+    )
+      .select(EXCLUDED_FIELDS)
+      .lean();
+
+    await invalidateStoreCache(store_id);
+
+    return sendResponse({
+      res,
+      message: `Store ${is_active ? "activated" : "deactivated"} successfully`,
+      data: updatedStore,
+    });
+  } catch (err) {
+    console.error("Toggle Store Status Error:", err);
+    return sendError(res, "Failed to update store status");
+  }
+};
+
+// ============================================
+// 5. SOFT DELETE STORE
+// ============================================
 export const deleteStore = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { store_id } = req.params;
+    const { auth_id } = req.user;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return sendError(res, "Invalid store ID", 400);
-    }
+    const store = await Store.findOne({
+      _id: store_id,
+      is_deleted: { $ne: true },
+    })
+      .select("_id store_name")
+      .lean();
 
-    const store = await Store.findByIdAndDelete(id);
     if (!store) {
-      return sendError(res, "Store not found", 404);
+      return sendError(
+        res,
+        "Store not found",
+        STATUS_CODES.NOT_FOUND
+      );
     }
 
-    await Promise.all([
-      set(`store:${id}`, "", "EX", 1),
-      set("stores:*", "", "EX", 1),
-    ]);
+    await Store.findByIdAndUpdate(store_id, {
+      $set: {
+        is_deleted: true,
+        store_is_active: false,
+        deleted_by: auth_id,
+        deleted_at: new Date(),
+      },
+    });
 
-    sendResponse({
+    await invalidateStoreCache(store_id);
+
+    return sendResponse({
       res,
       message: "Store deleted successfully",
     });
   } catch (err) {
     console.error("Delete Store Error:", err);
-    sendError(res, "Failed to delete store");
+    return sendError(res, "Failed to delete store");
   }
 };
-
-
-// Store Owner
-export const getStoreOwners = async (req, res) => {
-  try {
-    const { page = 1, limit = 10, search } = req.query;
-
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
-    const skip = (pageNum - 1) * limitNum;
-
-    const filter = {};
-    if (search) {
-      filter.name = { $regex: search, $options: "i" }; // case-insensitive search
-    }
-
-    const cacheKey = `storeOwners:${pageNum}:${limitNum}:${search || "all"}`;
-
-    const cached = await get(cacheKey);
-    if (cached) {
-      return sendResponse({
-        res,
-        message: "Store owners fetched successfully",
-        data: JSON.parse(cached),
-      });
-    }
-
-    const [owners, total] = await Promise.all([
-      StoreOwner.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      StoreOwner.countDocuments(filter),
-    ]);
-
-    const responseData = {
-      owners,
-      pagination: {
-        currentPage: Number(page),
-        totalPages: Math.ceil(total / limitNum),
-        totalItems: total,
-        itemsPerPage: Number(limitNum),
-        },
-    };
-
-    await set(cacheKey, JSON.stringify(responseData), "EX", 120);
-
-    sendResponse({
-      res,
-      message: "Store owners fetched successfully",
-      data: responseData,
-    });
-  } catch (err) {
-    console.error("Get Store Owners Error:", err);
-    sendError(res, "Failed to fetch store owners");
-  }
-};
-
-export const getStoreOwnerById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return sendError(res, "Invalid store owner ID", 400);
-    }
-
-    const cacheKey = `storeOwner:${id}`;
-    const cached = await get(cacheKey);
-    if (cached) {
-      return sendResponse({
-        res,
-        message: "Store owner fetched successfully",
-        data: JSON.parse(cached),
-      });
-    }
-
-    const owner = await StoreOwner.findById(id).lean();
-    if (!owner) {
-      return sendError(res, "Store owner not found", 404);
-    }
-
-    await set(cacheKey, JSON.stringify(owner), "EX", 120);
-
-    sendResponse({
-      res,
-      message: "Store owner fetched successfully",
-      data: owner,
-    });
-  } catch (err) {
-    console.error("Get Store Owner Error:", err);
-    sendError(res, "Failed to fetch store owner");
-  }
-};
-
-export const createStoreOwner = async (req, res) => {
-  try {
-    const { error, value } = updateStoreOwnerSchema.validate(req.body);
-    if (error) {
-      return sendError(res, error.details[0].message, 400);
-    }
-
-    const owner = await StoreOwner.create(value);
-
-    // Invalidate owner cache
-    await set("storeOwners:*", "", "EX", 1);
-
-    sendResponse({
-      res,
-      message: "Store owner created successfully",
-      data: owner,
-    });
-  } catch (err) {
-    console.error("Create Store Owner Error:", err);
-    sendError(res, "Failed to create store owner");
-  }
-};
-
-
-export const updateStoreOwner = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return sendError(res, "Invalid store owner ID", 400);
-    }
-
-    const { error, value } = updateStoreOwnerSchema.validate(req.body);
-    if (error) {
-      return sendError(res, error.details[0].message, 400);
-    }
-
-    const owner = await StoreOwner.findByIdAndUpdate(
-      id,
-      { $set: value },
-      { new: true, runValidators: true }
-    );
-
-    if (!owner) {
-      return sendError(res, "Store owner not found", 404);
-    }
-
-    await Promise.all([
-      set(`storeOwner:${id}`, "", "EX", 1),
-      set("storeOwners:*", "", "EX", 1),
-    ]);
-
-    sendResponse({
-      res,
-      message: "Store owner updated successfully",
-      data: owner,
-    });
-  } catch (err) {
-    console.error("Update Store Owner Error:", err);
-    sendError(res, "Failed to update store owner");
-  }
-};
-
-export const deleteStoreOwner = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return sendError(res, "Invalid store owner ID", 400);
-    }
-
-    const owner = await StoreOwner.findByIdAndDelete(id);
-    if (!owner) {
-      return sendError(res, "Store owner not found", 404);
-    }
-
-    await Promise.all([
-      set(`storeOwner:${id}`, "", "EX", 1),
-      set("storeOwners:*", "", "EX", 1),
-    ]);
-
-    sendResponse({
-      res,
-      message: "Store owner deleted successfully",
-    });
-  } catch (err) {
-    console.error("Delete Store Owner Error:", err);
-    sendError(res, "Failed to delete store owner");
-  }
-};
-
-

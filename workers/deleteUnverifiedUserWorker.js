@@ -1,21 +1,45 @@
 import { Worker } from "bullmq";
-import redis from "../services/redisService.js"
+import { redisConnectionConfig } from "../services/redisService.js";
 import User from "../models/User.js";
+import { JOB_QUEUES } from "../utils/constants.js";
 
-// Worker for processing the 'delete-unverified-user' job
-export const deleteUnverifiedUserWorker = new Worker(
-  "delete-unverified-user",
-  async (job) => {
-    const { phone } = job.data;
-    try {
-      await User.deleteOne({ phone, isVerified: false });
-      console.log(`Deleted unverified user: ${phone}`);
-    } catch (error) {
-      console.error(`Failed to delete user ${phone}:`, error);
-      throw error; // Mark job as failed
-    }
-  },
-  {
-    connection: redis,
-  }
-);
+let worker;
+
+export const createDeleteUnverifiedUserWorker = () => {
+    worker = new Worker(
+         JOB_QUEUES.DELETE_UNVERIFIED_USER,
+        async (job) => {
+            const { phone } = job.data;
+
+            if (!phone) {
+                return { success: false, reason: "missing_phone" };
+            }
+
+            const deletedUser = await User.findOneAndDelete({
+                phone,
+                isVerified: false,
+                status: "PENDING",
+            });
+
+            if (deletedUser) {
+                console.log(`Deleted unverified user: ${phone}`);
+                return { success: true, phone };
+            }
+
+            console.log(`User ${phone} already verified or deleted`);
+            return { success: true, reason: "already_handled" };
+        },
+        {
+            connection: redisConnectionConfig,
+            concurrency: 5,
+        }
+    );
+
+    worker.on("error", (err) => {
+        console.error("deleteUnverifiedUserWorker error:", err.message);
+    });
+
+    return worker;
+};
+
+export const getWorker = () => worker;

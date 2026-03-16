@@ -1,10 +1,81 @@
-export const validate = (schema) => {
+import { sendResponse } from "../utils/apiResponse.js";
+import { STATUS_CODES } from "../utils/constants.js";
+
+
+export const validate = (schema, source = null) => {
     return (req, res, next) => {
-        const { error } = schema.validate(req.body, { abortEarly: false });
-        if (error) {
-            const errors = error.details.map((detail) => detail.message);
-            return res.status(400).json({ message: "Validation failed", errors });
+        if (source && typeof schema.validate === "function") {
+            return validateSingle(req, res, next, schema, source);
         }
-        next();
+        if (typeof schema === "object" && !schema.validate) {
+            return validateMultiple(req, res, next, schema);
+        }
+        if (typeof schema.validate === "function") {
+            return validateSingle(req, res, next, schema, "body");
+        }
+        console.error("[Validate] Invalid schema format passed to validate()");
+        return next();
     };
 };
+
+
+function validateSingle(req, res, next, schema, source) {
+    const dataToValidate = req[source];
+
+    const { error, value } = schema.validate(dataToValidate, {
+        abortEarly: false,
+        stripUnknown: true,
+    });
+
+    if (error) {
+        return sendValidationError(res, error);
+    }
+
+    // Store validated data
+    if (!req.validated) req.validated = {};
+    req.validated[source] = value;
+
+    // Also update original source for convenience
+    req[source] = value;
+
+    next();
+}
+
+function validateMultiple(req, res, next, schemaMap) {
+    if (!req.validated) req.validated = {};
+
+    for (const [source, schema] of Object.entries(schemaMap)) {
+        if (!["body", "params", "query"].includes(source)) continue;
+        if (!schema || typeof schema.validate !== "function") continue;
+
+        const dataToValidate = req[source];
+
+        const { error, value } = schema.validate(dataToValidate, {
+            abortEarly: false,
+            stripUnknown: true,
+        });
+
+        if (error) {
+            return sendValidationError(res, error);
+        }
+
+        req.validated[source] = value;
+        req[source] = value;
+    }
+
+    next();
+}
+
+function sendValidationError(res, error) {
+    const errors = error.details.map((detail) => ({
+        field: detail.path.join("."),
+        message: detail.message.replace(/"/g, ""),
+    }));
+
+    return sendResponse({
+        res,
+        message: "Validation failed",
+        statusCode: STATUS_CODES.BAD_REQUEST,
+        data: { errors },
+    });
+}

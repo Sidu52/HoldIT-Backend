@@ -1,53 +1,88 @@
+// routes/admin/user.admin.routes.js
+
 import express from "express";
-import { authMiddleware, roleMiddleware } from "../../middlewares/auth.middleware.js";
+import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { roleMiddleware } from "../../middlewares/role.middleware.js";
 import { apiLimiter } from "../../config/rateLimiter.js";
-import { USER_ROLES } from "../../utils/constants.js";
-import { getUsers, getUserById, updateUserProfile, updateUserStatus, bulkDeleteUsers } from "../../controllers/admin/user.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
-import { updateUserSchema, updateUserStatusSchema } from "../../validations/user.validation.js";
+import { USER_ROLES } from "../../utils/constants.js";
+import {
+  getUsers,
+  getUserById,
+  updateUserProfile,
+  updateUserStatus,
+  bulkDeactivateUsers,
+} from "../../controllers/admin/user.admin.controller.js";
+import {
+  userIdSchema,
+  listUsersSchema,
+  updateUserSchema,
+  updateUserStatusSchema,
+  bulkDeactivateSchema,
+} from "../../validations/admin/user.validation.js";
 
 const router = express.Router();
 
 router.use(authMiddleware);
 
+// Roles
+const VIEW_ROLES = [
+  USER_ROLES.SUPER_ADMIN,
+  USER_ROLES.ADMIN,
+  USER_ROLES.OPERATION_MANAGER,
+  USER_ROLES.CUSTOMER_SUPPORT,
+];
+
+const MODIFY_ROLES = [
+  USER_ROLES.SUPER_ADMIN,
+  USER_ROLES.ADMIN,
+];
+
+// Bulk deactivate 
+router.post(
+  "/bulk-deactivate",
+  apiLimiter,
+  roleMiddleware(...MODIFY_ROLES),
+  validate(bulkDeactivateSchema),
+  bulkDeactivateUsers
+);
+
+// List users
 router.get(
   "/",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  roleMiddleware(...VIEW_ROLES),
+  validate(listUsersSchema, "query"),
   getUsers
 );
 
+// Get user by ID
 router.get(
   "/:user_id",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  roleMiddleware(...VIEW_ROLES),
+  validate(userIdSchema, "params"),
   getUserById
 );
 
-// update user profile
+// Update user profile
 router.put(
   "/:user_id",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  roleMiddleware(...MODIFY_ROLES),
+  validate(userIdSchema, "params"),
   validate(updateUserSchema),
   updateUserProfile
 );
 
-// update user status
+// Update user status
 router.patch(
   "/:user_id/status",
   apiLimiter,
+  roleMiddleware(...MODIFY_ROLES),
+  validate(userIdSchema, "params"),
   validate(updateUserStatusSchema),
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   updateUserStatus
-);
-
-// Inactive user
-router.delete(
-  "/bulk-delete",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  bulkDeleteUsers
 );
 
 export default router;

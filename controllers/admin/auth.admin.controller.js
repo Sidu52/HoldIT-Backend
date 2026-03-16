@@ -1,117 +1,196 @@
-import { get, del, set, ttl } from "../../services/redisService.js";
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { v4 as uuidv4 } from "uuid";
+
+import { get, del, set } from "../../services/redisService.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import Admin from "../../models/Admin.js";
-import { ACCOUNT_STATUS, STATUS_CODES, REFRESH_TOKEN_EXPIRY, ACCESS_TOKEN_EXPIRY, } from "../../utils/constants.js";
-import bcrypt from "bcryptjs";
-import { generateAccessToken, generateRefreshToken } from "../../utils/token.js";
-import { v4 as uuidv4 } from 'uuid';
-import jwt from "jsonwebtoken";
 import sendEmail from "../../mailer/emailService.js";
+import {
+    generateAccessToken,
+    generateRefreshToken,
+} from "../../utils/token.js";
+import {
+    ACCOUNT_STATUS,
+    STATUS_CODES,
+    REFRESH_TOKEN_EXPIRY,
+    ACCESS_TOKEN_EXPIRY,
+    OTP_EXPIRY,
+} from "../../utils/constants.js";
 
-// Verify the invite token
+// CONSTANTS (Derived from base constants)
+const BCRYPT_SALT_ROUNDS = 12;
+const FORGOT_PASSWORD_EXPIRY = 60 * 60; // 1 hour in seconds
+const REFRESH_TOKEN_EXPIRY_SECONDS = REFRESH_TOKEN_EXPIRY * 24 * 60 * 60; // days → seconds
+const ACCESS_TOKEN_EXPIRY_SECONDS = ACCESS_TOKEN_EXPIRY * 60; // minutes → seconds
+
+const COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+};
+
+// HELPER: Set Auth Cookies
+const setAuthCookies = (res, accessToken, refreshToken) => {
+    res.cookie("accessToken", accessToken, {
+        ...COOKIE_OPTIONS,
+        maxAge: ACCESS_TOKEN_EXPIRY_SECONDS * 1000, // ms
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+        ...COOKIE_OPTIONS,
+        maxAge: REFRESH_TOKEN_EXPIRY_SECONDS * 1000, // ms
+    });
+};
+
+const clearAuthCookies = (res) => {
+    res.clearCookie("accessToken", COOKIE_OPTIONS);
+    res.clearCookie("refreshToken", COOKIE_OPTIONS);
+};
+
+// HELPER: Generate Token Pair
+const generateTokenPair = async (admin) => {
+    const tokenId = uuidv4();
+
+    const accessToken = generateAccessToken({
+        auth_id: admin._id,
+        role: admin.role,
+        type: "access",
+    });
+
+    const refreshToken = generateRefreshToken({
+        auth_id: admin._id,
+        token_id: tokenId,
+        type: "refresh",
+    });
+
+    // Store refresh token reference in Redis
+    await set(
+        `refresh:${admin._id}:${tokenId}`,
+        "valid",
+        "EX",
+        REFRESH_TOKEN_EXPIRY_SECONDS
+    );
+
+    return { accessToken, refreshToken };
+};
+
+// HELPER: Invalidate All Refresh Tokens
+const invalidateAllRefreshTokens = async (adminId) => {
+    const { keys } = await scanKeys(`refresh:${adminId}:*`);
+    if (keys.length > 0) {
+        await Promise.all(keys.map((key) => del(key)));
+    }
+};
+
+// VERIFY INVITE TOKEN
 export const verifyAdminInviteToken = async (req, res) => {
     try {
         const { token } = req.query;
-
-        if (!token) {
-            return sendError(res, "Token is required", STATUS_CODES.BAD_REQUEST);
-        }
-
         const inviteDataStr = await get(`admin-invite:${token}`);
         if (!inviteDataStr) {
-            return sendError(res, "Invalid or expired invite token", STATUS_CODES.UNAUTHORIZED);
+            return sendError(
+                res,
+                "Invalid or expired invite token",
+                STATUS_CODES.BAD_REQUEST
+            );
         }
 
         const inviteData = JSON.parse(inviteDataStr);
-        const admin = await Admin.findOne({ email: inviteData.email }).lean();
+        const admin = await Admin.findOne({ email: inviteData.email })
+            .select("email role isVerified")
+            .lean();
 
-        if (!admin || admin.isVerified) {
-            return sendError(res, "Invite no longer valid", STATUS_CODES.CONFLICT);
+        if (!admin) {
+            return sendError(
+                res,
+                "Invite is no longer valid",
+                STATUS_CODES.BAD_REQUEST
+            );
         }
 
-        sendResponse({
+        if (admin.isVerified) {
+            // Clean up the token since it's no longer needed
+            await del(`admin-invite:${token}`);
+            return sendError(
+                res,
+                "Account has already been activated",
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        return sendResponse({
             res,
             message: "Token verified successfully",
             data: {
                 email: admin.email,
                 role: admin.role,
-                expiresIn: await ttl(`admin-invite:${token}`),
             },
         });
     } catch (err) {
         console.error("Verify Invite Error:", err);
-        sendError(res, "Verification failed");
+        return sendError(res, "Verification failed");
     }
 };
 
-// Admin Login
+// ADMIN LOGIN
 export const adminLogin = async (req, res) => {
     try {
         const { email, password } = req.body;
-
-        if (!email || !password) {
-            return sendError(res, "Email and password are required", STATUS_CODES.BAD_REQUEST);
-        }
-
         const admin = await Admin.findOne({ email })
-            .select("+_id password_hash status role")
+            .select("_id email password_hash status role isVerified")
             .lean();
 
         if (!admin) {
-            return sendError(res, "Invalid email or password", STATUS_CODES.UNAUTHORIZED);
+            return sendError(
+                res,
+                "Invalid email or password",
+                STATUS_CODES.UNAUTHORIZED
+            );
+        }
+
+        if (!admin.isVerified) {
+            return sendError(
+                res,
+                "Account not activated. Please complete signup first.",
+                STATUS_CODES.FORBIDDEN
+            );
         }
 
         if (admin.status !== ACCOUNT_STATUS.ACTIVE) {
-            return sendError(res, "Account is not active", STATUS_CODES.FORBIDDEN);
+            return sendError(
+                res,
+                "Your account has been deactivated. Contact support.",
+                STATUS_CODES.FORBIDDEN
+            );
         }
+
         const isMatch = await bcrypt.compare(password, admin.password_hash);
         if (!isMatch) {
-            return sendError(res, "Invalid email or password", STATUS_CODES.UNAUTHORIZED);
+            return sendError(
+                res,
+                "Invalid email or password",
+                STATUS_CODES.UNAUTHORIZED
+            );
         }
 
-        const tokenId = uuidv4();
+        // Generate tokens
+        const { accessToken, refreshToken } = await generateTokenPair(admin);
 
-        const accessToken = generateAccessToken({
-            auth_id: admin._id,
-            role: admin.role,
-            type: "access",
-        });
+        // Set cookies
+        setAuthCookies(res, accessToken, refreshToken);
 
-        const refreshToken = generateRefreshToken({
-            auth_id: admin._id,
-            token_id: tokenId,
-            type: "refresh",
-        });
-
-        await set(
-            `refresh:${admin._id}:${tokenId}`,
-            "valid",
-            "EX",
-            REFRESH_TOKEN_EXPIRY
-        );
-
-        res.cookie("accessToken", accessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            maxAge: ACCESS_TOKEN_EXPIRY * 1000,
-        });
-
-        res.cookie("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            maxAge: REFRESH_TOKEN_EXPIRY * 1000,
-        });
-
-        await Admin.updateOne(
+        // Update last login (fire and forget — non-critical)
+        Admin.updateOne(
             { _id: admin._id },
             { last_login_at: new Date() }
-        );
+        ).catch((err) => console.error("Failed to update last login:", err));
 
         return sendResponse({
             res,
-            message: "Admin login successful",
+            message: "Login successful",
             data: {
                 user: {
                     id: admin._id,
@@ -122,42 +201,67 @@ export const adminLogin = async (req, res) => {
         });
     } catch (err) {
         console.error("Admin Login Error:", err);
-        sendError(res, "Login failed");
+        return sendError(res, "Login failed");
     }
 };
 
-// Signup with the invite token
+// SIGNUP
 export const signUp = async (req, res) => {
     try {
-        const { token } = req.query;
-        const { first_name, last_name, phone, address, dateOfBirth, password, confirmPassword, gender } = req.body;
+        const {
+            invite_token,
+            first_name,
+            last_name,
+            phone,
+            address,
+            date_of_birth,
+            password,
+            confirm_password,
+            gender,
+        } = req.body;
 
-        if (!token || !password || !confirmPassword) {
-            return sendError(res, "Token and password are required", STATUS_CODES.BAD_REQUEST);
-        }
-
-        if (password !== confirmPassword) {
-            return sendError(res, "Passwords do not match", STATUS_CODES.BAD_REQUEST);
-        }
-
-        const inviteDataStr = await get(`admin-invite:${token}`);
+        // Verify invite token
+        const inviteDataStr = await get(`admin-invite:${invite_token}`);
         if (!inviteDataStr) {
-            return sendError(res, "Invalid or expired invite token", STATUS_CODES.BAD_REQUEST);
+            return sendError(
+                res,
+                "Invalid or expired invite token",
+                STATUS_CODES.BAD_REQUEST
+            );
         }
 
         const inviteData = JSON.parse(inviteDataStr);
 
         const admin = await Admin.findOne({ email: inviteData.email });
         if (!admin) {
-            return sendError(res, "Admin not found", STATUS_CODES.NOT_FOUND);
+            return sendError(
+                res,
+                "Invite is no longer valid",
+                STATUS_CODES.BAD_REQUEST
+            );
         }
 
         if (admin.isVerified) {
-            return sendError(res, "Admin already verified", STATUS_CODES.CONFLICT);
+            await del(`admin-invite:${invite_token}`);
+            return sendError(
+                res,
+                "Account has already been activated",
+                STATUS_CODES.CONFLICT
+            );
         }
 
-        const passwordHash = await bcrypt.hash(password, 12);
+        if (password !== confirm_password) {
+            return sendError(
+                res,
+                "Passwords do not match",
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
 
+        // Hash password
+        const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+
+        // Update admin record
         await Admin.updateOne(
             { _id: admin._id },
             {
@@ -165,75 +269,78 @@ export const signUp = async (req, res) => {
                 last_name,
                 phone,
                 address,
-                date_of_birth: dateOfBirth,
+                date_of_birth,
                 password_hash: passwordHash,
                 gender,
                 isVerified: true,
-                status: ACCOUNT_STATUS.ACTIVE
+                status: ACCOUNT_STATUS.ACTIVE,
             }
         );
 
-        await del(`admin-invite:${token}`);
-        await del(`admin-invite-email:${admin.email}`);
+        // Cleanup invite tokens
+        await Promise.all([
+            del(`admin-invite:${invite_token}`),
+            del(`admin-invite-email:${admin.email}`),
+        ]);
 
-        sendResponse({ res, message: "Admin account created successfully" });
+        return sendResponse({
+            res,
+            statusCode: STATUS_CODES.CREATED,
+            message: "Account created successfully",
+        });
     } catch (err) {
         console.error("Signup Error:", err);
-        sendError(res, "Signup failed");
+        return sendError(res, "Signup failed");
     }
 };
 
-// Admin Logout
+// ADMIN LOGOUT
 export const adminLogout = async (req, res) => {
     try {
-        const refreshToken = req.cookies.refreshToken;
+        const refreshToken = req.cookies?.refreshToken;
 
         if (refreshToken) {
-            try {
-                const decoded = jwt.decode(refreshToken);
-                if (decoded?.auth_id && decoded?.token_id) {
-                    await del(`refresh:${decoded.auth_id}:${decoded.token_id}`);
-                }
-            } catch (err) {
-                console.error("Redis delete failed:", err);
+            const decoded = jwt.decode(refreshToken);
+            if (decoded?.auth_id && decoded?.token_id) {
+                await del(`refresh:${decoded.auth_id}:${decoded.token_id}`);
             }
         }
+        clearAuthCookies(res);
 
-        // Clear cookies
-        const cookieOptions = {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-        };
-        res.clearCookie("accessToken", cookieOptions);
-        res.clearCookie("refreshToken", cookieOptions);
-
-        return sendResponse({ res, message: "Logged out successfully" });
+        return sendResponse({
+            res,
+            message: "Logged out successfully",
+        });
     } catch (err) {
+        clearAuthCookies(res);
         console.error("Logout error:", err);
-        sendError(res, err);
+        return sendResponse({
+            res,
+            message: "Logged out successfully",
+        });
     }
 };
 
-// Forgot password
+// FORGOT PASSWORD — Request Reset Link
 export const createAdminForgotPasswordToken = async (req, res) => {
     try {
         const { email } = req.body;
 
-        if (!email) {
-            return sendError(res, "Email is required", STATUS_CODES.BAD_REQUEST);
+        const admin = await Admin.findOne({ email })
+            .select("_id email first_name status")
+            .lean();
+
+        const successMessage =
+            "If an account with that email exists, a reset link has been sent.";
+
+        if (!admin || admin.status !== ACCOUNT_STATUS.ACTIVE) {
+            return sendResponse({ res, message: successMessage });
         }
 
-        const admin = await Admin.findOne({ email });
-        if (!admin) {
-            return sendError(res, "Admin not found", STATUS_CODES.NOT_FOUND);
-        }
-
-        // prevent multiple active tokens
+        // Prevent multiple active tokens
         const existingToken = await get(`admin:forgot:email:${email}`);
         if (existingToken) {
-            return sendError(res, "Reset link already sent. Please check your email.", STATUS_CODES.CONFLICT);
+            return sendResponse({ res, message: successMessage });
         }
 
         const token = crypto.randomBytes(32).toString("hex");
@@ -244,141 +351,179 @@ export const createAdminForgotPasswordToken = async (req, res) => {
         };
 
         await Promise.all([
-            set(`admin:forgot:token:${token}`, JSON.stringify(payload), "EX", INVITE_TOKEN_EXPIRY),
-            set(`admin:forgot:email:${email}`, token, "EX", INVITE_TOKEN_EXPIRY),
+            set(
+                `admin:forgot:token:${token}`,
+                JSON.stringify(payload),
+                "EX",
+                FORGOT_PASSWORD_EXPIRY
+            ),
+            set(
+                `admin:forgot:email:${email}`,
+                token,
+                "EX",
+                FORGOT_PASSWORD_EXPIRY
+            ),
         ]);
 
         const resetLink = `${process.env.ADMIN_UI_URL}/admin/reset-password?token=${token}`;
 
         // Send email
-        sendEmail(
-            admin.email,
-            'Password Reset Request',
-            'password-reset-email.html',
-            { first_name: 'John', reset_link: resetLink }
+        sendEmail({
+            to: admin.email,
+            subject: "Password Reset Request",
+            template: "password-reset-email.html",
+            data: {
+                first_name: admin.first_name || "User",
+                reset_link: resetLink,
+            },
+            rawFields: ["reset_link"],
+        }).catch((err) =>
+            console.error("Failed to send reset email:", err.message)
         );
 
-        return sendResponse({
-            res,
-            message: "Password reset link sent successfully",
-        });
-
+        return sendResponse({ res, message: successMessage });
     } catch (error) {
         console.error("Forgot password error:", error);
-        return sendError(res, "Failed to send reset password link");
+        return sendError(res, "Failed to process request");
     }
 };
 
-// Update password
-export const updateAdminPassword = async (req, res) => {
-    try {
-        const { token, newPassword } = req.body;
-
-        if (!token || !newPassword) {
-            return sendError(res, "Token and new password are required", STATUS_CODES.BAD_REQUEST);
-        }
-
-        const data = await get(`admin:forgot:token:${token}`);
-        if (!data) {
-            return sendError(res, "Invalid or expired token", STATUS_CODES.BAD_REQUEST);
-        }
-
-        const { adminId, email } = JSON.parse(data);
-
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-        await Admin.findByIdAndUpdate(adminId, {
-            password: hashedPassword,
-        });
-
-        // destroy token
-        await Promise.all([
-            del(`admin:forgot:token:${token}`),
-            del(`admin:forgot:email:${email}`),
-        ]);
-
-        return sendResponse({
-            res,
-            message: "Password updated successfully",
-        });
-
-    } catch (error) {
-        console.error("Update password error:", error);
-        return sendError(res, "Failed to update password");
-    }
-};
-
-// Verify forgot password token
+// VERIFY FORGOT PASSWORD TOKEN
 export const verifyAdminForgotPasswordToken = async (req, res) => {
     try {
         const { token } = req.query;
 
-        if (!token) {
-            return sendError(res, "Token is required", STATUS_CODES.BAD_REQUEST);
-        }
-
         const data = await get(`admin:forgot:token:${token}`);
-
         if (!data) {
-            return sendError(res, "Invalid or expired token", STATUS_CODES.BAD_REQUEST);
+            return sendError(
+                res,
+                "Invalid or expired reset token",
+                STATUS_CODES.BAD_REQUEST
+            );
         }
-
-        const payload = JSON.parse(data);
 
         return sendResponse({
             res,
             message: "Token is valid",
-            data: {
-                adminId: payload.adminId,
-                email: payload.email,
-            },
+            data: { valid: true },
         });
-
     } catch (error) {
         console.error("Verify token error:", error);
         return sendError(res, "Token verification failed");
     }
 };
 
-// Update password
-export const resetPassword = async (req, res) => {
+// FORGOT PASSWORD
+export const updateAdminPassword = async (req, res) => {
     try {
-        const { oldPassword, newPassword } = req.body;
+        const { token, password } = req.body;
 
-        if (!oldPassword || !newPassword) {
-            return sendError(res, "Passwords are required", STATUS_CODES.BAD_REQUEST);
+        const data = await get(`admin:forgot:token:${token}`);
+        if (!data) {
+            return sendError(
+                res,
+                "Invalid or expired reset token",
+                STATUS_CODES.BAD_REQUEST
+            );
         }
 
-        const admin = await Admin.findById(auth_id).select("+password_hash");
-        if (!admin) {
-            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
+        const { adminId, email } = JSON.parse(data);
+
+        const hashedPassword = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+
+        const result = await Admin.findByIdAndUpdate(adminId, {
+            password_hash: hashedPassword,
+        });
+
+        if (!result) {
+            return sendError(
+                res,
+                "Account not found",
+                STATUS_CODES.NOT_FOUND
+            );
         }
 
-        const isValid = await bcrypt.compare(oldPassword, admin.password_hash);
-        if (!isValid) {
-            return sendError(res, "Invalid old password", STATUS_CODES.UNAUTHORIZED);
-        }
+        // Cleanup tokens
+        await Promise.all([
+            del(`admin:forgot:token:${token}`),
+            del(`admin:forgot:email:${email}`),
+            invalidateAllRefreshTokens(adminId),
+        ]);
 
-        admin.password_hash = await bcrypt.hash(newPassword, 12);
-        await admin.save();
-
-        // Invalidate all refresh tokens
-        await del(`refresh:${auth_id}:*`);
-
-        // Clear cookies
-        const cookieOptions = {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-        };
-        res.clearCookie("accessToken", cookieOptions);
-        res.clearCookie("refreshToken", cookieOptions);
-
-        sendResponse({ res, message: "Password updated successfully" });
-    } catch (err) {
-        console.error("Update Password Error:", err);
-        sendError(res, "Password update failed");
+        return sendResponse({
+            res,
+            message: "Password updated successfully. Please login again.",
+        });
+    } catch (error) {
+        console.error("Update password error:", error);
+        return sendError(res, "Failed to update password");
     }
 };
 
+// CHANGE PASSWORD
+export const resetPassword = async (req, res) => {
+    try {
+        const { auth_id } = req.user;
+        const { current_password, new_password } = req.body;
+
+        const admin = await Admin.findById(auth_id).select("+password_hash");
+        if (!admin) {
+            return sendError(
+                res,
+                "Account not found",
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        const isValid = await bcrypt.compare(
+            current_password,
+            admin.password_hash
+        );
+        if (!isValid) {
+            return sendError(
+                res,
+                "Current password is incorrect",
+                STATUS_CODES.UNAUTHORIZED
+            );
+        }
+
+        // Prevent reusing the same password
+        const isSamePassword = await bcrypt.compare(
+            new_password,
+            admin.password_hash
+        );
+        if (isSamePassword) {
+            return sendError(
+                res,
+                "New password must be different from current password",
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
+
+        admin.password_hash = await bcrypt.hash(new_password, BCRYPT_SALT_ROUNDS);
+        await admin.save();
+
+        await invalidateAllRefreshTokens(auth_id);
+        clearAuthCookies(res);
+
+        return sendResponse({
+            res,
+            message: "Password changed successfully. Please login again.",
+        });
+    } catch (err) {
+        console.error("Change Password Error:", err);
+        return sendError(res, "Password change failed");
+    }
+};
+
+// VERIFY AUTH
+export const verifyAuth = (req, res) => {
+    return sendResponse({
+        res,
+        message: "Authenticated",
+        data: {
+            auth_id: req.user.auth_id,
+            role: req.user.role,
+        },
+    });
+};

@@ -1,50 +1,6 @@
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import redis from "../services/redisService.js";
 
-// // Helper: create limiter instance
-// const createLimiter = (keyPrefix, points, duration) =>
-//   new RateLimiterRedis({
-//     storeClient: redis,
-//     keyPrefix,
-//     points,
-//     duration
-//   });
-
-// // Helper: Express middleware wrapper
-// const rateLimiterMiddleware = (limiter) => {
-//   return async (req, res, next) => {
-//     try {
-//       // Use IP or phone for OTP
-//       const key = req.ip;
-//       const { role } = req.user
-//       await limiter.consume(key);
-
-//       next();
-//     } catch (err) {
-//       res.status(429).json({
-//         message: "Too many requests, please try again later"
-//       });
-//     }
-//   };
-// };
-
-// // Create limiters
-// const otpLimiterInstance = createLimiter("rl:otp", 3, 300);
-// const loginLimiterInstance = createLimiter("rl:login", 10, 900);
-// const refreshLimiterInstance = createLimiter("rl:refresh", 20, 900);
-// // Default API limiter
-// const apiLimiterInstance = createLimiter("rl:api", 100, 60);// 100 requests per minute
-
-// export const otpLimiter = rateLimiterMiddleware(otpLimiterInstance);
-// export const loginLimiter = rateLimiterMiddleware(loginLimiterInstance);
-// export const refreshLimiter = rateLimiterMiddleware(refreshLimiterInstance);
-// export const apiLimiter = rateLimiterMiddleware(apiLimiterInstance);
-
-
-
-/**
- * Create limiter instance
- */
 const createLimiter = (keyPrefix, points, duration) =>
   new RateLimiterRedis({
     storeClient: redis,
@@ -53,19 +9,6 @@ const createLimiter = (keyPrefix, points, duration) =>
     duration,
   });
 
-/**
- * Resolve role safely
- */
-const resolveRole = (req) => {
-  // 1️⃣ From JWT (after auth middleware)
-  if (req.user?.role) return req.user.role;
-
-  // 2️⃣ From URL (OTP routes)
-  const base = req.baseUrl.split("/")[1];
-  if (base) return base;
-
-  return null;
-};
 
 /**
  * Generic rate limiter middleware

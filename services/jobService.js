@@ -1,26 +1,49 @@
 import { Queue } from "bullmq";
-import redis from "../services/redisService.js";
+import { createBullConnection } from "./redisService.js";
+import { JOB_QUEUES } from "../utils/constants.js";
 
-// Helper to create a job queue dynamically
-const createJobQueue = (queueName) => {
-  return new Queue(queueName, {
-    connection: redis,
-  });
-};
+const connection = createBullConnection("Queue");
 
-// Function to add a job to a specific queue
+const queues = {};
+
+const QUEUE_NAMES = [
+    JOB_QUEUES.STORE_ASSIGN,
+    JOB_QUEUES.DRIVER_ASSIGN,
+    JOB_QUEUES.BOOKING_AUTO_CANCEL,
+    JOB_QUEUES.DELETE_UNVERIFIED_USER,
+    JOB_QUEUES.DELETE_UNVERIFIED_DRIVER,
+];
+
+QUEUE_NAMES.forEach((name) => {
+    queues[name] = new Queue(name, { connection });
+});
+
+console.log(`✅ [Queues] Initialized: ${QUEUE_NAMES.join(", ")}`);
+
 export const addJobToQueue = async (queueName, jobData, options = {}) => {
-  const queue = createJobQueue(queueName);
-  await queue.add(jobData.name, jobData.data, options);
+    const queue = queues[queueName];
+    if (!queue) {
+        throw new Error(`Queue "${queueName}" not found`);
+    }
+    return queue.add(jobData.name, jobData.data, options);
 };
 
-// Function to cancel a job by jobId
 export const cancelJob = async (queueName, jobId) => {
-  const queue = createJobQueue(queueName);
-  const job = await queue.getJob(jobId);
-  if (job) {
-    await job.remove();
-    return true;
-  }
-  return false;
+    try {
+        const queue = queues[queueName];
+        if (!queue) return;
+
+        const job = await queue.getJob(jobId);
+        if (job) {
+            const state = await job.getState();
+            if (state === "delayed" || state === "waiting") {
+                await job.remove();
+            }
+        }
+    } catch (err) {
+        console.error(`Failed to cancel job ${jobId}:`, err.message);
+    }
 };
+
+export { connection };
+export default queues;

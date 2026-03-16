@@ -67,7 +67,6 @@ export const bulkUploadServiceableAreas = async (req, res) => {
     }
 };
 
-
 export const bulkUploadUsers = async (req, res) => {
     try {
         const { users } = req.body;
@@ -137,18 +136,188 @@ export const bulkUploadUsers = async (req, res) => {
 };
 
 export const bulkUploadDriver = async (req, res) => {
+    try {
+        const drivers = req.body;
 
+        if (!Array.isArray(drivers) || drivers.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Please send an array of drivers"
+            });
+        }
+
+        if (drivers.length > 28) {
+            return res.status(400).json({
+                success: false,
+                message: "Maximum 28 drivers allowed in one bulk upload"
+            });
+        }
+
+        const result = await Driver.insertMany(drivers, {
+            ordered: false   // continue even if some fail (duplicate phone/email)
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Bulk drivers uploaded successfully",
+            totalInserted: result.length,
+            data: result
+        });
+
+    } catch (error) {
+        console.error("Bulk upload error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Bulk upload completed with some errors",
+            error: error.message
+        });
+    }
 };
 
 
+export const bulkUploadStoreOwner = async (req, res) => {
+    try {
+        const storeOwners = req.body;
+
+        if (!Array.isArray(storeOwners) || storeOwners.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Request body must be a non-empty array",
+            });
+        }
+
+        const preparedData = storeOwners.map((owner, index) => {
+            if (!owner.phone) {
+                throw new Error(`Phone is required at index ${index}`);
+            }
+
+            return {
+                first_name: owner.first_name?.trim(),
+                last_name: owner.last_name?.trim(),
+                phone: owner.phone,
+                email: owner.email?.toLowerCase(),
+                gender: owner.gender,
+                date_of_birth: owner.date_of_birth,
+                address: owner.address,
+                onboarding_status: owner.onboarding_status,
+                status: owner.status,
+                is_verified: owner.is_verified ?? false,
+                is_active: owner.is_active ?? true,
+                update_by: owner.update_by || null,
+                store_id: owner.store_id || null,
+                account_deactivated_reason: owner.account_deactivated_reason || null,
+            };
+        });
+
+        const result = await StoreOwner.insertMany(preparedData, {
+            ordered: false,
+            rawResult: true
+        });
+
+        res.json({
+            success: true,
+            insertedCount: result.insertedCount,
+            insertedIds: result.insertedIds,
+            writeErrors: result.mongoose?.validationErrors || []
+        });
+    } catch (error) {
+        console.error("Bulk upload store owner error:", error);
+
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: "Duplicate phone or email found",
+                error: error.keyValue,
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Bulk upload failed",
+            error: error.message,
+        });
+    }
+};
 export const bulkUploadStore = async (req, res) => {
 
 };
 
-
 export const bulkUploadAdmin = async (req, res) => {
+    try {
+        const admins = req.body; // expecting array
 
+        // 1. Validate request body
+        if (!Array.isArray(admins) || admins.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Request body must be a non-empty array",
+            });
+        }
+
+        // 2. Prepare admins
+        const preparedAdmins = await Promise.all(
+            admins.map(async (admin, index) => {
+                if (!admin.email) {
+                    throw new Error(`Email is required at index ${index}`);
+                }
+
+                // Auto-generate password if not present
+                let passwordHash = admin.password_hash;
+
+                if (!passwordHash && admin.isVerified) {
+                    const randomPassword = Math.random().toString(36).slice(-8);
+                    passwordHash = await bcrypt.hash(randomPassword, 10);
+                }
+
+                return {
+                    first_name: admin.first_name?.trim(),
+                    last_name: admin.last_name?.trim(),
+                    email: admin.email.toLowerCase().trim(),
+                    phone: admin.phone,
+                    address: admin.address,
+                    date_of_birth: admin.date_of_birth,
+                    password_hash: passwordHash,
+                    status: admin.status,
+                    gender: admin.gender,
+                    role: admin.role,
+                    isVerified: admin.isVerified || false,
+                    invited_by: admin.invited_by || null,
+                };
+            })
+        );
+
+        // 3. Insert into DB
+        const result = await Admin.insertMany(preparedAdmins, {
+            ordered: false, // continue even if some fail
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Bulk admin upload completed",
+            insertedCount: result.length,
+            data: result,
+        });
+    } catch (error) {
+        console.error("Bulk upload error:", error);
+
+        // Handle duplicate key error
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: "Some records already exist (duplicate email found)",
+                error: error.keyValue,
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Bulk upload failed",
+            error: error.message,
+        });
+    }
 };
+
 
 export const bulkUploadBooking = async (req, res) => {
 

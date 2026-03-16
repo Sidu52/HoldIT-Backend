@@ -1,0 +1,109 @@
+POST /api/v1/user/bookings
+  │
+  ├── [TRANSACTION] ──────────────────────────────────────────────┐
+  │   1. Verify user                                              │
+  │   2. Check serviceability                                     │
+  │   3. Check active booking limit                               │
+  │   4. Validate scheduled time                                  │
+  │   5. Find nearest store ($geoNear)                           │
+  │   6. Assign store (atomic $inc with capacity check)          │
+  │   7. Create booking → status: STORE_ASSIGNED                 │
+  ├── [COMMIT] ───────────────────────────────────────────────────┘
+  │
+  │   Response: 201 { bookingId, status: "STORE_ASSIGNED", store: {...} }
+  │
+  └── [BACKGROUND JOBS] ─────────────────────────────────────────┐
+      │                                                           │
+      ▼                                                           │
+   ┌─────────────────────────────────────────────────────────┐   │
+   │              DRIVER SEARCH FLOW                          │   │
+   │                                                          │   │
+   │  Round 1 (5km radius)                                   │   │
+   │    ├── isBookingAwaitingDriver? ─── No ──→ STOP         │   │
+   │    ├── Update status → DRIVER_SEARCH                    │   │
+   │    ├── findAvailableDrivers() ── $geoNear + $lookup     │   │
+   │    │                                                     │   │
+   │    ├── Drivers found?                                    │   │
+   │    │   ├── YES → notifyDrivers() → Push notifications   │   │
+   │    │   │         scheduleAcceptanceTimeout(60s)          │   │
+   │    │   │                                                 │   │
+   │    │   │   ┌── Timeout fires (60s later) ──────────┐    │   │
+   │    │   │   │   isBookingAwaitingDriver?             │    │   │
+   │    │   │   │   ├── No (driver accepted) → STOP ✅   │    │   │
+   │    │   │   │   ├── Yes + more rounds → Next round   │    │   │
+   │    │   │   │   └── Yes + last round → AUTO CANCEL ❌│    │   │
+   │    │   │   └───────────────────────────────────────┘    │   │
+   │    │   │                                                 │   │
+   │    │   └── Driver accepts (anytime during search):      │   │
+   │    │       handleDriverAccept()                          │   │
+   │    │       ├── Atomic findOneAndUpdate                   │   │
+   │    │       │   (status=DRIVER_SEARCH + no driverId)     │   │
+   │    │       ├── status → DRIVER_ASSIGNED ✅              │   │
+   │    │       └── All timeout/search jobs become no-ops    │   │
+   │    │                                                     │   │
+   │    └── NO drivers found                                 │   │
+   │        ├── More rounds? → scheduleNextRound(10s delay)  │   │
+   │        └── Last round? → AUTO CANCEL ❌                 │   │
+   │                                                          │   │
+   │  Round 2 (7.5km) → Same flow                           │   │
+   │  Round 3 (10km)  → Same flow (final)                   │   │
+   │                                                          │   │
+   └─────────────────────────────────────────────────────────┘   │
+                                                                  │
+   ┌─────────────────────────────────────────────────────────┐   │
+   │              AUTO CANCEL FLOW                            │   │
+   │                                                          │   │
+   │  autoCancelBooking()                                    │   │
+   │    ├── [TRANSACTION]                                    │   │
+   │    │   ├── Booking.status → CANCELLED                   │   │
+   │    │   ├── cancelledBy → "SYSTEM"                       │   │
+   │    │   ├── isActive → false                             │   │
+   │    │   ├── Timeline entry added                         │   │
+   │    │   └── Store.booking_assigned_count -= 1            │   │
+   │    ├── [COMMIT]                                         │   │
+   │    │                                                     │   │
+   │    ├── Queue: User notification                         │   │
+   │    │   "Sorry, no driver available. Booking cancelled." │   │
+   │    │                                                     │   │
+   │    └── Queue: Refund (if payment was PAID)              │   │
+   │        "Refund ₹420 to user"                            │   │
+   │                                                          │   │
+   └─────────────────────────────────────────────────────────┘   │
+                                                                  │
+   ┌─────────────────────────────────────────────────────────┐   │
+   │              USER CANCEL FLOW                            │   │
+   │                                                          │   │
+   │  PUT /bookings/:id/cancel                               │   │
+   │    ├── [TRANSACTION]                                    │   │
+   │    │   ├── Booking.status → CANCELLED                   │   │
+   │    │   ├── cancelledBy → "USER"                         │   │
+   │    │   └── Store.booking_assigned_count -= 1            │   │
+   │    ├── [COMMIT]                                         │   │
+   │    │                                                     │   │
+   │    └── Driver search jobs become no-ops                 │   │
+   │        (isBookingAwaitingDriver returns false)           │   │
+   │                                                          │   │
+   └─────────────────────────────────────────────────────────┘   │
+      └──────────────────────────────────────────────────────────┘
+
+
+TIMELINE EXAMPLE (Auto-Cancel):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  T+0s     CREATED          "Booking created by user"
+  T+0s     STORE_ASSIGNED   "Store assigned: LuggageHub Central"
+  T+1s     DRIVER_SEARCH    "Searching for drivers (Round 1/3)"
+  T+71s    DRIVER_SEARCH    "Searching for drivers (Round 2/3)"
+  T+141s   DRIVER_SEARCH    "Searching for drivers (Round 3/3)"
+  T+201s   CANCELLED        "Auto-cancelled: No driver available
+                              after exhausting all search rounds."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+TIMELINE EXAMPLE (Driver Accepts in Round 2):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  T+0s     CREATED          "Booking created by user"
+  T+0s     STORE_ASSIGNED   "Store assigned: LuggageHub Central"
+  T+1s     DRIVER_SEARCH    "Searching for drivers (Round 1/3)"
+  T+71s    DRIVER_SEARCH    "Searching for drivers (Round 2/3)"
+  T+85s    DRIVER_ASSIGNED  "Driver accepted the booking"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
