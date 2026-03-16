@@ -1,9 +1,9 @@
 // MARK STORED store confirms luggage is checked in
 
-import Booking from "../../models/Booking";
-import Driver from "../../models/Driver";
-import { markDriverAvailable } from "../../services/driverGeoService";
-import { BOOKING_STATUS } from "../../utils/constants";
+import Booking from "../../models/Booking.js";
+import Driver from "../../models/Driver.js";
+import { markDriverAvailable } from "../../services/driverGeoService.js";
+import { BOOKING_STATUS } from "../../utils/constants.js";
 
 // Called by the store (or driver on store's behalf). Completes the pickup leg.
 export const processMarkStored = async (bookingId, storeId) => {
@@ -13,7 +13,7 @@ export const processMarkStored = async (bookingId, storeId) => {
         {
             _id: bookingId,
             status: BOOKING_STATUS.AT_STORE,
-             storeId: new mongoose.Types.ObjectId(storeId),
+            storeId: new mongoose.Types.ObjectId(storeId),
         },
         {
             $set: {
@@ -25,9 +25,9 @@ export const processMarkStored = async (bookingId, storeId) => {
                 timeline: {
                     status: BOOKING_STATUS.STORED,
                     note: notes
-                            ? `Luggage accepted by store: ${notes}`
-                            : "Luggage accepted and stored by store",
-                     updatedBy: new mongoose.Types.ObjectId(storeId),
+                        ? `Luggage accepted by store: ${notes}`
+                        : "Luggage accepted and stored by store",
+                    updatedBy: new mongoose.Types.ObjectId(storeId),
                     updatedByModel: "Store",
                     createdAt: now,
                 },

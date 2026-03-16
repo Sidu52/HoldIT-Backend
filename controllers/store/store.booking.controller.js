@@ -122,7 +122,7 @@ export const confirmStored = async (req, res) => {
         const { booking_id } = req.params;
         const { notes = "" } = req.body;
 
-        const booking = await processMarkStored(booking_id, storeId,notes);
+        const booking = await processMarkStored(booking_id, storeId, notes);
 
         if (!booking) {
             // Could be wrong storeId, wrong status, or booking doesn't exist
