@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { redisConnectionConfig } from "../services/redisService.js";
 import User from "../models/User.js";
-import { JOB_QUEUES } from "../utils/constants.js";
+import { ACCOUNT_STATUS, JOB_QUEUES } from "../utils/constants.js";
 
 let worker;
 
@@ -18,7 +18,7 @@ export const createDeleteUnverifiedUserWorker = () => {
             const deletedUser = await User.findOneAndDelete({
                 phone,
                 isVerified: false,
-                status: "PENDING",
+                status: ACCOUNT_STATUS.PENDING,
             });
 
             if (deletedUser) {

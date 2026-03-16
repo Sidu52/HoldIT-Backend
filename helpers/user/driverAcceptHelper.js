@@ -10,7 +10,7 @@ export const handleDriverAccept = async (bookingId, driverId) => {
         const booking = await Booking.findOneAndUpdate(
             {
                 _id: bookingId,
-                status: BOOKING_STATUS.DRIVER_SEARCH,
+                status: BOOKING_STATUS.STORE_ASSIGNED,
                 "pickup.assignment.driverId": { $exists: false },
             },
             {

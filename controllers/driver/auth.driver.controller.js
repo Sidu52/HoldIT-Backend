@@ -15,14 +15,14 @@ import {
     OTP_MAX_ATTEMPTS,
     OTP_COOLDOWN,
     JOB_QUEUES,
+    TOKEN_TYPES,
+     OTP_FAIL_WINDOW_SECONDS,
+      UNVERIFIED_USER_CLEANUP_DELAY_MS
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 
-// DERIVED TIME VALUES
-const OTP_FAIL_WINDOW_SECONDS = 15 * 60;
-const UNVERIFIED_USER_CLEANUP_DELAY_MS = 24 * 60 * 60 * 1000;
 
 // LOGIN / REGISTER
 export const authDriver = async (req, res) => {
@@ -324,7 +324,7 @@ export const refreshToken = async (req, res) => {
             );
         }
 
-        if (decoded.type !== "refresh") {
+        if (decoded.type !== TOKEN_TYPES.REFRESH) {
             return sendError(
                 res,
                 "Invalid token type",

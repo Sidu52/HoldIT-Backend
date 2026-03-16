@@ -17,6 +17,7 @@ import {
     REFRESH_TOKEN_EXPIRY,
     ACCESS_TOKEN_EXPIRY,
     OTP_EXPIRY,
+    TOKEN_TYPES,
 } from "../../utils/constants.js";
 
 // CONSTANTS (Derived from base constants)
@@ -57,13 +58,13 @@ const generateTokenPair = async (admin) => {
     const accessToken = generateAccessToken({
         auth_id: admin._id,
         role: admin.role,
-        type: "access",
+        type: TOKEN_TYPES.ACCESS,
     });
 
     const refreshToken = generateRefreshToken({
         auth_id: admin._id,
         token_id: tokenId,
-        type: "refresh",
+        type: TOKEN_TYPES.REFRESH,
     });
 
     // Store refresh token reference in Redis

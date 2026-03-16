@@ -3,7 +3,7 @@
 import Store from "../../models/Store.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set, del, delByPattern } from "../../services/redisService.js";
-import { STATUS_CODES } from "../../utils/constants.js";
+import { ACCOUNT_STATUS, STATUS_CODES } from "../../utils/constants.js";
 
 // ============================================
 // CONSTANTS
@@ -69,7 +69,7 @@ export const getStores = async (req, res) => {
     const filter = { is_deleted: { $ne: true } };
 
     if (status) filter.status = status;
-    if (is_active !== undefined) filter.store_is_active = is_active;
+    if (is_active !== undefined) filter.is_active = is_active;
 
     if (search) {
       const escaped = escapeRegex(search.trim());
@@ -272,7 +272,7 @@ export const toggleStoreStatus = async (req, res) => {
       _id: store_id,
       is_deleted: { $ne: true },
     })
-      .select("store_is_active store_name")
+      .select("is_active store_name")
       .lean();
 
     if (!store) {
@@ -283,16 +283,16 @@ export const toggleStoreStatus = async (req, res) => {
       );
     }
 
-    if (store.store_is_active === is_active) {
+    if (store.is_active === is_active) {
       return sendError(
         res,
-        `Store is already ${is_active ? "active" : "inactive"}`,
+        `Store is already ${is_active ? ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
         STATUS_CODES.CONFLICT
       );
     }
 
     const updateData = {
-      store_is_active: is_active,
+      is_active: is_active,
       status_updated_by: auth_id,
       status_updated_at: new Date(),
     };
@@ -352,7 +352,7 @@ export const deleteStore = async (req, res) => {
     await Store.findByIdAndUpdate(store_id, {
       $set: {
         is_deleted: true,
-        store_is_active: false,
+        is_active: false,
         deleted_by: auth_id,
         deleted_at: new Date(),
       },

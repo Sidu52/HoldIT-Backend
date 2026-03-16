@@ -1,159 +1,180 @@
 import redis from "./redisService.js";
+import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../utils/constants.js";
 
-
+// ADD
 export const addDriverToRedis = async (driver) => {
-    if (!driver) {
-        console.warn("[Driver Geo] driver is null/undefined");
+    if (!driver?._id) {
+        console.warn("[DriverGeo] addDriverToRedis: missing driver or _id");
         return false;
     }
 
-    // ✅ Match YOUR actual DB fields
-    if (!driver.is_active || !driver.is_online) {
-        if (driver._id) {
-            await removeDriverFromRedis(driver._id, driver.service_area_id);
-        }
-        return false;
-    }
-
-    // ✅ YOUR field is "currentLocation" not "location"
-    const location = driver.currentLocation || driver.location;
-
+    // Must be driver active, online, verified, not on a trip
     if (
-        !location ||
-        !location.coordinates ||
-        location.coordinates.length < 2
+        !driver.is_active ||
+        !driver.is_online ||
+        driver.is_on_trip ||
+        driver.status !== ACCOUNT_STATUS.ACTIVE ||
+        driver.verification_status !== VERIFICATION_STATUS.VERIFIED
     ) {
-        console.warn(`[Driver Geo] Driver ${driver._id} has no valid coordinates`);
+        // Silently remove from Redis if driver stage no longer qualifies
+        await removeDriverFromRedis(driver._id, driver.service_area_id).catch(() => { });
         return false;
     }
 
-    const [lng, lat] = location.coordinates;
+    // Validate coordinates
+    if (
+        !driver.currentLocation?.coordinates ||
+        !Array.isArray(driver.currentLocation.coordinates) ||
+        driver.currentLocation.coordinates.length < 2
+    ) {
+        console.warn(`[DriverGeo] Driver ${driver._id} has no valid coordinates`);
+        return false;
+    }
+
+    const [lng, lat] = driver.currentLocation.coordinates;
 
     if (
         typeof lng !== "number" || typeof lat !== "number" ||
         lng < -180 || lng > 180 ||
         lat < -90 || lat > 90
     ) {
-        console.warn(`[Driver Geo] Driver ${driver._id} has invalid coordinates`);
+        console.warn(
+            `[DriverGeo] Driver ${driver._id} has invalid coordinates [${lng}, ${lat}]`
+        );
         return false;
     }
 
-    const driverIdStr = driver._id.toString();
+    const driverId = driver._id.toString();
 
     try {
-        // Add to service area key
+        const pipeline = redis.pipeline();
+
+        // Write to service area key if present
         if (driver.service_area_id) {
-            await redis.geoadd(
-                `drivers:${driver.service_area_id}`,
-                lng, lat, driverIdStr
+            pipeline.geoadd(
+                `drivers:${driver.service_area_id.toString()}`,
+                lng, lat, driverId
             );
         }
 
-        // Add to global key
-        await redis.geoadd("drivers:global", lng, lat, driverIdStr);
+        // Always write to global fallback
+        pipeline.geoadd("drivers:global", lng, lat, driverId);
 
-        // Store metadata
-        const driverName = driver.name ||
-            `${driver.first_name || ""} ${driver.last_name || ""}`.trim() ||
-            "Unknown";
-
-        await redis.hset(`driver:meta:${driverIdStr}`, {
-            is_online: String(driver.is_online || false),
-            is_on_trip: String(driver.is_on_trip || false),
-            status: driver.status || "",
-            verification_status: driver.verification_status || "",
-            vehicle_type: driver.vehicle_type || "",
-            name: driverName,
-            phone: driver.phone || "",
-            service_area_id: driver.service_area_id?.toString() || "",
-            rating: (driver.rating || 0).toString(),
-            current_booking_id: driver.current_booking_id?.toString() || "",
+        // Driver metadata hash (used for fast eligibility checks)
+        pipeline.hset(`driver:meta:${driverId}`, {
+            is_online: "true",
+            is_on_trip: "false",
+            vehicle_type: driver.vehicle_type ?? "scooter",
+            service_area_id: driver.service_area_id?.toString() ?? "",
             updated_at: Date.now().toString(),
         });
 
+        // Meta expires after 1 hour  driver must ping/update to stay active
+        pipeline.expire(`driver:meta:${driverId}`, 3600);
+
+        await pipeline.exec();
+
+        console.log(`[DriverGeo] Driver ${driverId} added at [${lng}, ${lat}]`);
         return true;
     } catch (err) {
-        console.error(`[Driver Geo] Error for ${driver._id}:`, err.message);
+        console.error(`[DriverGeo] addDriverToRedis failed for ${driverId}:`, err.message);
         return false;
     }
 };
 
-/**
- * Remove driver from Redis
- */
+// REMOVE
 export const removeDriverFromRedis = async (driverId, serviceAreaId = null) => {
-    if (!driverId) return false;
+    if (!driverId) {
+        console.warn("[DriverGeo] removeDriverFromRedis: missing driverId");
+        return false;
+    }
 
     const driverIdStr = driverId.toString();
 
     try {
+        const pipeline = redis.pipeline();
+
         if (serviceAreaId) {
-            await redis.zrem(`drivers:${serviceAreaId}`, driverIdStr);
+            pipeline.zrem(`drivers:${serviceAreaId.toString()}`, driverIdStr);
         } else {
-            const meta = await redis.hget(`driver:meta:${driverIdStr}`, "service_area_id");
-            if (meta) {
-                await redis.zrem(`drivers:${meta}`, driverIdStr);
+            // Look up service area from meta if not provided
+            const areaId = await redis.hget(`driver:meta:${driverIdStr}`, "service_area_id");
+            if (areaId) {
+                pipeline.zrem(`drivers:${areaId}`, driverIdStr);
             }
         }
 
-        await redis.zrem("drivers:global", driverIdStr);
-        await redis.del(`driver:meta:${driverIdStr}`);
+        // Always remove from global
+        pipeline.zrem("drivers:global", driverIdStr);
 
+        // Remove metadata
+        pipeline.del(`driver:meta:${driverIdStr}`);
+
+        await pipeline.exec();
+
+        console.log(`[DriverGeo] Driver ${driverIdStr} removed from Redis`);
         return true;
     } catch (err) {
-        console.error(`[Driver Geo] Remove error for ${driverId}:`, err.message);
+        console.error(`[DriverGeo] removeDriverFromRedis failed for ${driverIdStr}:`, err.message);
         return false;
     }
 };
 
-/**
- * Update driver location
- */
+// UPDATE LOCATION
+// Called on every driver location ping updates geo position only,
+// does not touch meta fields like is_on_trip.
+
 export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = null) => {
     if (!driverId || lng == null || lat == null) return false;
+
+    if (
+        lng < -180 || lng > 180 ||
+        lat < -90 || lat > 90
+    ) {
+        console.warn(`[DriverGeo] Invalid coordinates for ${driverId}: [${lng}, ${lat}]`);
+        return false;
+    }
 
     const driverIdStr = driverId.toString();
 
     try {
+        const pipeline = redis.pipeline();
+
         if (serviceAreaId) {
-            await redis.geoadd(`drivers:${serviceAreaId}`, lng, lat, driverIdStr);
+            pipeline.geoadd(`drivers:${serviceAreaId.toString()}`, lng, lat, driverIdStr);
         }
 
-        await redis.geoadd("drivers:global", lng, lat, driverIdStr);
+        pipeline.geoadd("drivers:global", lng, lat, driverIdStr);
+        pipeline.hset(`driver:meta:${driverIdStr}`, { updated_at: Date.now().toString() });
 
-        await redis.hset(`driver:meta:${driverIdStr}`, {
-            updated_at: Date.now().toString(),
-        });
-
+        await pipeline.exec();
         return true;
     } catch (err) {
-        console.error(`[Driver Geo] Location update error for ${driverId}:`, err.message);
+        console.error(`[DriverGeo] updateDriverLocation failed for ${driverIdStr}:`, err.message);
         return false;
     }
 };
 
-/**
- * Mark driver as on trip
- */
+// TRIP STATE
+// These keep Redis meta in sync when a driver starts/finishes a trip.
+// Always call these alongside the MongoDB update, not instead of it.
+
 export const markDriverOnTrip = async (driverId, bookingId) => {
     if (!driverId) return false;
 
     try {
         await redis.hset(`driver:meta:${driverId.toString()}`, {
             is_on_trip: "true",
-            current_booking_id: bookingId?.toString() || "",
+            current_booking_id: bookingId?.toString() ?? "",
             updated_at: Date.now().toString(),
         });
         return true;
     } catch (err) {
-        console.error(`[Driver Geo] markOnTrip error for ${driverId}:`, err.message);
+        console.error(`[DriverGeo] markDriverOnTrip failed for ${driverId}:`, err.message);
         return false;
     }
 };
 
-/**
- * Mark driver as available
- */
 export const markDriverAvailable = async (driverId) => {
     if (!driverId) return false;
 
@@ -165,7 +186,7 @@ export const markDriverAvailable = async (driverId) => {
         });
         return true;
     } catch (err) {
-        console.error(`[Driver Geo] markAvailable error for ${driverId}:`, err.message);
+        console.error(`[DriverGeo] markDriverAvailable failed for ${driverId}:`, err.message);
         return false;
     }
 };

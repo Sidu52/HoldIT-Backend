@@ -11,6 +11,30 @@ const STATUS_CODES = {
   INTERNAL_SERVER_ERROR: 500,
 };
 
+// USER & ROLE MANAGEMENT
+const USER_ROLES = {
+  ADMIN: "admin",
+  SUPER_ADMIN: "super_admin",
+  OPERATION_MANAGER: "operation_manager",
+  CUSTOMER_SUPPORT: "customer_support",
+};
+
+// BOOKING STATUS
+const BOOKING_STATUS = {
+  CREATED: "created",
+  STORE_ASSIGNED: "store_assigned",
+  DRIVER_ASSIGNED: "driver_assigned",
+  DRIVER_ARRIVED: "driver_arrived",
+  PICKED_UP: "picked_up",
+  AT_STORE: "at_store",
+  STORED: "stored",
+  RETURN_REQUESTED: "return_requested",
+  RETURN_DRIVER_ASSIGNED: "return_driver_assigned",
+  DELIVERED: "delivered",
+  CANCELLED: "cancelled",
+  DRIVER_CANCELLED_CRITICAL: "driver_cancelled_critical", 
+};
+
 const JOB_QUEUES = {
   STORE_ASSIGN: "store-assign",
   DRIVER_ASSIGN: "driver-assign",
@@ -52,20 +76,18 @@ const TICKET_CATEGORY = {
   OTHER: "OTHER",
 };
 
-
-// USER & ROLE MANAGEMENT
-const USER_ROLES = {
-  ADMIN: "admin",
-  SUPER_ADMIN: "super_admin",
-  OPERATION_MANAGER: "operation_manager",
-  CUSTOMER_SUPPORT: "customer_support",
-};
-
 const ACCOUNT_STATUS = {
   ACTIVE: "active",
   PENDING: "pending",
   BLOCKED: "blocked",
   INACTIVE: "inactive",
+};
+
+// VERIFICATION & ONBOARDING
+const VERIFICATION_STATUS = {
+  PENDING: "pending",
+  VERIFIED: "verified",
+  REJECTED: "rejected",
 };
 
 const GENDER_OPTIONS = ["male", "female", "other"];
@@ -77,19 +99,23 @@ const TOKEN_TYPES = {
   INVITE: "invite",
 };
 
-const ACCESS_TOKEN_EXPIRY = 60 * 60;     // 60 minutes (used as `${val}m`)
-const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60;     // 7 days (used as `${val}d`)
-const INVITE_TOKEN_EXPIRY = 24;     // 24 hours (used as `${val}h`)
+// DERIVED TIME VALUES
+const OTP_FAIL_WINDOW_SECONDS = 15 * 60;
+const UNVERIFIED_USER_CLEANUP_DELAY_MS = 24 * 60 * 60 * 1000;
+
+const ACCESS_TOKEN_EXPIRY = 60 * 60;
+const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60;
+const INVITE_TOKEN_EXPIRY = 24;
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 100;
 
 // OTP CONFIGURATION
 const OTP_LENGTH = 4;
-const OTP_EXPIRY = 5;                         // 5 minutes
-const OTP_MAX_ATTEMPTS = 5;                   // Max verification attempts per OTP
-const OTP_COOLDOWN = 60;                      // Seconds before requesting new OTP
-const OTP_MAX_REQUESTS_PER_HOUR = 5;          // Max OTP requests per hour per user
+const OTP_EXPIRY = 5;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_COOLDOWN = 60;
+const OTP_MAX_REQUESTS_PER_HOUR = 5;
 
 // RATE LIMITING
 const RATE_LIMIT = {
@@ -99,35 +125,10 @@ const RATE_LIMIT = {
   API_WINDOW_MINUTES: 15,
 };
 
-// BOOKING STATUS
-const BOOKING_STATUS = {
-  CREATED: "created",
-  STORE_ASSIGNED: "store_assigned",
-  DRIVER_SEARCH: "driver_search",
-  PICKUP_IN_PROGRESS: "pickup_in_progress",
-  RETURN_DRIVER_ASSIGNED: "return_driver_assigned",
-  RETURN_IN_PROGRESS: "return_in_progress",
-  DRIVER_ASSIGNED: "driver_assigned",
-  DRIVER_ARRIVED: "driver_arrived",
-  PICKED_UP: "picked_up",
-  STORED: "stored",
-  RETURN_REQUESTED: "return_requested",
-  OUT_FOR_RETURN: "out_for_return",
-  DELIVERED: "delivered",
-  CANCELLED: "cancelled",
-};
-
 const ASSIGNMENT_TYPES = {
   PICKUP: "PICKUP",
   DELIVERY: "DELIVERY",
   RETURN: "RETURN",
-};
-
-// VERIFICATION & ONBOARDING
-const VERIFICATION_STATUS = {
-  PENDING: "pending",
-  VERIFIED: "verified",
-  REJECTED: "rejected",
 };
 
 const ON_BOARDING_STATUS = {
@@ -146,6 +147,9 @@ const VEHICLE_TYPES = {
 };
 
 // WORKER CONFIGURATION
+// BUG FIX #14: WORKER_CONFIG was declared but never exported — everything
+// that imported it (booking.js constants) got undefined, silently breaking
+// all timeout/radius values.
 const WORKER_CONFIG = {
   STORE_SEARCH_RADIUS_KM: 50,
   STORE_MAX_RETRY: 3,
@@ -155,8 +159,8 @@ const WORKER_CONFIG = {
   DRIVER_SEARCH_RADIUS_KM: 10,
   DRIVER_SEARCH_TIMEOUT_MINUTES: 15,
   DRIVER_OFFER_TIMEOUT_SECONDS: 60,
-  DRIVER_MAX_RETRY_ROUNDS: 3,
-  DRIVER_RETRY_DELAY_MS: 30000,
+  DRIVER_MAX_OFFER_ATTEMPTS: 10,
+  DRIVER_RETRY_DELAY_MS: 2000,
 
   // Auto cancel
   AUTO_CANCEL_DELAY_MINUTES: 15,
@@ -166,6 +170,7 @@ export {
   JOB_QUEUES,
   STATUS_CODES,
   WORKER_CONFIG,
+  BOOKING_STATUS,
   USER_ROLES,
   ACCOUNT_STATUS,
   GENDER_OPTIONS,
@@ -181,7 +186,6 @@ export {
   OTP_COOLDOWN,
   OTP_MAX_REQUESTS_PER_HOUR,
   RATE_LIMIT,
-  BOOKING_STATUS,
   ASSIGNMENT_TYPES,
   VERIFICATION_STATUS,
   ON_BOARDING_STATUS,
@@ -189,4 +193,6 @@ export {
   TICKET_STATUS,
   TICKET_PRIORITY,
   TICKET_CATEGORY,
+  OTP_FAIL_WINDOW_SECONDS,
+  UNVERIFIED_USER_CLEANUP_DELAY_MS
 };

@@ -1,14 +1,10 @@
-// services/redisService.js
-
 import Redis from "ioredis";
 import dotenv from "dotenv";
 dotenv.config();
 
-// ============================================
 // CONFIGURATION & VALIDATION
-// ============================================
 const getRedisConfig = () => {
-    // Option 1: Full URL (Upstash, Redis Cloud, Railway, Render, etc.)
+    // Full URL
     if (process.env.REDIS_URL) {
         return {
             url: process.env.REDIS_URL,
@@ -19,9 +15,9 @@ const getRedisConfig = () => {
         };
     }
 
-    // Option 2: Individual params
+    // Individual params
     if (!process.env.REDIS_HOST || !process.env.REDIS_PORT) {
-        console.error("❌ Either REDIS_URL or (REDIS_HOST + REDIS_PORT) must be defined in .env");
+        console.error("Either REDIS_URL or (REDIS_HOST + REDIS_PORT) must be defined in .env");
         process.exit(1);
     }
 
@@ -37,14 +33,10 @@ const getRedisConfig = () => {
     };
 };
 
-// ============================================
 // EXPORTED CONFIG (used by BullMQ workers)
-// ============================================
 export const redisConnectionConfig = getRedisConfig();
 
-// ============================================
 // CREATE REDIS INSTANCE
-// ============================================
 const createRedisClient = (config, label = "Redis") => {
     let client;
 
@@ -78,11 +70,11 @@ const createRedisClient = (config, label = "Redis") => {
     }
 
     // Events
-    client.on("connect", () => console.log(`✅ [${label}] Connected`));
-    client.on("ready", () => console.log(`✅ [${label}] Ready`));
-    client.on("error", (err) => console.error(`❌ [${label}] Error:`, err.message));
-    client.on("reconnecting", () => console.log(`🔄 [${label}] Reconnecting...`));
-    client.on("close", () => console.warn(`⚠️  [${label}] Connection closed`));
+    client.on("connect", () => console.log(`[${label}] Connected`));
+    client.on("ready", () => console.log(`[${label}] Ready`));
+    client.on("error", (err) => console.error(`[${label}] Error:`, err.message));
+    client.on("reconnecting", () => console.log(`[${label}] Reconnecting...`));
+    client.on("close", () => console.warn(`[${label}] Connection closed`));
 
     return client;
 };
@@ -90,31 +82,25 @@ const createRedisClient = (config, label = "Redis") => {
 // Main Redis instance
 const redis = createRedisClient(redisConnectionConfig, "Redis");
 
-// ============================================
 // BULLMQ CONNECTION FACTORY
 // Each BullMQ Queue/Worker needs its own connection
-// ============================================
 export const createBullConnection = (label = "BullMQ") => {
     return createRedisClient(redisConnectionConfig, label);
 };
 
-// ============================================
 // INITIALIZATION
-// ============================================
 export const initRedis = async () => {
     try {
         await redis.connect();
         await redis.ping();
-        console.log("✅ [Redis] Connection verified (PONG)");
+        console.log("[Redis] Connection verified (PONG)");
     } catch (err) {
-        console.error("❌ [Redis] Initialization failed:", err.message);
+        console.error("[Redis] Initialization failed:", err.message);
         process.exit(1);
     }
 };
 
-// ============================================
 // BASIC OPERATIONS
-// ============================================
 export const set = async (key, value, type, expiration) => {
     if (!key || value === undefined || value === null) {
         throw new Error("Redis SET: key and value are required");
@@ -145,9 +131,7 @@ export const ttl = async (key) => {
     return redis.ttl(key);
 };
 
-// ============================================
 // PATTERN-BASED OPERATIONS
-// ============================================
 
 /**
  * Scan for keys matching a pattern
@@ -196,9 +180,7 @@ export const delByPattern = async (pattern) => {
     return deleted;
 };
 
-// ============================================
 // SAFETY
-// ============================================
 export const flushall = async () => {
     if (process.env.NODE_ENV === "production") {
         throw new Error("flushall is disabled in production");
@@ -206,7 +188,4 @@ export const flushall = async () => {
     return redis.flushall();
 };
 
-// ============================================
-// DEFAULT EXPORT
-// ============================================
 export default redis;

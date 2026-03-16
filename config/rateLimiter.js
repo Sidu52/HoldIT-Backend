@@ -66,7 +66,7 @@ const rateLimiterMiddleware = (limiter, options) => {
 const otpLimiterInstance = createLimiter("rl:otp", 3, 300);
 const loginLimiterInstance = createLimiter("rl:login", 10, 900);
 const refreshLimiterInstance = createLimiter("rl:refresh", 20, 900);
-const apiLimiterInstance = createLimiter("rl:api", 100, 60);      // 100 req / min
+const apiLimiterInstance = createLimiter("rl:api", 100, 60); 
 
 
 

@@ -3,6 +3,7 @@ import {
     ACCOUNT_STATUS,
     GENDER_OPTIONS,
     VEHICLE_TYPES,
+    VERIFICATION_STATUS,
 } from "../../utils/constants.js";
 
 // PARAM VALIDATION
@@ -26,7 +27,7 @@ export const listDriversSchema = Joi.object({
     search: Joi.string().trim().max(100).allow("").optional(),
     is_online: Joi.boolean().optional(),
     verification_status: Joi.string()
-        .valid("pending", "verified", "rejected")
+        .valid(...Object.values(VERIFICATION_STATUS))
         .optional(),
     sort_by: Joi.string()
         .valid("createdAt", "first_name", "status")

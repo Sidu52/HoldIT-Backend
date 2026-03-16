@@ -5,7 +5,7 @@ import Store from "../../models/Store.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { getDateRange } from "../../utils/helper.js";
 import { get, set } from "../../services/redisService.js";
-import { BOOKING_STATUS, STATUS_CODES } from "../../utils/constants.js";
+import { BOOKING_STATUS, STATUS_CODES, ACCOUNT_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
 
 // CONSTANTS
 const SUMMARY_CACHE_TTL = 60; // 1 minute
@@ -217,7 +217,7 @@ export const getDashboardSummary = async (req, res) => {
                             { $count: "count" },
                         ],
                         active: [
-                            { $match: { status: "active" } },
+                            { $match: { status: ACCOUNT_STATUS.ACTIVE } },
                             { $count: "count" },
                         ],
                     },
@@ -230,7 +230,7 @@ export const getDashboardSummary = async (req, res) => {
                     $facet: {
                         total: [{ $count: "count" }],
                         verificationPending: [
-                            { $match: { verification_status: "PENDING" } },
+                            { $match: { verification_status: VERIFICATION_STATUS.PENDING } },
                             { $count: "count" },
                         ],
                         online: [
@@ -255,11 +255,11 @@ export const getDashboardSummary = async (req, res) => {
                     $facet: {
                         total: [{ $count: "count" }],
                         online: [
-                            { $match: { store_is_active: true } },
+                            { $match: { is_active: true } },
                             { $count: "count" },
                         ],
                         offline: [
-                            { $match: { store_is_active: false } },
+                            { $match: { is_active: false } },
                             { $count: "count" },
                         ],
                     },

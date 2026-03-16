@@ -12,6 +12,7 @@ import {
     getAddressById,
     updateAddress,
     deleteAddress,
+    updateLocation,
 } from "../../controllers/user/user.user.controller.js";
 import {
     nearestStoreSchema,
@@ -89,6 +90,12 @@ router.get(
     apiLimiter,
     validate(storeIdSchema, "params"),
     getStoreById
+);
+
+router.put(
+    "/location",
+    apiLimiter,
+    updateLocation
 );
 
 export default router;

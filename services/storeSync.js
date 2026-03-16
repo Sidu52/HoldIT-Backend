@@ -1,6 +1,8 @@
 import Store from "../models/Store.js";
-import { VERIFICATION_STATUS } from "../utils/constants.js";
 import { addStoreToRedis } from "./storeServices.js";
+import { VERIFICATION_STATUS } from "../utils/constants.js";
+
+const BATCH_SIZE = 50;
 
 export const syncStoresToRedis = async () => {
     try {
@@ -8,40 +10,54 @@ export const syncStoresToRedis = async () => {
             is_active: true,
             is_online: true,
             verification_status: VERIFICATION_STATUS.VERIFIED,
-            "location.coordinates": { $exists: true },
+            "location.coordinates": { $exists: true, $ne: [] },
         })
             .select(
-                "_id location service_area_id is_active is_online " +
+                "_id location service_area_id " +
+                "is_active is_online verification_status " +
                 "booking_assigned_count max_booking_capacity rating"
             )
             .lean();
 
         if (!stores.length) {
-            console.warn("⚠️  [Store Sync] No active stores found in database");
+            console.warn("⚠️  [Store Sync] No active/verified stores found in database");
             return { synced: 0, failed: 0 };
         }
+
+        console.log(`[Store Sync] Found ${stores.length} store(s) to sync`);
 
         let synced = 0;
         let failed = 0;
 
-        for (const store of stores) {
-            try {
-                const added = await addStoreToRedis(store);
-                if (added) {
+        // Process in batches to avoid overwhelming Redis
+        for (let i = 0; i < stores.length; i += BATCH_SIZE) {
+            const batch = stores.slice(i, i + BATCH_SIZE);
+
+            const results = await Promise.allSettled(
+                batch.map((store) => addStoreToRedis(store))
+            );
+
+            for (let j = 0; j < results.length; j++) {
+                const result = results[j];
+                if (result.status === "fulfilled" && result.value) {
                     synced++;
                 } else {
                     failed++;
+                    const reason =
+                        result.status === "rejected"
+                            ? result.reason?.message
+                            : "addStoreToRedis returned false";
+                    console.error(
+                        `[Store Sync] Failed for store ${batch[j]._id}: ${reason}`
+                    );
                 }
-            } catch (err) {
-                failed++;
-                console.error(`[Store Sync] Failed for store ${store._id}:`, err.message);
             }
         }
 
-        console.log(`✅ [Store Sync] ${synced} stores synced to Redis (${failed} failed)`);
-        return { synced, failed };
+        console.log(`[Store Sync] ${synced} synced, ${failed} failed (total: ${stores.length})`);
+        return { synced, failed, total: stores.length };
     } catch (err) {
-        console.error("❌ [Store Sync] Failed:", err.message);
-        return { synced: 0, failed: 0 };
+        console.error("[Store Sync] Fatal error:", err.message);
+        return { synced: 0, failed: 0, total: 0 };
     }
 };

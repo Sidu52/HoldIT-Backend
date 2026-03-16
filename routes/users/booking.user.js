@@ -10,6 +10,8 @@ import {
     requestReturn,
     getActiveBookings,
     getBookingHistory,
+    getAssignStore,
+    getAssignDriver,
 } from "../../controllers/user/booking.user.controller.js";
 import {
     schedulePickupSchema,
@@ -40,6 +42,7 @@ router.get(
     getMyBookings
 );
 
+
 // Get active bookings
 router.get(
     "/active",
@@ -47,10 +50,10 @@ router.get(
     getActiveBookings
 );
 
+
 router.get(
     "/history",
     apiLimiter,
-    validate(historySchema),
     getBookingHistory
 );
 
@@ -61,6 +64,7 @@ router.get(
     validate(bookingIdSchema),
     getBookingById
 );
+
 
 // Cancel a booking
 router.put(
@@ -78,6 +82,20 @@ router.post(
     validate(bookingIdSchema),
     validate(requestReturnSchema),
     requestReturn
+);
+
+// Get Assign Driver
+router.get(
+    "/:booking_id/assign-driver",
+    apiLimiter,
+    getAssignDriver
+);
+
+// Assign Store
+router.get(
+    "/:booking_id/assign-store",
+    apiLimiter,
+    getAssignStore
 );
 
 

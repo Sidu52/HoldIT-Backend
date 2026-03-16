@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Booking from "../../models/Booking.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import { BOOKING_STATUS, STATUS_CODES } from "../../utils/constants.js";
+import { BOOKING_STATUS, JOB_QUEUES, STATUS_CODES } from "../../utils/constants.js";
 import { addJobToQueue } from "../../services/jobService.js";
 import {
     DRIVER_ASSIGN_QUEUE,
@@ -38,7 +38,10 @@ import {
     releaseStoreCapacity,
     findNearestAvailableStore,
     assignStoreToBooking,
+    findStore,
 } from "../../helpers/user/bookingHelper.js";
+import { STORE_MESSAGES } from "../../constants/user/store.js";
+import { DRIVER_MESSAGES } from "../../constants/user/driver.js";
 
 // SCHEDULE 
 export const schedulePickup = async (req, res) => {
@@ -49,27 +52,40 @@ export const schedulePickup = async (req, res) => {
 
         const userId = req.user.auth_id;
         const { pickupLocation, pickupScheduledAt, luggage, notes } = req.body;
+
+        // Verify user
         const { valid, errorType } = await verifyUserForBooking(userId, session);
 
         if (!valid) {
             await safeAbortSession(session);
-
-            if (errorType === "NOT_FOUND") {
-                return sendError(res, BOOKING_MESSAGES.USER_NOT_FOUND, STATUS_CODES.NOT_FOUND);
-            }
-            return sendError(res, BOOKING_MESSAGES.ACCOUNT_NOT_ACTIVE, STATUS_CODES.FORBIDDEN);
+            return sendError(
+                res,
+                errorType === "NOT_FOUND"
+                    ? BOOKING_MESSAGES.USER_NOT_FOUND
+                    : BOOKING_MESSAGES.ACCOUNT_NOT_ACTIVE,
+                errorType === "NOT_FOUND"
+                    ? STATUS_CODES.NOT_FOUND
+                    : STATUS_CODES.FORBIDDEN
+            );
         }
 
         // Check serviceability
-        const { isServiceable } = await verifyServiceability(
+        const serviceabilityResult = await verifyServiceability(
             pickupLocation.lat,
             pickupLocation.lng
         );
 
-        if (!isServiceable) {
+        if (!serviceabilityResult.isServiceable) {
             await safeAbortSession(session);
+
+            if (serviceabilityResult.error === "DB_ERROR") {
+                return sendError(res, BOOKING_MESSAGES.SCHEDULE_FAILED, STATUS_CODES.INTERNAL_SERVER_ERROR);
+            }
+
             return sendError(res, BOOKING_MESSAGES.NOT_SERVICEABLE, STATUS_CODES.FORBIDDEN);
         }
+
+        const { serviceAreaId } = serviceabilityResult;
 
         // Check active booking limit
         const { hasReachedLimit } = await checkActiveBookingLimit(userId, session);
@@ -83,20 +99,8 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
-        // Validate scheduled time
-        const { valid: timeValid, scheduledTime } = validateScheduledTime(
-            pickupScheduledAt,
-            BOOKING_LIMITS.MIN_PICKUP_LEAD_MINUTES
-        );
-
-        if (!timeValid) {
-            await safeAbortSession(session);
-            return sendError(
-                res,
-                BOOKING_MESSAGES.PICKUP_TOO_SOON(BOOKING_LIMITS.MIN_PICKUP_LEAD_MINUTES),
-                STATUS_CODES.BAD_REQUEST
-            );
-        }
+        // Scheduled time
+        const scheduledTime = new Date(pickupScheduledAt);
 
         // Find nearest available store
         const { store, error: storeError } = await findNearestAvailableStore(
@@ -107,7 +111,6 @@ export const schedulePickup = async (req, res) => {
 
         if (!store) {
             await safeAbortSession(session);
-
             return sendError(
                 res,
                 storeError === "NO_STORE"
@@ -119,7 +122,7 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
-        // Atomically assign store
+        // Atomically reserve store capacity
         const { success: storeAssigned } = await assignStoreToBooking(
             store._id,
             session
@@ -134,26 +137,26 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
-        // Calculate luggage
+        // Create booking
         const totalCount = calculateTotalLuggage(luggage);
 
-        // Create booking
         const [booking] = await Booking.create(
             [
                 {
                     userId,
                     storeId: store._id,
-                    serviceAreaId: store.service_area_id,
+                    serviceAreaId: serviceAreaId ?? store.service_area_id,
                     status: BOOKING_STATUS.STORE_ASSIGNED,
                     pickupLocation: {
                         lat: pickupLocation.lat,
                         lng: pickupLocation.lng,
-                        address: pickupLocation.address || "",
+                        address: pickupLocation.address ?? "",
                     },
                     luggage: {
                         ...luggage,
                         totalCount,
                     },
+                    notes: notes ?? "",
                     pickup: {
                         scheduledAt: scheduledTime,
                     },
@@ -180,25 +183,35 @@ export const schedulePickup = async (req, res) => {
         await session.commitTransaction();
         session.endSession();
 
-        // Queue driver search job
-        addJobToQueue(
-            DRIVER_ASSIGN_QUEUE,
-            {
-                name: DRIVER_JOB_NAMES.SEARCH_DRIVERS,
-                data: {
-                    bookingId: booking._id.toString(),
-                    type: "PICKUP",
+        try {
+            await addJobToQueue(
+                DRIVER_ASSIGN_QUEUE,
+                {
+                    name: DRIVER_JOB_NAMES.SEARCH_DRIVERS,
+                    data: {
+                        bookingId: booking._id.toString(),
+                        type: "PICKUP",
+                    },
                 },
-            },
-            {
-                jobId: `search-drivers-${booking._id}`,
-                removeOnComplete: true,
-                delay: 2000,
-            }
-        ).catch((err) => console.error("Failed to queue driver search:", err));
+                {
+                    jobId: `search-drivers-${booking._id}`,
+                    delay: 2000,
+                    removeOnComplete: true,
+                    removeOnFail: { count: 50 },
+                }
+            );
+        } catch (jobErr) {
+            console.error(
+                `[schedulePickup] ⚠️ Driver search job failed to queue for booking ` +
+                `${booking._id}. Booking created but driver search not started.`,
+                jobErr.message
+            );
+        }
 
-        // Invalidate cache
-        await invalidateBookingCache(userId);
+        // Invalidate user booking cache
+        await invalidateBookingCache(userId).catch((err) =>
+            console.warn("[schedulePickup] Cache invalidation failed:", err.message)
+        );
 
         return sendResponse({
             res,
@@ -209,7 +222,13 @@ export const schedulePickup = async (req, res) => {
                 bookingCode: booking.bookingCode,
                 status: booking.status,
                 scheduledAt: scheduledTime,
-                totalCount,
+                luggage: {
+                    small: luggage.small ?? 0,
+                    medium: luggage.medium ?? 0,
+                    large: luggage.large ?? 0,
+                    other: luggage.other ?? 0,
+                    totalCount,
+                },
                 store: {
                     id: store._id,
                     name: store.store_name,
@@ -220,7 +239,7 @@ export const schedulePickup = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("Schedule Pickup Error:", err);
+        console.error("[schedulePickup] Unhandled error:", err);
         return sendError(res, BOOKING_MESSAGES.SCHEDULE_FAILED);
     }
 };
@@ -325,7 +344,7 @@ export const cancelBooking = async (req, res) => {
         const userId = req.user.auth_id;
         const { booking_id } = req.params;
         const { reason } = req.body;
-       
+
         const booking = await Booking.findOne({
             _id: booking_id,
             userId,
@@ -350,6 +369,7 @@ export const cancelBooking = async (req, res) => {
         booking.cancelledAt = new Date();
         booking.cancelledBy = "USER";
         booking.cancelReason = reason;
+        booking.payment.status = "pending";
 
         booking.timeline.push(
             createTimelineEntry(
@@ -577,3 +597,119 @@ export const requestReturn = async (req, res) => {
         return sendError(res, BOOKING_MESSAGES.RETURN_FAILED);
     }
 };
+
+// Get Assign Driver
+export const getAssignDriver = async (req, res) => {
+    try {
+        const userId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        const booking = await findMutableUserBooking(
+            booking_id,
+            userId,
+            BOOKING_SELECT.ASSIGN_DRIVER
+        );
+        if (!booking) {
+            return sendError(res, BOOKING_MESSAGES.BOOKING_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        }
+
+        if (!booking.driverId) {
+            return sendError(
+                res,
+                DRIVER_MESSAGES.DRIVER_NOT_FOUND,
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        const driver = await findDriver(booking.driverId, BOOKING_SELECT.DETAIL);
+        if (!driver) {
+            return sendError(
+                res,
+                DRIVER_MESSAGES.DRIVER_NOT_FOUND,
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        return sendResponse({
+            res,
+            message: BOOKING_MESSAGES.ASSIGN_DRIVER,
+            data: {
+                bookingId: booking._id,
+                status: booking.status,
+                store: {
+                    driverId: driver._id,
+                },
+                assignedAt: booking.assignedAt,
+                acceptedAt: booking.acceptedAt,
+                completedAt: booking.completedAt,
+            },
+        });
+    } catch (err) {
+        console.error("Assign Driver Error:", err);
+        return sendError(res, BOOKING_MESSAGES.ASSIGN_DRIVER_FAILED);
+    }
+};
+
+// Get Assign Store
+export const getAssignStore = async (req, res) => {
+    try {
+        const userId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        const booking = await findMutableUserBooking(
+            booking_id,
+            userId,
+            BOOKING_SELECT.ASSIGN_STORE
+        );
+
+        if (!booking) {
+            return sendError(
+                res,
+                BOOKING_MESSAGES.BOOKING_NOT_FOUND,
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        if (!booking.storeId) {
+            return sendError(
+                res,
+                BOOKING_MESSAGES.STORE_NOT_ASSIGNED,
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        const store = await findStore(booking.storeId, userId, BOOKING_SELECT.DETAIL);
+        if (!store) {
+            return sendError(
+                res,
+                STORE_MESSAGES.STORE_NOT_FOUND,
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+        return sendResponse({
+            res,
+            message: BOOKING_MESSAGES.ASSIGN_STORE_DETAILS,
+            data: {
+                bookingId: booking._id,
+                status: booking.status,
+                store: {
+                    storeId: store._id,
+                    name: store.store_name,
+                    phone: store.store_contact_number,
+                    address: store.store_address,
+                },
+                assignedAt: booking.assignedAt,
+                acceptedAt: booking.acceptedAt,
+                completedAt: booking.completedAt,
+            },
+        });
+
+    } catch (err) {
+        console.error("Get Assign Store Error:", err);
+        return sendError(
+            res,
+            BOOKING_MESSAGES.GET_ASSIGN_STORE_FAILED
+        );
+    }
+};
+

@@ -310,7 +310,7 @@ export const updateUserStatus = async (req, res) => {
             if (user.is_active === is_active) {
                 return sendError(
                     res,
-                    `User is already ${is_active ? "active" : "inactive"}`,
+                    `User is already ${is_active ?  ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
                     STATUS_CODES.CONFLICT
                 );
             }

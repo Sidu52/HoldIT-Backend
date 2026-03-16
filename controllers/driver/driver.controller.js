@@ -1,7 +1,29 @@
 import redis from "../../services/redisService.js";
 import Driver from "../../models/Driver.js";
-import { addDriverToRedis,removeDriverFromRedis } from "../../services/driverSevices.js";
+import { addDriverToRedis,removeDriverFromRedis } from "../../services/driverGeoService.js";
 
+
+// Get Driver Profile
+export const getDriverProfile = async (req, res) => {
+  try {
+    const driverId = req.user.auth_id;
+    const driver = await Driver.findById(driverId)
+      .select("-password_hash -__v")
+      .lean();
+
+    if (!driver) {
+      return res.status(404).json({ message: "Driver not found" });
+    }
+
+    return res.json({
+      message: "Driver profile fetched successfully",
+      data: { driver },
+    });
+  } catch (err) {
+    console.error("Get Driver Profile Error:", err);
+    return res.status(500).json({ message: "Failed to fetch profile" });
+  }
+};
 
 // Update Driver Information
 export const updateDriverInfo = async (req, res) => {
@@ -90,10 +112,14 @@ export const updateDriverStatus = async (req, res) => {
 export const updateDriverLocation = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
-        const { lan, lat } = req.body;
+        const { lng, lat } = req.body; // ✅ fix: lan → lng
 
-        if (!lan || !lat) {
+        if (!lng || !lat) {
             return res.status(400).json({ message: "Coordinates required" });
+        }
+
+        if (lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+            return res.status(400).json({ message: "Invalid coordinates" });
         }
 
         const driver = await Driver.findById(driverId);
@@ -101,31 +127,22 @@ export const updateDriverLocation = async (req, res) => {
             return res.status(404).json({ message: "Driver not found" });
         }
 
-        // If driver not allowed to take jobs → remove from Redis
         if (!driver.is_active || !driver.is_online) {
-            await removeDriverFromRedis(driverId);
+            await removeDriverFromRedis(driverId, driver.service_area_id);
             return res.status(403).json({ message: "Driver not eligible" });
         }
 
-        // Update MongoDB
+        // ✅ Update MongoDB — post-save hook will handle Redis automatically
         driver.currentLocation = {
             type: "Point",
-            coordinates: [lan, lat]
+            coordinates: [lng, lat], // ✅ [lng, lat] order for GeoJSON
         };
         driver.last_active_at = new Date();
-        await driver.save();
-
-        // Update Redis GEO
-        await redis.geoadd(
-            "drivers",
-            lan,
-            lat,
-            driverId.toString()
-        );
+        await driver.save(); // ✅ hook calls addDriverToRedis(driver) with correct keys
 
         return res.json({
             message: "Location updated",
-            location: driver.currentLocation
+            location: driver.currentLocation,
         });
 
     } catch (error) {

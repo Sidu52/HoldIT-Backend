@@ -28,7 +28,7 @@
   return res.status(statusCode).json({
     success: false,
     status: statusCode,
-    message: error.message || error,
+    message: error?.message || error,
     data: null,
     timestamp: new Date().toISOString(),
   });
