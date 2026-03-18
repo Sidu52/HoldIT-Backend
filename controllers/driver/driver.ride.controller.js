@@ -54,7 +54,7 @@ export const getPendingOfferController = async (req, res) => {
         const booking = await Booking.findById(bookingId)
             .select("bookingCode status pickupLocation deliveryLocation luggage pickup pricing userId storeId")
             .populate("userId", "first_name last_name phone")
-            .populate("storeId", "store_name store_address store_contact_number location")
+            .populate("storeId", "store_name store_contact_number location")
             .lean();
 
         if (!booking) {

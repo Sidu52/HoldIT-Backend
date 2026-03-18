@@ -1,6 +1,5 @@
 import express from "express";
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
-import { roleMiddleware } from "../../middlewares/role.middleware.js";
+import { authMiddleware, roleMiddleware } from "../../middlewares/auth.middleware.js";
 import { apiLimiter } from "../../config/rateLimiter.js";
 import { USER_ROLES } from "../../utils/constants.js";
 import {
@@ -42,7 +41,7 @@ router.put(
 
 // Get all team members
 router.get(
-  "/",
+  "/team",
   apiLimiter,
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(listQuerySchema, "query"),

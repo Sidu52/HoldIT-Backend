@@ -10,7 +10,8 @@ export const updateProfileSchema = Joi.object({
     .pattern(/^\+?[1-9]\d{6,14}$/)
     .message("Invalid phone number format"),
   gender: Joi.string().valid(...GENDER_OPTIONS),
-  avatar: Joi.string().uri(),
+  address: Joi.string().trim().min(2).max(500),
+  date_of_birth: Joi.date().min(new Date(1900, 0, 1)).max(new Date()),
 })
   .min(1) // At least one field required
   .messages({
@@ -61,7 +62,7 @@ export const inviteSchema = Joi.object({
     .required()
     .messages({
       "any.required": "Role is required",
-      "any.only": "Cannot invite super_admin role",
+      "any.only": "Cannot invite for this role",
     }),
 });
 // Validation for updating driver details

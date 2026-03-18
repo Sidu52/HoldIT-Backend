@@ -13,7 +13,7 @@ export const processMarkStored = async (bookingId, storeId) => {
         {
             _id: bookingId,
             status: BOOKING_STATUS.AT_STORE,
-            storeId: new mongoose.Types.ObjectId(storeId),
+             storeId: new mongoose.Types.ObjectId(storeId),
         },
         {
             $set: {
@@ -25,9 +25,9 @@ export const processMarkStored = async (bookingId, storeId) => {
                 timeline: {
                     status: BOOKING_STATUS.STORED,
                     note: notes
-                        ? `Luggage accepted by store: ${notes}`
-                        : "Luggage accepted and stored by store",
-                    updatedBy: new mongoose.Types.ObjectId(storeId),
+                            ? `Luggage accepted by store: ${notes}`
+                            : "Luggage accepted and stored by store",
+                     updatedBy: new mongoose.Types.ObjectId(storeId),
                     updatedByModel: "Store",
                     createdAt: now,
                 },

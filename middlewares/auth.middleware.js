@@ -23,7 +23,6 @@ export const authMiddleware = (req, res, next) => {
         statusCode: STATUS_CODES.UNAUTHORIZED,
       });
     }
-
     req.user = decoded;
     next();
   } catch (err) {
@@ -58,6 +57,7 @@ const extractToken = (req) => {
 
 export const roleMiddleware = (...allowedRoles) => {
   return (req, res, next) => {
+    console.log("req",req.user)
     if (!req.user || !req.user.role) {
       return sendResponse({
         res,

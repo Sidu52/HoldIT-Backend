@@ -95,7 +95,7 @@ export const createAutoCancelWorker = () => {
             // Release store capacity
             if (booking.storeId) {
                 await Store.findByIdAndUpdate(booking.storeId, {
-                    $inc: { booking_assigned_count: -1 },
+                    $inc: { current_booking_count: -1 },
                 });
                 console.log(`[Auto Cancel] Released capacity for store ${booking.storeId}`);
             }

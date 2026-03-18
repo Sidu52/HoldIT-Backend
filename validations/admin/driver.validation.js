@@ -37,50 +37,35 @@ export const listDriversSchema = Joi.object({
 
 // UPDATE DRIVER
 export const updateDriverSchema = Joi.object({
-    first_name: Joi.string().trim().min(2).max(50),
-    last_name: Joi.string().trim().min(2).max(50),
-    phone: Joi.string()
-        .pattern(/^\+?[1-9]\d{6,14}$/)
-        .messages({
-            "string.pattern.base": "Invalid phone number format",
-        }),
-    gender: Joi.string()
-        .valid(...GENDER_OPTIONS)
-        .optional(),
-    date_of_birth: Joi.date().less("now").optional(),
-    address: Joi.string().trim().max(255).optional(),
-    vehicle_type: Joi.string()
-        .valid(...Object.values(VEHICLE_TYPES))
-        .optional(),
-    license_number: Joi.string().trim().max(50).optional(),
-})
-    .min(1)
-    .messages({
-        "object.min": "At least one field is required to update",
-    });
+    first_name: Joi.string().min(2).max(50),
+    last_name: Joi.string().min(2).max(50),
+    phone: Joi.string().pattern(/^[0-9]{10,15}$/),
+    email: Joi.string().email(),
+    gender: Joi.string().valid("male", "female", "other"),
+    date_of_birth: Joi.date().iso().max("now"),
+    address: Joi.string().max(255),
+    vehicle_type: Joi.string().valid("bike", "car", "van"),
+    license_number: Joi.string().max(50),
+    service_area_id: Joi.string().hex().length(24),
+}).min(1); // at least one field required
 
-// UPDATE DRIVER STATUS
-export const updateDriverStatusSchema = Joi.object({
-    status: Joi.string()
-        .valid(...Object.values(ACCOUNT_STATUS))
-        .optional(),
-    is_active: Joi.boolean().optional(),
-    reason: Joi.string()
-        .trim()
-        .max(500)
-        .when("is_active", {
-            is: false,
-            then: Joi.required().messages({
-                "any.required": "Reason is required when deactivating",
-            }),
-            otherwise: Joi.optional(),
-        }),
-})
-    .or("status", "is_active")
-    .messages({
-        "object.missing":
-            "At least one of status or is_active is required",
-    });
+export const updateDriverLocationSchema = Joi.object({
+    lat: Joi.number().min(-90).max(90).required(),
+    lng: Joi.number().min(-180).max(180).required(),
+    address: Joi.string().max(255),
+});
+
+export const updateDriverAccountSchema = Joi.object({
+    status: Joi.string().valid(...Object.values(ACCOUNT_STATUS)),
+    is_active: Joi.boolean(),
+    is_Online: Joi.boolean(),
+    is_on_trip: Joi.boolean(),
+    is_verified: Joi.boolean(),
+    is_serviceable: Joi.boolean(),
+    verification_status: Joi.string().valid(
+        "PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED"
+    ),
+}).min(1); // at least one field required
 
 // BULK DEACTIVATE
 export const bulkDeactivateSchema = Joi.object({

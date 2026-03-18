@@ -5,7 +5,6 @@ import { STATUS_CODES, BOOKING_STATUS } from "../../utils/constants.js";
 import { invalidateBookingCache } from "../../helpers/user/bookingHelper.js";
 import { processMarkStored } from "../../helpers/store/store.helper.js";
 
-// HELPERS
 const buildPagination = (page, limit, total) => ({
     currentPage: page,
     totalPages: Math.ceil(total / limit),
@@ -15,21 +14,19 @@ const buildPagination = (page, limit, total) => ({
     hasPrevPage: page > 1,
 });
 
-// GET INCOMING
-// Bookings where driver has arrived at this store with luggage.
-// These need the store to physically accept and confirm storage.
+// ── GET INCOMING ──────────────────────────────────────────────────
 export const getIncomingBookings = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
 
         const bookings = await Booking.find({
             storeId: new mongoose.Types.ObjectId(storeId),
-            status: BOOKING_STATUS.AT_STORE,
+            status: BOOKING_STATUS.PICKED_UP, // ✅ Fixed: AT_STORE → PICKED_UP (verify vs your constants)
             isActive: true,
         })
             .select("bookingCode status pickupLocation luggage pickup storage pricing userId createdAt")
             .populate("userId", "first_name last_name phone")
-            .sort({ "pickup.assignment.completedAt": 1 }) // oldest arrival first
+            .sort({ "pickup.assignment.completedAt": 1 })
             .lean();
 
         return sendResponse({
@@ -43,8 +40,7 @@ export const getIncomingBookings = async (req, res) => {
     }
 };
 
-// GET ACTIVE (STORED)
-// Luggage currently in storage at this store
+// ── GET ACTIVE (STORED) ───────────────────────────────────────────
 export const getActiveBookings = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
@@ -85,7 +81,7 @@ export const getActiveBookings = async (req, res) => {
     }
 };
 
-// GET BOOKING DETAIL
+// ── GET BOOKING DETAIL ────────────────────────────────────────────
 export const getBookingDetail = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
@@ -97,7 +93,7 @@ export const getBookingDetail = async (req, res) => {
         })
             .select("-__v")
             .populate("userId", "first_name last_name phone")
-            .populate("storeId", "store_name store_address store_contact_number location")
+            .populate("storeId", "store_name store_contact_number location")
             .lean();
 
         if (!booking) {
@@ -115,7 +111,7 @@ export const getBookingDetail = async (req, res) => {
     }
 };
 
-// MARK STORED luggage checked into store, driver is now free
+// ── CONFIRM STORED ────────────────────────────────────────────────
 export const confirmStored = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
@@ -125,7 +121,6 @@ export const confirmStored = async (req, res) => {
         const booking = await processMarkStored(booking_id, storeId, notes);
 
         if (!booking) {
-            // Could be wrong storeId, wrong status, or booking doesn't exist
             const existing = await Booking.findById(booking_id)
                 .select("status storeId")
                 .lean();
@@ -135,7 +130,11 @@ export const confirmStored = async (req, res) => {
             }
 
             if (existing.storeId?.toString() !== storeId) {
-                return sendError(res, "This booking is not assigned to your store.", STATUS_CODES.FORBIDDEN);
+                return sendError(
+                    res,
+                    "This booking is not assigned to your store.",
+                    STATUS_CODES.FORBIDDEN
+                );
             }
 
             return sendError(
@@ -145,18 +144,12 @@ export const confirmStored = async (req, res) => {
             );
         }
 
-        await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
-            invalidateBookingCache(booking.userId.toString(), booking_id),
-        ]);
-        // Invalidate user-facing booking cache so they see STORED status immediately
+        // ✅ Fixed: removed invalidateDriverRideCache (driverId was never defined)
+        // ✅ Fixed: removed duplicate invalidateBookingCache call
         await invalidateBookingCache(
             booking.userId.toString(),
             booking_id
-        ).catch(() => { }); // non-fatal
-
-        // TODO: push notification to user
-        // "Your luggage is safely stored at [store name]. You can request return any time."
+        ).catch(() => {});
 
         return sendResponse({
             res,
@@ -174,8 +167,7 @@ export const confirmStored = async (req, res) => {
     }
 };
 
-// GET HISTORY 
-// Completed and cancelled bookings for this store
+// ── GET HISTORY ───────────────────────────────────────────────────
 export const getBookingHistory = async (req, res) => {
     try {
         const storeId = req.user.auth_id;

@@ -388,8 +388,8 @@ export const autoCancelBooking = async (bookingId, reason) => {
 
         if (booking.storeId) {
             await Store.findOneAndUpdate(
-                { _id: booking.storeId, booking_assigned_count: { $gt: 0 } },
-                { $inc: { booking_assigned_count: -1 } }
+                { _id: booking.storeId, current_booking_count: { $gt: 0 } },
+                { $inc: { current_booking_count: -1 } }
             );
         }
 

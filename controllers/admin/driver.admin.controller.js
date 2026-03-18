@@ -9,17 +9,6 @@ const LIST_CACHE_TTL = 120; // 2 minutes
 const DETAIL_CACHE_TTL = 300; // 5 minutes
 const EXCLUDED_FIELDS = "-password_hash -__v";
 
-const ALLOWED_UPDATE_FIELDS = [
-    "first_name",
-    "last_name",
-    "phone",
-    "gender",
-    "date_of_birth",
-    "address",
-    "vehicle_type",
-    "license_number",
-];
-
 // Escape Regex
 const escapeRegex = (str) => {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -180,53 +169,69 @@ export const getDriverById = async (req, res) => {
 export const updateDriver = async (req, res) => {
     try {
         const { driver_id } = req.params;
-        // Build update object from allowed fields only
-        const updates = {};
-        ALLOWED_UPDATE_FIELDS.forEach((field) => {
-            if (req.body[field] !== undefined) {
-                updates[field] = req.body[field];
-            }
-        });
+        const { auth_id } = req.user;
+        const {
+            first_name,
+            last_name,
+            phone,
+            email,
+            gender,
+            date_of_birth,
+            address,
+            vehicle_type,
+            license_number,
+            service_area_id,
+        } = req.body;
 
-        if (Object.keys(updates).length === 0) {
-            return sendError(
-                res,
-                "No valid fields to update",
-                STATUS_CODES.BAD_REQUEST
-            );
-        }
-
-        // Check driver exists and is active
-        const existingDriver = await Driver.findById(driver_id)
-            .select("is_active status")
+        const driver = await Driver.findById(driver_id)
+            .select("_id is_active")
             .lean();
 
-        if (!existingDriver) {
-            return sendError(
-                res,
-                "Driver not found",
-                STATUS_CODES.NOT_FOUND
-            );
+        if (!driver) {
+            return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
         }
 
-        if (!existingDriver.is_active) {
-            return sendError(
-                res,
-                "Cannot update inactive driver. Reactivate first.",
-                STATUS_CODES.FORBIDDEN
-            );
+        // Check email/phone uniqueness if being updated
+        if (email || phone) {
+            const conflict = await Driver.findOne({
+                _id: { $ne: driver_id },
+                $or: [
+                    ...(email ? [{ email }] : []),
+                    ...(phone ? [{ phone }] : []),
+                ],
+            }).select("_id email phone").lean();
+
+            if (conflict) {
+                return sendError(
+                    res,
+                    conflict.email === email
+                        ? "Email already in use by another driver"
+                        : "Phone already in use by another driver",
+                    STATUS_CODES.CONFLICT
+                );
+            }
         }
+
+        const updateFields = {
+            updated_at: new Date(),
+            updated_by: auth_id,
+            ...(first_name && { first_name }),
+            ...(last_name && { last_name }),
+            ...(phone && { phone }),
+            ...(email && { email }),
+            ...(gender && { gender }),
+            ...(date_of_birth && { date_of_birth: new Date(date_of_birth) }),
+            ...(address && { address }),
+            ...(vehicle_type && { vehicle_type }),
+            ...(license_number && { license_number }),
+            ...(service_area_id && { service_area_id }),
+        };
 
         const updatedDriver = await Driver.findByIdAndUpdate(
             driver_id,
-            { $set: updates },
+            { $set: updateFields },
             { new: true, runValidators: true }
-        )
-            .select(EXCLUDED_FIELDS)
-            .lean();
-
-        // Invalidate cache
-        await invalidateDriverCache(driver_id);
+        ).select(EXCLUDED_FIELDS).lean();
 
         return sendResponse({
             res,
@@ -234,100 +239,165 @@ export const updateDriver = async (req, res) => {
             data: updatedDriver,
         });
     } catch (err) {
-        // Handle duplicate key errors
-        if (err.code === 11000) {
-            const field = Object.keys(err.keyPattern)[0];
-            return sendError(
-                res,
-                `${field} already exists`,
-                STATUS_CODES.CONFLICT
-            );
-        }
-
-        console.error("Update Driver Error:", err);
+        console.error("[updateDriver] Error:", err);
         return sendError(res, "Failed to update driver");
     }
 };
 
-// UPDATE DRIVER STATUS
-export const updateDriverStatus = async (req, res) => {
+export const updateDriverLocation = async (req, res) => {
     try {
-        const { driver_id } = req.params;
-        const { status, reason, is_active } = req.body;
+        const { id } = req.params;
         const { auth_id } = req.user;
+        const { lat, lng, address } = req.body;
 
-        const driver = await Driver.findById(driver_id)
-            .select("status is_active")
+        const driver = await Driver.findById(id)
+            .select("_id is_active")
             .lean();
 
         if (!driver) {
+            return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        if (!driver.is_active) {
+            return sendError(res, "Driver account is not active", STATUS_CODES.FORBIDDEN);
+        }
+
+        const updatedDriver = await Driver.findByIdAndUpdate(
+            id,
+            {
+                $set: {
+                    currentLocation: {
+                        lat,
+                        lng,
+                        address: address ?? "",
+                        lastUpdated: new Date(),
+                    },
+                    updated_at: new Date(),
+                    updated_by: auth_id,
+                },
+            },
+            { new: true, runValidators: true }
+        )
+            .select("_id currentLocation updated_at")
+            .lean();
+
+        return sendResponse({
+            res,
+            message: "Driver location updated successfully",
+            data: updatedDriver,
+        });
+    } catch (err) {
+        console.error("[updateDriverLocation] Error:", err);
+        return sendError(res, "Failed to update driver location");
+    }
+};
+
+export const updateDriverAccount = async (req, res) => {
+    try {
+        const { driver_id } = req.params;
+        const { auth_id } = req.user;
+
+        const {
+            status,
+            is_active,
+            is_Online,
+            is_on_trip,
+            is_verified,
+            is_serviceable,
+            verification_status,
+            reason, // deactivation reason from updateDriverStatus
+        } = req.body;
+
+        // ✅ Fixed: select all fields used in guards below
+        const driver = await Driver.findById(driver_id)
+            .select("_id status is_active is_on_trip is_verified verification_status")
+            .lean();
+
+        if (!driver) {
+            return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        // Guard: same status conflict (from updateDriverStatus)
+        if (status !== undefined && driver.status === status) {
             return sendError(
                 res,
-                "Driver not found",
-                STATUS_CODES.NOT_FOUND
+                `Driver status is already ${status}`,
+                STATUS_CODES.CONFLICT
             );
         }
 
-        // Build update
-        const updateData = {
-            updated_at: new Date(),
-            status_updated_by: auth_id,
-        };
-
-        if (status !== undefined) {
-            if (driver.status === status) {
-                return sendError(
-                    res,
-                    `Driver is already ${status}`,
-                    STATUS_CODES.CONFLICT
-                );
-            }
-            updateData.status = status;
+        // Guard: same is_active conflict (from updateDriverStatus)
+        if (is_active !== undefined && driver.is_active === is_active) {
+            return sendError(
+                res,
+                `Driver is already ${is_active ? "active" : "inactive"}`,
+                STATUS_CODES.CONFLICT
+            );
         }
 
-        if (is_active !== undefined) {
-            if (driver.is_active === is_active) {
-                return sendError(
-                    res,
-                    `Driver is already ${is_active ? ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
-                    STATUS_CODES.CONFLICT
-                );
-            }
-            updateData.is_active = is_active;
+        // Guard: cannot deactivate a driver on a trip (fixed: now is_on_trip is actually selected)
+        if (is_active === false && driver.is_on_trip) {
+            return sendError(
+                res,
+                "Cannot deactivate a driver who is currently on a trip",
+                STATUS_CODES.CONFLICT
+            );
+        }
 
-            if (!is_active && reason) {
-                updateData.account_deactivated_reason = reason;
-                updateData.deactivated_at = new Date();
-                updateData.deactivated_by = auth_id;
-            }
+        // Guard: cannot verify without APPROVED verification status
+        if (is_verified === true && driver.verification_status !== DRIVER_VERIFICATION_STATUS.APPROVED) {
+            return sendError(
+                res,
+                "Driver cannot be verified until verification status is APPROVED",
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
 
-            if (is_active) {
-                // Clear deactivation data on reactivation
-                updateData.account_deactivated_reason = null;
-                updateData.deactivated_at = null;
-                updateData.deactivated_by = null;
-            }
+        const updateFields = {
+            updated_at: new Date(),
+            updated_by: auth_id,
+            status_updated_by: auth_id,
+            ...(status !== undefined && { status }),
+            ...(is_active !== undefined && { is_active }),
+            ...(is_Online !== undefined && { is_Online }),
+            ...(is_on_trip !== undefined && { is_on_trip }),
+            ...(is_verified !== undefined && { is_verified }),
+            ...(is_serviceable !== undefined && { is_serviceable }),
+            ...(verification_status !== undefined && { verification_status }),
+        };
+
+        // Deactivation metadata (from updateDriverStatus)
+        if (is_active === false) {
+            updateFields.account_deactivated_reason = reason ?? null;
+            updateFields.deactivated_at = new Date();
+            updateFields.deactivated_by = auth_id;
+        }
+
+        // Clear deactivation metadata on reactivation (from updateDriverStatus)
+        if (is_active === true) {
+            updateFields.account_deactivated_reason = null;
+            updateFields.deactivated_at = null;
+            updateFields.deactivated_by = null;
         }
 
         const updatedDriver = await Driver.findByIdAndUpdate(
             driver_id,
-            { $set: updateData },
+            { $set: updateFields },
             { new: true, runValidators: true }
-        )
-            .select(EXCLUDED_FIELDS)
-            .lean();
+        ).select(EXCLUDED_FIELDS).lean();
 
-        // Invalidate cache
-        await invalidateDriverCache(driver_id);
+        // Invalidate cache (from updateDriverStatus)
+        await invalidateDriverCache(driver_id)
+            .catch((err) => console.warn("[updateDriverAccount] Cache invalidation failed:", err.message));
 
         return sendResponse({
             res,
-            message: "Driver status updated successfully",
+            message: "Driver account updated successfully",
             data: updatedDriver,
         });
     } catch (err) {
-        console.error("Update Driver Status Error:", err);
-        return sendError(res, "Failed to update driver status");
+        console.error("[updateDriverAccount] Error:", err);
+        return sendError(res, "Failed to update driver account");
     }
 };
 

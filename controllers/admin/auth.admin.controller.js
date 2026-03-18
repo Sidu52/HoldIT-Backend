@@ -54,7 +54,6 @@ const clearAuthCookies = (res) => {
 // HELPER: Generate Token Pair
 const generateTokenPair = async (admin) => {
     const tokenId = uuidv4();
-
     const accessToken = generateAccessToken({
         auth_id: admin._id,
         role: admin.role,
@@ -101,7 +100,7 @@ export const verifyAdminInviteToken = async (req, res) => {
 
         const inviteData = JSON.parse(inviteDataStr);
         const admin = await Admin.findOne({ email: inviteData.email })
-            .select("email role isVerified")
+            .select("email role is_verified")
             .lean();
 
         if (!admin) {
@@ -112,7 +111,7 @@ export const verifyAdminInviteToken = async (req, res) => {
             );
         }
 
-        if (admin.isVerified) {
+        if (admin.is_verified) {
             // Clean up the token since it's no longer needed
             await del(`admin-invite:${token}`);
             return sendError(
@@ -141,7 +140,7 @@ export const adminLogin = async (req, res) => {
     try {
         const { email, password } = req.body;
         const admin = await Admin.findOne({ email })
-            .select("_id email password_hash status role isVerified")
+            // .select("_id email password_hash status role is_verified")
             .lean();
 
         if (!admin) {
@@ -151,8 +150,8 @@ export const adminLogin = async (req, res) => {
                 STATUS_CODES.UNAUTHORIZED
             );
         }
-
-        if (!admin.isVerified) {
+console.log("admin",admin)
+        if (!admin.is_verified) {
             return sendError(
                 res,
                 "Account not activated. Please complete signup first.",
@@ -176,7 +175,6 @@ export const adminLogin = async (req, res) => {
                 STATUS_CODES.UNAUTHORIZED
             );
         }
-
         // Generate tokens
         const { accessToken, refreshToken } = await generateTokenPair(admin);
 
@@ -242,7 +240,7 @@ export const signUp = async (req, res) => {
             );
         }
 
-        if (admin.isVerified) {
+        if (admin.is_verified) {
             await del(`admin-invite:${invite_token}`);
             return sendError(
                 res,
@@ -273,7 +271,7 @@ export const signUp = async (req, res) => {
                 date_of_birth,
                 password_hash: passwordHash,
                 gender,
-                isVerified: true,
+                is_verified: true,
                 status: ACCOUNT_STATUS.ACTIVE,
             }
         );

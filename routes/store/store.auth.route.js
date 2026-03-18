@@ -11,10 +11,10 @@ import {
 const router = express.Router();
 
 // Public — no auth required
-router.post("/", apiLimiter, authStore);    // request OTP
-router.post("/resend", apiLimiter, sendOTP);      // resend OTP
-router.post("/verify", apiLimiter, verifyOTP);    // verify OTP → get tokens
-router.post("/refresh", apiLimiter, refreshToken); // refresh access token
-router.post("/logout", apiLimiter, logout);       // clear session
+router.post("/", apiLimiter, authStore);
+router.post("/resend", apiLimiter, sendOTP);
+router.post("/verify", apiLimiter, verifyOTP);
+router.post("/refresh", apiLimiter, refreshToken);
+router.post("/logout", apiLimiter, logout);
 
 export default router;

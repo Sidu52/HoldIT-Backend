@@ -14,7 +14,7 @@ import { initializeWorkers } from "./workers/initializeWorkers.js";
 import { syncStoresToRedis } from "./services/storeSync.js";
 import { syncDriversToRedis } from "./services/driverSync.js";
 import { closeQueues } from "./services/jobService.js";
-import { adminSwaggerSpec, userSwaggerSpec } from "./swagger.js";
+import { setupSwagger } from "./swagger.routes.js";
 
 import AdminRoutes from "./routes/admin/index.js";
 import UserRoutes from "./routes/users/index.js";
@@ -61,8 +61,7 @@ StoreRoutes(app);
 UserRoutes(app);
 
 // app.use("/api/v1/", BulkUpload);
-app.use("/admin/api-docs", swaggerUi.serve, swaggerUi.setup(adminSwaggerSpec));
-app.use("/user/api-docs", swaggerUi.serve, swaggerUi.setup(userSwaggerSpec));
+ setupSwagger(app);
 
 // ERROR HANDLER
 app.use((err, req, res, next) => {

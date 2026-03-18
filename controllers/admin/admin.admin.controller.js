@@ -44,6 +44,9 @@ const invalidateTeamCache = async () => {
 
 // Import scanKeys from redis service
 import { scanKeys } from "../../services/redisService.js";
+import User from "../../models/User.js";
+import Driver from "../../models/Driver.js";
+import Store from "../../models/Store.js";
 
 // Escape Regex Special Characters
 const escapeRegex = (str) => {
@@ -77,10 +80,10 @@ export const createAdminInvite = async (req, res) => {
 
         // Check if admin already exists
         let admin = await Admin.findOne({ email })
-            .select("_id isVerified")
+            .select("_id is_verified")
             .lean();
 
-        if (admin?.isVerified) {
+        if (admin?.is_verified) {
             return sendError(
                 res,
                 "An active account already exists with this email",
@@ -93,7 +96,7 @@ export const createAdminInvite = async (req, res) => {
             admin = await Admin.create({
                 email,
                 role,
-                isVerified: false,
+                is_verified: false,
                 invited_by: inviterId,
                 status: ACCOUNT_STATUS.PENDING,
             });
@@ -202,30 +205,17 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
     try {
         const { auth_id } = req.user;
-        const updates = {};
-        ALLOWED_PROFILE_FIELDS.forEach((field) => {
-            if (req.body[field] !== undefined) {
-                updates[field] = req.body[field];
-            }
-        });
+        const {
+            first_name,
+            last_name,
+            phone,
+            gender,
+            address,
+            date_of_birth,
+        } = req.body;
 
-        if (Object.keys(updates).length === 0) {
-            return sendError(
-                res,
-                "No valid fields to update",
-                STATUS_CODES.BAD_REQUEST
-            );
-        }
-
-        const admin = await Admin.findByIdAndUpdate(
-            auth_id,
-            { $set: updates },
-            {
-                new: true,
-                runValidators: true,
-            }
-        )
-            .select(EXCLUDED_FIELDS)
+        const admin = await Admin.findById(auth_id)
+            .select("_id is_verified")
             .lean();
 
         if (!admin) {
@@ -235,20 +225,50 @@ export const updateProfile = async (req, res) => {
                 STATUS_CODES.NOT_FOUND
             );
         }
+        if (!admin.is_verified) {
+            return sendError(
+                res,
+                "Account not verified. Please complete profile first.",
+                STATUS_CODES.FORBIDDEN
+            );
+        }
+        const updateFields = {};
+        if (first_name) updateFields.first_name = first_name.trim();
+        if (last_name) updateFields.last_name = last_name.trim();
+        if (phone) updateFields.phone = phone.trim();
+        if (gender) updateFields.gender = gender.toLowerCase();
+        if (address) updateFields.address = address.trim();
+        if (date_of_birth) updateFields.date_of_birth = new Date(date_of_birth);
+
+        const updatedAdmin = await Admin.findByIdAndUpdate(
+            auth_id,
+            { $set: updateFields },
+            { new: true, runValidators: true }
+        )
+            .select("-password_hash -__v")
+            .lean();
+        if (!updatedAdmin) {
+            return sendError(
+                res,
+                "Failed to update profile",
+                STATUS_CODES.INTERNAL_SERVER_ERROR
+            );
+        }
+
 
         // Invalidate profile cache
         await del(`admin:profile:${auth_id}`);
-
         return sendResponse({
             res,
             message: "Profile updated successfully",
             data: admin,
         });
-    } catch (err) {
+    }
+    catch (err) {
         console.error("Update Profile Error:", err);
         return sendError(res, "Failed to update profile");
     }
-};
+}
 
 // GET TEAM MEMBERS
 export const getTeamsMember = async (req, res) => {
@@ -419,10 +439,23 @@ export const getSuperAdmins = (req, res) =>
 export const updateAccountStatus = async (req, res) => {
     try {
         const { auth_id, status, reason } = req.body;
-        const { auth_id: currentUserId } = req.user;
+        const { auth_id: currentUserId, role: currentRole } = req.user;
+        // Model mapping
+        const MODEL_MAP = {
+            admin: Admin,
+            user: User,
+            driver: Driver,
+            store: Store,
+        };
 
-        // Prevent self-modification
-        if (auth_id === currentUserId.toString()) {
+        const Model = MODEL_MAP[currentRole === "super_admin" ? USER_ROLES.ADMIN : currentRole];
+
+        if (!Model) {
+            return sendError(res, "Invalid account type", STATUS_CODES.BAD_REQUEST);
+        }
+
+        // Prevent self-modification (only for admins)
+        if ((currentRole === "admin" || currentRole === "super_admin") && auth_id === currentUserId.toString()) {
             return sendError(
                 res,
                 "You cannot change your own account status",
@@ -430,20 +463,20 @@ export const updateAccountStatus = async (req, res) => {
             );
         }
 
-        const admin = await Admin.findById(auth_id)
+        const result = await Model.findById(auth_id)
             .select("_id role status")
             .lean();
 
-        if (!admin) {
+        if (!result) {
             return sendError(
                 res,
-                "Admin not found",
+                `${currentRole} not found`,
                 STATUS_CODES.NOT_FOUND
             );
         }
 
-        // Prevent modifying super_admin accounts
-        if (admin.role === USER_ROLES.SUPER_ADMIN) {
+        // Prevent modifying super_admin
+        if ((currentRole === "admin" || currentRole === "super_admin") && result.role === USER_ROLES.SUPER_ADMIN) {
             return sendError(
                 res,
                 "Cannot modify super admin accounts",
@@ -452,7 +485,7 @@ export const updateAccountStatus = async (req, res) => {
         }
 
         // Prevent setting same status
-        if (admin.status === status) {
+        if (result.status === status) {
             return sendError(
                 res,
                 `Account is already ${status}`,
@@ -460,7 +493,6 @@ export const updateAccountStatus = async (req, res) => {
             );
         }
 
-        // Build update
         const updateData = {
             status,
             status_updated_at: new Date(),
@@ -471,17 +503,22 @@ export const updateAccountStatus = async (req, res) => {
             updateData.block_reason = reason;
         }
 
-        await Admin.findByIdAndUpdate(auth_id, { $set: updateData });
+        await Model.findByIdAndUpdate(auth_id, { $set: updateData });
 
-        // Invalidate caches
-        await Promise.all([
-            del(`admin:profile:${auth_id}`),
-            invalidateTeamCache(),
-        ]);
+        // Cache invalidation (dynamic key)
+        await del(`${currentRole}:profile:${auth_id}`);
 
-        // If blocking, invalidate all their sessions
-        if (status === ACCOUNT_STATUS.BLOCKED || status === ACCOUNT_STATUS.INACTIVE) {
+        if (currentRole === "admin" || currentRole === "super_admin") {
+            await invalidateTeamCache();
+        }
+
+        // Remove sessions if blocked / inactive
+        if (
+            status === ACCOUNT_STATUS.BLOCKED ||
+            status === ACCOUNT_STATUS.INACTIVE
+        ) {
             const { keys } = await scanKeys(`refresh:${auth_id}:*`);
+
             if (keys.length > 0) {
                 await Promise.all(keys.map((key) => del(key)));
             }
@@ -489,8 +526,9 @@ export const updateAccountStatus = async (req, res) => {
 
         return sendResponse({
             res,
-            message: `Account status updated to ${status}`,
+            message: `${currentRole} account status updated to ${status}`,
         });
+
     } catch (err) {
         console.error("Update Account Status Error:", err);
         return sendError(res, "Failed to update account status");

@@ -34,7 +34,6 @@ import {
     buildPagination,
     createTimelineEntry,
     queueBookingJob,
-    safeAbortSession,
     releaseStoreCapacity,
     findNearestAvailableStore,
     assignStoreToBooking,
@@ -42,6 +41,7 @@ import {
 } from "../../helpers/user/bookingHelper.js";
 import { STORE_MESSAGES } from "../../constants/user/store.js";
 import { DRIVER_MESSAGES } from "../../constants/user/driver.js";
+import { safeAbortSession } from "../../utils/helper.js";
 
 // SCHEDULE 
 export const schedulePickup = async (req, res) => {
@@ -232,7 +232,7 @@ export const schedulePickup = async (req, res) => {
                 store: {
                     id: store._id,
                     name: store.store_name,
-                    address: store.store_address,
+                    address: store.location,
                     distanceKm: parseFloat((store.distance / 1000).toFixed(2)),
                 },
             },
@@ -696,7 +696,7 @@ export const getAssignStore = async (req, res) => {
                     storeId: store._id,
                     name: store.store_name,
                     phone: store.store_contact_number,
-                    address: store.store_address,
+                    address: store.location,
                 },
                 assignedAt: booking.assignedAt,
                 acceptedAt: booking.acceptedAt,

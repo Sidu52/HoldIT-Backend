@@ -13,7 +13,7 @@ export const generateAccessToken = (user) => {
     throw new Error("Missing required user fields for access token");
   }
   return jwt.sign(
-    { auth_id: user.auth_id, type: user.type },
+    { auth_id: user.auth_id, type: user.type, role: user.role },
     accessSecret,
     { expiresIn: `${ACCESS_TOKEN_EXPIRY}m` }
   );

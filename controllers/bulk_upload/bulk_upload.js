@@ -98,7 +98,7 @@ export const bulkUploadUsers = async (req, res) => {
                     : undefined,
                 status: ACCOUNT_STATUS.ACTIVE,
                 is_serviceable: user.is_serviceable ?? true,
-                isSignUp: user.isSignUp ?? false,
+                is_signup: user.is_signup ?? false,
             };
         });
 
@@ -265,7 +265,7 @@ export const bulkUploadAdmin = async (req, res) => {
                 // Auto-generate password if not present
                 let passwordHash = admin.password_hash;
 
-                if (!passwordHash && admin.isVerified) {
+                if (!passwordHash && admin.is_verified) {
                     const randomPassword = Math.random().toString(36).slice(-8);
                     passwordHash = await bcrypt.hash(randomPassword, 10);
                 }
@@ -281,7 +281,7 @@ export const bulkUploadAdmin = async (req, res) => {
                     status: admin.status,
                     gender: admin.gender,
                     role: admin.role,
-                    isVerified: admin.isVerified || false,
+                    is_verified: admin.is_verified || false,
                     invited_by: admin.invited_by || null,
                 };
             })

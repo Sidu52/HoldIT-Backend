@@ -33,7 +33,6 @@ export const buildSearchFilter = (query) => {
         const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         filter.$or = [
             { store_name: { $regex: escapedQuery, $options: "i" } },
-            { store_address: { $regex: escapedQuery, $options: "i" } },
         ];
     }
 
@@ -95,8 +94,8 @@ export const enrichNearbyStores = (stores) => {
 };
 
 export const calculateAvailability = (store) => {
-    const { booking_assigned_count = 0, max_booking_capacity = 0 } = store;
-    const availableSlots = Math.max(0, max_booking_capacity - booking_assigned_count);
+    const { current_booking_count = 0, max_booking_capacity = 0 } = store;
+    const availableSlots = Math.max(0, max_booking_capacity - current_booking_count);
 
     // Determine current open/closed status
     const isCurrentlyOpen = checkStoreOpenStatus(
@@ -111,10 +110,10 @@ export const calculateAvailability = (store) => {
         isActive: store.is_active,
         isCurrentlyOpen,
         totalCapacity: max_booking_capacity,
-        currentBookings: booking_assigned_count,
+        currentBookings: current_booking_count,
         availableSlots,
         utilizationPercent: max_booking_capacity > 0
-            ? parseFloat(((booking_assigned_count / max_booking_capacity) * 100).toFixed(1))
+            ? parseFloat(((current_booking_count / max_booking_capacity) * 100).toFixed(1))
             : 0,
         canAcceptBooking: store.is_online && store.is_active && isCurrentlyOpen && availableSlots > 0,
         operatingHours: {

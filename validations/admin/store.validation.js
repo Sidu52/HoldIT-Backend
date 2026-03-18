@@ -12,6 +12,23 @@ export const storeIdSchema = Joi.object({
         }),
 });
 
+export const createStoreSchema = Joi.object({
+    // Required
+    phone:        Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
+    store_name:   Joi.string().min(2).max(200).required(),
+    lat:          Joi.number().min(-90).max(90).required(),
+    lng:          Joi.number().min(-180).max(180).required(),
+    address:      Joi.string().min(5).max(500).required(),
+
+    // Optional
+    store_description:    Joi.string().max(1000).optional(),
+    store_open_time:      Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), // HH:mm
+    store_close_time:     Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    store_contact_number: Joi.string().max(15).optional(),
+    max_booking_capacity: Joi.number().min(1).max(500).optional(),
+    store_owner_id:       Joi.string().hex().length(24).optional(), // MongoDB ObjectId
+});
+
 export const storeOwnerIdSchema = Joi.object({
     store_owner_id: Joi.string()
         .pattern(/^[0-9a-fA-F]{24}$/)
@@ -53,109 +70,36 @@ export const listStoreOwnersSchema = Joi.object({
     sort_order: Joi.string().valid("asc", "desc").default("desc"),
 });
 
-//  STORE SCHEMAS
-export const createStoreSchema = Joi.object({
-    store_name: Joi.string().trim().min(2).max(100).required(),
-    store_address: Joi.string().trim().min(5).max(255).required(),
-    store_capacity: Joi.number().integer().min(1).required(),
-    store_open_time: Joi.string()
-        .pattern(/^([01]\d|2[0-3]):([0-5]\d)$/)
-        .required()
-        .messages({
-            "string.pattern.base": "Open time must be in HH:MM format",
-        }),
-    store_close_time: Joi.string()
-        .pattern(/^([01]\d|2[0-3]):([0-5]\d)$/)
-        .required()
-        .messages({
-            "string.pattern.base": "Close time must be in HH:MM format",
-        }),
-    store_description: Joi.string().trim().max(500).optional(),
-    lat: Joi.number().min(-90).max(90).required(),
-    lng: Joi.number().min(-180).max(180).required(),
-    store_owner_id: Joi.string()
-        .pattern(/^[0-9a-fA-F]{24}$/)
-        .required(),
-});
-
 export const updateStoreSchema = Joi.object({
-    store_name: Joi.string().trim().min(2).max(100),
-    store_address: Joi.string().trim().min(5).max(255),
-    store_capacity: Joi.number().integer().min(1),
-    store_open_time: Joi.string()
-        .pattern(/^([01]\d|2[0-3]):([0-5]\d)$/)
-        .messages({
-            "string.pattern.base": "Open time must be in HH:MM format",
-        }),
-    store_close_time: Joi.string()
-        .pattern(/^([01]\d|2[0-3]):([0-5]\d)$/)
-        .messages({
-            "string.pattern.base": "Close time must be in HH:MM format",
-        }),
-    store_description: Joi.string().trim().max(500),
+    store_name: Joi.string().min(2).max(200),
+    max_booking_capacity: Joi.number().min(1).max(500),
+    store_open_time: Joi.string(),
+    store_close_time: Joi.string(),
+    store_contact_number: Joi.string().max(15),
+    store_description: Joi.string().max(1000),
     lat: Joi.number().min(-90).max(90),
     lng: Joi.number().min(-180).max(180),
-})
-    .min(1)
-    .messages({
-        "object.min": "At least one field is required to update",
-    });
+    address: Joi.string().max(255),
+}).min(1);
 
-// STORE OWNER SCHEMAS
-export const createStoreOwnerSchema = Joi.object({
-    name: Joi.string().trim().min(2).max(100).required(),
-    email: Joi.string().email().required(),
-    phone: Joi.string()
-        .pattern(/^\+?[1-9]\d{6,14}$/)
-        .required()
-        .messages({
-            "string.pattern.base": "Invalid phone number format",
-        }),
-    address: Joi.string().trim().max(255).optional(),
+export const updateStoreDutySchema = Joi.object({
+    is_online: Joi.boolean().required(),
 });
 
-export const updateStoreOwnerSchema = Joi.object({
-    name: Joi.string().trim().min(2).max(100),
-    phone: Joi.string()
-        .pattern(/^\+?[1-9]\d{6,14}$/)
-        .messages({
-            "string.pattern.base": "Invalid phone number format",
-        }),
-    address: Joi.string().trim().max(255),
-})
-    .min(1)
-    .messages({
-        "object.min": "At least one field is required to update",
-    });
-
-// STATUS UPDATE
 export const updateStoreStatusSchema = Joi.object({
-    is_active: Joi.boolean().required().messages({
-        "any.required": "is_active field is required",
+    is_active: Joi.boolean().required(),
+    reason: Joi.when("is_active", {
+        is: false,
+        then: Joi.string().max(500).optional(),
+        otherwise: Joi.forbidden(),
     }),
-    reason: Joi.string()
-        .trim()
-        .max(500)
-        .when("is_active", {
-            is: false,
-            then: Joi.required().messages({
-                "any.required": "Reason is required when deactivating",
-            }),
-            otherwise: Joi.optional(),
-        }),
 });
 
-// OWNER STATUS UPDATE
-export const updateOwnerStatusSchema = Joi.object({
+export const updateStoreVerificationSchema = Joi.object({
+    verification_status: Joi.string()
+        .valid(...Object.values(VERIFICATION_STATUS))
+        .required(),
     status: Joi.string()
         .valid(...Object.values(ACCOUNT_STATUS))
-        .required(),
-    reason: Joi.string()
-        .trim()
-        .max(500)
-        .when("status", {
-            is: ACCOUNT_STATUS.BLOCKED,
-            then: Joi.required(),
-            otherwise: Joi.optional(),
-        }),
+        .optional(),
 });

@@ -38,7 +38,7 @@
  *                       phone:
  *                         type: string
  *                         example: 0000000000
- *                       isSignUp:
+ *                       is_signup:
  *                         type: boolean
  *                         example: true
  *                       is_active:
@@ -99,13 +99,13 @@
  *                         required:
  *                           - type
  *                           - coordinates
- *                       isVerified:
+ *                       is_verified:
  *                         type: boolean
  *                         example: true
  *                     required:
  *                       - _id
  *                       - phone
- *                       - isSignUp
+ *                       - is_signup
  *                       - is_active
  *                       - account_deactivated_reason
  *                       - is_serviceable
@@ -122,7 +122,7 @@
  *                       - last_name
  *                       - service_area_id
  *                       - location
- *                       - isVerified
+ *                       - is_verified
  *                   timestamp:
  *                     type: string
  *                     example: "2026-03-12T10:31:46.289Z"
@@ -185,7 +185,7 @@
  *                       phone:
  *                         type: string
  *                         example: 0000000000
- *                       isSignUp:
+ *                       is_signup:
  *                         type: boolean
  *                         example: true
  *                       is_active:
@@ -246,13 +246,13 @@
  *                         required:
  *                           - type
  *                           - coordinates
- *                       isVerified:
+ *                       is_verified:
  *                         type: boolean
  *                         example: true
  *                     required:
  *                       - _id
  *                       - phone
- *                       - isSignUp
+ *                       - is_signup
  *                       - is_active
  *                       - account_deactivated_reason
  *                       - is_serviceable
@@ -269,7 +269,7 @@
  *                       - last_name
  *                       - service_area_id
  *                       - location
- *                       - isVerified
+ *                       - is_verified
  *                   timestamp:
  *                     type: string
  *                     example: "2026-03-12T10:31:46.289Z"

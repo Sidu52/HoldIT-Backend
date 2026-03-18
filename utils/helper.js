@@ -106,3 +106,17 @@ export const getDistanceInKm = (lat1, lon1, lat2, lon2) => {
 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
+
+
+// Add this helper at the top of booking.admin.controller.js (after imports)
+export const safeAbortSession = async (session) => {
+    try {
+        if (session.inTransaction()) {
+            await session.abortTransaction();
+        }
+    } catch (err) {
+        console.warn("[safeAbortSession] Failed to abort transaction:", err.message);
+    } finally {
+        session.endSession();
+    }
+};

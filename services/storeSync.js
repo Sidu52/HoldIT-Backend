@@ -15,7 +15,7 @@ export const syncStoresToRedis = async () => {
             .select(
                 "_id location service_area_id " +
                 "is_active is_online verification_status " +
-                "booking_assigned_count max_booking_capacity rating"
+                "current_booking_count max_booking_capacity rating"
             )
             .lean();
 

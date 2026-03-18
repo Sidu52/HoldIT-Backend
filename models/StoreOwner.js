@@ -3,6 +3,12 @@ import { ACCOUNT_STATUS, GENDER_OPTIONS, ON_BOARDING_STATUS } from "../utils/con
 
 const StoreOwnerSchema = new mongoose.Schema(
     {
+        auth_id: {
+            type: String,
+            unique: true,
+            sparse: true,
+            index: true,
+        },
         first_name: {
             type: String,
             trim: true,
@@ -30,36 +36,37 @@ const StoreOwnerSchema = new mongoose.Schema(
             type: String,
             enum: Object.values(GENDER_OPTIONS),
         },
-        date_of_birth: {
-            type: Date,
-        },
+        date_of_birth: Date,
         address: {
             type: String,
             trim: true,
             maxlength: 500,
         },
-        last_login_at: {
-            type: Date,
-        },
+
+        last_login_at: Date,
         last_active_at: {
             type: Date,
             index: true,
         },
+
         is_verified: {
             type: Boolean,
             default: false,
             index: true,
         },
-        updated_by: {
+        verified_by: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Admin",
         },
+        verified_at: Date,
+
         onboarding_status: {
             type: String,
             enum: Object.values(ON_BOARDING_STATUS),
-            default: ON_BOARDING_STATUS.DEMO,
+            default: ON_BOARDING_STATUS.PENDING,
             index: true,
         },
+
         status: {
             type: String,
             enum: Object.values(ACCOUNT_STATUS),
@@ -76,22 +83,29 @@ const StoreOwnerSchema = new mongoose.Schema(
             maxlength: 500,
             default: null,
         },
+        deactivated_at: Date,
+        deactivated_by: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Admin",
+        },
+        updated_by: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Admin",
+        },
     },
     { timestamps: true }
 );
 
-// Compound indexes
+// Indexes
 StoreOwnerSchema.index({ status: 1, onboarding_status: 1 });
+StoreOwnerSchema.index({ is_active: 1, status: 1 });
 
-// BUG FIX 7: Virtual to get all stores belonging to this owner
-StoreOwnerSchema.virtual('stores', {
-    ref: 'Store',
-    localField: '_id',
-    foreignField: 'store_owner_id',
+// Virtual: owner's stores 
+StoreOwnerSchema.virtual("stores", {
+    ref: "Store",
+    localField: "_id",
+    foreignField: "store_owner_id",
 });
-
-StoreOwnerSchema.set('toJSON', { virtuals: true });
-StoreOwnerSchema.set('toObject', { virtuals: true });
 
 const StoreOwner = mongoose.model("StoreOwner", StoreOwnerSchema);
 export default StoreOwner;

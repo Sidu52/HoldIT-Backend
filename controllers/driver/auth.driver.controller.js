@@ -17,7 +17,7 @@ import {
     JOB_QUEUES,
     TOKEN_TYPES,
      OTP_FAIL_WINDOW_SECONDS,
-      UNVERIFIED_USER_CLEANUP_DELAY_MS
+      UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
@@ -30,7 +30,7 @@ export const authDriver = async (req, res) => {
         const { phone } = req.body;
 
         let driver = await Driver.findOne({ phone })
-            .select("status isVerified")
+            .select("status is_verified")
             .lean();
 
         if (driver) {
@@ -44,7 +44,7 @@ export const authDriver = async (req, res) => {
         } else {
             driver = await Driver.create({
                 phone,
-                isVerified: false,
+                is_verified: false,
                 is_active: true,
                 status: ACCOUNT_STATUS.PENDING,
             });
@@ -67,7 +67,7 @@ export const authDriver = async (req, res) => {
             JOB_QUEUES.DELETE_UNVERIFIED_DRIVER,
             { name: JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, data: { phone } },
             {
-                delay: UNVERIFIED_USER_CLEANUP_DELAY_MS,
+                delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
                 jobId: `delete-driver-${phone}`,
                 removeOnComplete: true,
                 removeOnFail: true,
@@ -91,7 +91,7 @@ export const sendOTP = async (req, res) => {
         const { phone } = req.body;
 
         const driver = await Driver.findOne({ phone })
-            .select("status isVerified")
+            .select("status is_verified")
             .lean();
 
         if (!driver) {
@@ -203,7 +203,7 @@ export const verifyOTP = async (req, res) => {
         }
 
         const driver = await Driver.findOne({ phone: sanitizedPhone })
-            .select("_id status isVerified")
+            .select("_id status is_verified")
             .lean();
 
         if (!driver) {
@@ -259,11 +259,11 @@ export const verifyOTP = async (req, res) => {
         );
 
         const now = new Date();
-        const isFirstLogin = !driver.isVerified;
+        const isFirstLogin = !driver.is_verified;
 
         await Driver.findByIdAndUpdate(driver._id, {
             $set: {
-                isVerified: true,
+                is_verified: true,
                 status: ACCOUNT_STATUS.ACTIVE,
                 is_active: true,
                 last_login_at: now,
@@ -407,7 +407,7 @@ export const updateDriverDetails = async (req, res) => {
             req.body;
 
         const driver = await Driver.findById(auth_id)
-            .select("isSignUp status")
+            .select("is_signup status")
             .lean();
 
         if (!driver) {
@@ -418,7 +418,7 @@ export const updateDriverDetails = async (req, res) => {
             );
         }
 
-        if (driver.isSignUp) {
+        if (driver.is_signup) {
             return sendError(
                 res,
                 "Profile already completed. Use profile update instead.",
@@ -458,7 +458,7 @@ export const updateDriverDetails = async (req, res) => {
                         type: "Point",
                         coordinates: [lng, lat],
                     },
-                    isSignUp: true,
+                    is_signup: true,
                     is_serviceable: isServiceable,
                     service_area_id: serviceAreaId,
                 },

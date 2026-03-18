@@ -36,7 +36,11 @@ function validateSingle(req, res, next, schema, source) {
     req.validated[source] = value;
 
     // Also update original source for convenience
+    if (source === "query") {
+    Object.assign(req.query, value);
+} else {
     req[source] = value;
+}
 
     next();
 }
@@ -60,7 +64,11 @@ function validateMultiple(req, res, next, schemaMap) {
         }
 
         req.validated[source] = value;
-        req[source] = value;
+       if (source === "query") {
+    Object.assign(req.query, value);
+} else {
+    req[source] = value;
+}
     }
 
     next();

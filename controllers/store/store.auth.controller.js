@@ -12,7 +12,8 @@ import {
     OTP_COOLDOWN,
     JOB_QUEUES,
     TOKEN_TYPES,
-     OTP_FAIL_WINDOW_SECONDS
+    OTP_FAIL_WINDOW_SECONDS,
+    UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import {
@@ -23,13 +24,13 @@ import {
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
 
-// LOGIN / REGISTER
+// ── LOGIN / REGISTER ──────────────────────────────────────────────
 export const authStore = async (req, res) => {
     try {
         const { phone } = req.body;
 
         let store = await Store.findOne({ phone })
-            .select("status isVerified")
+            .select("status is_verified")
             .lean();
 
         if (store) {
@@ -41,12 +42,11 @@ export const authStore = async (req, res) => {
                 );
             }
         } else {
-            // Pre-create store record admin fills in details later
             store = await Store.create({
                 phone,
                 store_name: "Pending Setup",
                 location: { type: "Point", coordinates: [0, 0] },
-                isVerified: false,
+                is_verified: false,
                 is_active: true,
                 status: ACCOUNT_STATUS.PENDING,
             });
@@ -63,13 +63,12 @@ export const authStore = async (req, res) => {
 
         const otp = await generateAndStoreOTP(phone);
 
-        // Schedule cleanup of unverified stores after 24h
         await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, `delete-store-${phone}`);
         await addJobToQueue(
             JOB_QUEUES.DELETE_UNVERIFIED_DRIVER,
             { name: JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, data: { phone, entity: "store" } },
             {
-                delay: UNVERIFIED_STORE_CLEANUP_DELAY_MS,
+                delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
                 jobId: `delete-store-${phone}`,
                 removeOnComplete: true,
                 removeOnFail: true,
@@ -91,13 +90,13 @@ export const authStore = async (req, res) => {
     }
 };
 
-// RESEND OTP
+// ── RESEND OTP ────────────────────────────────────────────────────
 export const sendOTP = async (req, res) => {
     try {
         const { phone } = req.body;
 
         const store = await Store.findOne({ phone })
-            .select("status isVerified")
+            .select("status is_verified")
             .lean();
 
         if (!store) {
@@ -153,7 +152,7 @@ export const sendOTP = async (req, res) => {
     }
 };
 
-// VERIFY OTP
+// ── VERIFY OTP ────────────────────────────────────────────────────
 export const verifyOTP = async (req, res) => {
     try {
         const { phone, otp } = req.body;
@@ -186,8 +185,9 @@ export const verifyOTP = async (req, res) => {
             );
         }
 
+        // ✅ Fixed: was "isVeris_verifiedified" — broken typo
         const store = await Store.findOne({ phone: sanitizedPhone })
-            .select("_id status isVerified")
+            .select("_id status is_verified")
             .lean();
 
         if (!store) {
@@ -214,7 +214,6 @@ export const verifyOTP = async (req, res) => {
             return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
         }
 
-        // Clean up all OTP keys
         await Promise.all([
             del(`otp:${sanitizedPhone}`),
             del(failKey),
@@ -226,11 +225,11 @@ export const verifyOTP = async (req, res) => {
         const { accessToken, refreshToken } = await generateTokenPair(store._id);
 
         const now = new Date();
-        const isFirstLogin = !store.isVerified;
+        const isFirstLogin = !store.is_verified;
 
         await Store.findByIdAndUpdate(store._id, {
             $set: {
-                isVerified: true,
+                is_verified: true,
                 last_login_at: now,
                 last_active_at: now,
             },
@@ -252,7 +251,7 @@ export const verifyOTP = async (req, res) => {
     }
 };
 
-// REFRESH TOKEN
+// ── REFRESH TOKEN ─────────────────────────────────────────────────
 export const refreshToken = async (req, res) => {
     try {
         const { token } = extractRefreshToken(req);
@@ -328,7 +327,7 @@ export const refreshToken = async (req, res) => {
     }
 };
 
-// LOGOUT
+// ── LOGOUT ────────────────────────────────────────────────────────
 export const logout = async (req, res) => {
     try {
         const token = req.cookies?.refreshToken;

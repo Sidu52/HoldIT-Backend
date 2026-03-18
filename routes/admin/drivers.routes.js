@@ -8,16 +8,18 @@ import {
   getDrivers,
   getDriverById,
   updateDriver,
-  updateDriverStatus,
   bulkDeactivateDrivers,
+  updateDriverAccount,
 } from "../../controllers/admin/driver.admin.controller.js";
 import {
   listDriversSchema,
   driverIdSchema,
   updateDriverSchema,
-  updateDriverStatusSchema,
   bulkDeactivateSchema,
+  updateDriverLocationSchema,
+  updateDriverAccountSchema,
 } from "../../validations/admin/driver.validation.js";
+import { updateDriverLocation } from "../../services/driverGeoService.js";
 
 const router = express.Router();
 
@@ -62,24 +64,32 @@ router.get(
   getDriverById
 );
 
-// Update driver details
-router.put(
-  "/:driver_id",
-  apiLimiter,
-  roleMiddleware(...DRIVER_MODIFY_ROLES),
-  validate(driverIdSchema, "params"),
-  validate(updateDriverSchema),
-  updateDriver
+router.patch(
+    "/:driver_id",
+    apiLimiter,
+    roleMiddleware(...DRIVER_MODIFY_ROLES),
+    validate(driverIdSchema, "params"),
+    validate(updateDriverSchema, "body"),
+    updateDriver
 );
 
-// Update driver status
 router.patch(
-  "/:driver_id/status",
-  apiLimiter,
-  roleMiddleware(...DRIVER_MODIFY_ROLES),
-  validate(driverIdSchema, "params"),
-  validate(updateDriverStatusSchema),
-  updateDriverStatus
+    "/:driver_id/location",
+    apiLimiter,
+    roleMiddleware(...DRIVER_MODIFY_ROLES),
+    validate(driverIdSchema, "params"),
+    validate(updateDriverLocationSchema, "body"),
+    updateDriverLocation
 );
+
+router.patch(
+    "/:driver_id/account",
+    apiLimiter,
+    roleMiddleware(...DRIVER_MODIFY_ROLES),
+    validate(driverIdSchema, "params"),
+    validate(updateDriverAccountSchema, "body"),
+    updateDriverAccount
+);
+
 
 export default router;

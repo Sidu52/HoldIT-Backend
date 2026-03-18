@@ -59,7 +59,7 @@ POST /api/v1/user/bookings
    │    │   ├── cancelledBy → "SYSTEM"                       │   │
    │    │   ├── isActive → false                             │   │
    │    │   ├── Timeline entry added                         │   │
-   │    │   └── Store.booking_assigned_count -= 1            │   │
+   │    │   └── Store.current_booking_count -= 1            │   │
    │    ├── [COMMIT]                                         │   │
    │    │                                                     │   │
    │    ├── Queue: User notification                         │   │
@@ -77,7 +77,7 @@ POST /api/v1/user/bookings
    │    ├── [TRANSACTION]                                    │   │
    │    │   ├── Booking.status → CANCELLED                   │   │
    │    │   ├── cancelledBy → "USER"                         │   │
-   │    │   └── Store.booking_assigned_count -= 1            │   │
+   │    │   └── Store.current_booking_count -= 1            │   │
    │    ├── [COMMIT]                                         │   │
    │    │                                                     │   │
    │    └── Driver search jobs become no-ops                 │   │
