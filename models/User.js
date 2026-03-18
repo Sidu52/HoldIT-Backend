@@ -66,12 +66,12 @@ const UserSchema = new mongoose.Schema(
                 message: 'You can only have up to 10 addresses',
             },
         },
-        isVerified: {
+        is_verified: {
             type: Boolean,
             default: false,
             index: true,
         },
-        isSignUp: {
+        is_signup: {
             type: Boolean,
             default: false,
         },

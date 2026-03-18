@@ -47,7 +47,7 @@ export const addStoreToRedis = async (store) => {
         // Store metadata hash
         pipeline.hset(`store:meta:${storeId}`, {
             is_online:              "true",
-            booking_assigned_count: (store.booking_assigned_count ?? 0).toString(),
+            current_booking_count: (store.current_booking_count ?? 0).toString(),
             max_booking_capacity:   (store.max_booking_capacity   ?? 50).toString(),
             service_area_id:        store.service_area_id?.toString() ?? "",
             rating:                 (store.rating ?? 0).toString(),
@@ -108,7 +108,7 @@ export const removeStoreFromRedis = async (storeId, serviceAreaId = null) => {
 };
 
 // ─── UPDATE CAPACITY ─────────────────────────────────────────────────────────
-// Call this after incrementing/decrementing booking_assigned_count in MongoDB
+// Call this after incrementing/decrementing current_booking_count in MongoDB
 // so Redis meta stays in sync without a full re-sync.
 
 export const updateStoreCapacityInRedis = async (storeId, newCount) => {
@@ -116,7 +116,7 @@ export const updateStoreCapacityInRedis = async (storeId, newCount) => {
 
     try {
         await redis.hset(`store:meta:${storeId.toString()}`, {
-            booking_assigned_count: newCount.toString(),
+            current_booking_count: newCount.toString(),
             updated_at:             Date.now().toString(),
         });
         return true;

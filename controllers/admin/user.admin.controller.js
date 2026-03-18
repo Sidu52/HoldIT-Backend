@@ -1,24 +1,26 @@
 import mongoose from "mongoose";
 import User from "../../models/User.js";
+import Booking from "../../models/Booking.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set, del, delByPattern } from "../../services/redisService.js";
-import { STATUS_CODES, ACCOUNT_STATUS } from "../../utils/constants.js";
+import { STATUS_CODES, ACCOUNT_STATUS, BOOKING_STATUS } from "../../utils/constants.js";
+import { safeAbortSession } from "../../utils/helper.js";
 
-// CONSTANTS
-const LIST_CACHE_TTL = 120; // 2 minutes
-const DETAIL_CACHE_TTL = 300; // 5 minutes
-const EXCLUDED_FIELDS = "-password_hash -__v";
+const LIST_CACHE_TTL = 120;
+const DETAIL_CACHE_TTL = 300;
+const EXCLUDED_FIELDS = "-__v";
 
-const ALLOWED_UPDATE_FIELDS = [
-    "first_name",
-    "last_name",
-    "phone",
-    "gender",
-    "dob",
-    "address",
+// Statuses that block deactivation
+const USER_BLOCKING_BOOKING_STATUSES = [
+    BOOKING_STATUS.STORE_ASSIGNED,
+    BOOKING_STATUS.DRIVER_ASSIGNED,
+    BOOKING_STATUS.DRIVER_ARRIVED,
+    BOOKING_STATUS.PICKED_UP,
+    BOOKING_STATUS.STORED,
+    BOOKING_STATUS.RETURN_REQUESTED,
+    BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
 ];
 
-// HELPERS
 const escapeRegex = (str) =>
     str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -40,7 +42,6 @@ const invalidateUserCache = async (userId = null) => {
     }
 };
 
-// GET USERS (Paginated + Filtered)
 export const getUsers = async (req, res) => {
     try {
         const {
@@ -48,6 +49,8 @@ export const getUsers = async (req, res) => {
             limit = 10,
             status,
             is_active,
+            is_verified,
+            is_serviceable,
             search,
             sort_by = "createdAt",
             sort_order = "desc",
@@ -57,11 +60,14 @@ export const getUsers = async (req, res) => {
         const limitNum = Number(limit);
         const skip = (pageNum - 1) * limitNum;
 
-        // Build filter
         const filter = {};
 
         if (status) filter.status = status;
-        if (is_active !== undefined) filter.is_active = is_active;
+
+        // ✅ Fixed: cast boolean strings from query
+        if (is_active !== undefined) filter.is_active = is_active === "true";
+        if (is_verified !== undefined) filter.is_verified = is_verified === "true";
+        if (is_serviceable !== undefined) filter.is_serviceable = is_serviceable === "true";
 
         if (search) {
             const escaped = escapeRegex(search.trim());
@@ -73,19 +79,13 @@ export const getUsers = async (req, res) => {
             ];
         }
 
-        // Build sort
         const sortDir = sort_order === "asc" ? 1 : -1;
         const sort = { [sort_by]: sortDir };
 
-        // Cache key
         const cacheKey = buildCacheKey("users", {
-            page: pageNum,
-            limit: limitNum,
-            status,
-            is_active,
-            search,
-            sort_by,
-            sort_order,
+            page: pageNum, limit: limitNum,
+            status, is_active, is_verified, is_serviceable,
+            search, sort_by, sort_order,
         });
 
         const cached = await get(cacheKey);
@@ -97,7 +97,6 @@ export const getUsers = async (req, res) => {
             });
         }
 
-        // Parallel queries
         const [users, total] = await Promise.all([
             User.find(filter)
                 .select(EXCLUDED_FIELDS)
@@ -109,7 +108,6 @@ export const getUsers = async (req, res) => {
         ]);
 
         const totalPages = Math.ceil(total / limitNum);
-
         const responseData = {
             users,
             pagination: {
@@ -122,12 +120,7 @@ export const getUsers = async (req, res) => {
             },
         };
 
-        await set(
-            cacheKey,
-            JSON.stringify(responseData),
-            "EX",
-            LIST_CACHE_TTL
-        );
+        await set(cacheKey, JSON.stringify(responseData), "EX", LIST_CACHE_TTL);
 
         return sendResponse({
             res,
@@ -135,18 +128,16 @@ export const getUsers = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get Users Error:", err);
+        console.error("[getUsers] Error:", err);
         return sendError(res, "Failed to fetch users");
     }
 };
 
-// GET USER BY ID
 export const getUserById = async (req, res) => {
     try {
         const { user_id } = req.params;
 
         const cacheKey = `user:${user_id}`;
-
         const cached = await get(cacheKey);
         if (cached) {
             return sendResponse({
@@ -161,19 +152,10 @@ export const getUserById = async (req, res) => {
             .lean();
 
         if (!user) {
-            return sendError(
-                res,
-                "User not found",
-                STATUS_CODES.NOT_FOUND
-            );
+            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
 
-        await set(
-            cacheKey,
-            JSON.stringify(user),
-            "EX",
-            DETAIL_CACHE_TTL
-        );
+        await set(cacheKey, JSON.stringify(user), "EX", DETAIL_CACHE_TTL);
 
         return sendResponse({
             res,
@@ -181,66 +163,67 @@ export const getUserById = async (req, res) => {
             data: user,
         });
     } catch (err) {
-        console.error("Get User By ID Error:", err);
+        console.error("[getUserById] Error:", err);
         return sendError(res, "Failed to fetch user");
     }
 };
 
-// UPDATE USER PROFILE
+
 export const updateUserProfile = async (req, res) => {
     try {
         const { user_id } = req.params;
+        const { auth_id } = req.user;
+        const {
+            first_name,
+            last_name,
+            gender,
+            email,
+            phone,
+            dob,
+        } = req.body;
 
-        // Build update from allowed fields only
-        const updates = {};
-        ALLOWED_UPDATE_FIELDS.forEach((field) => {
-            if (req.body[field] !== undefined) {
-                updates[field] = req.body[field];
-            }
-        });
-
-        if (Object.keys(updates).length === 0) {
-            return sendError(
-                res,
-                "No valid fields to update",
-                STATUS_CODES.BAD_REQUEST
-            );
-        }
-
-        // Check user exists and is active
-        const existingUser = await User.findById(user_id)
-            .select("is_active status")
+        const user = await User.findById(user_id)
+            .select("_id status")
             .lean();
 
-        if (!existingUser) {
-            return sendError(
-                res,
-                "User not found",
-                STATUS_CODES.NOT_FOUND
-            );
+        if (!user) {
+            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
 
-        if (!existingUser.is_active) {
-            return sendError(
-                res,
-                "Cannot update inactive user. Reactivate first.",
-                STATUS_CODES.FORBIDDEN
-            );
-        }
+        // Check if phone already exists for another user
+       if (phone && user.phone !== phone) {
+           const existingUser = await User.findOne({ phone })
+               .select("_id")
+               .lean();
 
-        // Add audit fields
-        updates.updated_by = req.user.auth_id;
-        updates.updated_at = new Date();
+           if (existingUser) {
+               return sendError(
+                   res,
+                   "Phone already in use by another user",
+                   STATUS_CODES.CONFLICT
+               );
+           }
+       }
+
+        const updateFields = {
+            updated_by: auth_id,
+            updated_at: new Date(),
+            ...(first_name && { first_name: first_name.trim() }),
+            ...(last_name && { last_name: last_name.trim() }),
+            ...(email && { email: email.trim() }),
+            ...(phone && { phone: phone }),
+            ...(gender && { gender }),
+            ...(dob && { dob: new Date(dob) }),
+        };
 
         const updatedUser = await User.findByIdAndUpdate(
             user_id,
-            { $set: updates },
+            { $set: updateFields },
             { new: true, runValidators: true }
         )
             .select(EXCLUDED_FIELDS)
             .lean();
 
-        // Invalidate cache
         await invalidateUserCache(user_id);
 
         return sendResponse({
@@ -249,22 +232,15 @@ export const updateUserProfile = async (req, res) => {
             data: updatedUser,
         });
     } catch (err) {
-        // Handle duplicate key
         if (err.code === 11000) {
-            const field = Object.keys(err.keyPattern)[0];
-            return sendError(
-                res,
-                `${field} already exists`,
-                STATUS_CODES.CONFLICT
-            );
+            const field = Object.keys(err.keyPattern || {})[0] ?? "field";
+            return sendError(res, `${field} already exists`, STATUS_CODES.CONFLICT);
         }
-
-        console.error("Update User Profile Error:", err);
+        console.error("[updateUserProfile] Error:", err);
         return sendError(res, "Failed to update user profile");
     }
 };
 
-// UPDATE USER STATUS
 export const updateUserStatus = async (req, res) => {
     try {
         const { user_id } = req.params;
@@ -276,14 +252,27 @@ export const updateUserStatus = async (req, res) => {
             .lean();
 
         if (!user) {
-            return sendError(
-                res,
-                "User not found",
-                STATUS_CODES.NOT_FOUND
-            );
+            return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
 
-        // Build update
+        // ✅ Check active bookings before deactivating
+        const isDeactivating = is_active === false || status === ACCOUNT_STATUS.BLOCKED;
+        if (isDeactivating) {
+            const activeBookingCount = await Booking.countDocuments({
+                userId: user_id,
+                status: { $in: USER_BLOCKING_BOOKING_STATUSES },
+                isActive: true,
+            });
+
+            if (activeBookingCount > 0) {
+                return sendError(
+                    res,
+                    `Cannot deactivate user — ${activeBookingCount} active booking(s) in progress`,
+                    STATUS_CODES.CONFLICT
+                );
+            }
+        }
+
         const updateData = {
             updated_at: new Date(),
             status_updated_by: auth_id,
@@ -297,12 +286,29 @@ export const updateUserStatus = async (req, res) => {
                     STATUS_CODES.CONFLICT
                 );
             }
+
             updateData.status = status;
 
-            if (status === ACCOUNT_STATUS.BLOCKED && reason) {
-                updateData.block_reason = reason;
+            if (status === ACCOUNT_STATUS.BLOCKED) {
+                // ✅ Fixed: blocking should also deactivate
+                updateData.is_active = false;
+                updateData.block_reason = reason ?? null;
                 updateData.blocked_at = new Date();
                 updateData.blocked_by = auth_id;
+                updateData.account_deactivated_reason = reason ?? null;
+                updateData.deactivated_at = new Date();
+                updateData.deactivated_by = auth_id;
+            }
+
+            // Unblocking — reactivate
+            if (status === ACCOUNT_STATUS.ACTIVE) {
+                updateData.is_active = true;
+                updateData.block_reason = null;
+                updateData.blocked_at = null;
+                updateData.blocked_by = null;
+                updateData.account_deactivated_reason = null;
+                updateData.deactivated_at = null;
+                updateData.deactivated_by = null;
             }
         }
 
@@ -310,14 +316,15 @@ export const updateUserStatus = async (req, res) => {
             if (user.is_active === is_active) {
                 return sendError(
                     res,
-                    `User is already ${is_active ?  ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
+                    `User is already ${is_active ? "active" : "inactive"}`,
                     STATUS_CODES.CONFLICT
                 );
             }
+
             updateData.is_active = is_active;
 
             if (!is_active) {
-                updateData.account_deactivated_reason = reason;
+                updateData.account_deactivated_reason = reason ?? null;
                 updateData.deactivated_at = new Date();
                 updateData.deactivated_by = auth_id;
             }
@@ -337,7 +344,6 @@ export const updateUserStatus = async (req, res) => {
             .select(EXCLUDED_FIELDS)
             .lean();
 
-        // Invalidate cache
         await invalidateUserCache(user_id);
 
         return sendResponse({
@@ -346,22 +352,20 @@ export const updateUserStatus = async (req, res) => {
             data: updatedUser,
         });
     } catch (err) {
-        console.error("Update User Status Error:", err);
+        console.error("[updateUserStatus] Error:", err);
         return sendError(res, "Failed to update user status");
     }
 };
 
-// BULK DEACTIVATE USERS
 export const bulkDeactivateUsers = async (req, res) => {
     const session = await mongoose.startSession();
-
     try {
         session.startTransaction();
 
         const { ids, reason } = req.body;
         const { auth_id } = req.user;
 
-        // Find active users only
+        // Find currently active users only
         const activeUsers = await User.find({
             _id: { $in: ids },
             is_active: true,
@@ -371,8 +375,7 @@ export const bulkDeactivateUsers = async (req, res) => {
             .lean();
 
         if (activeUsers.length === 0) {
-            await session.abortTransaction();
-            session.endSession();
+            await safeAbortSession(session);
             return sendError(
                 res,
                 "No active users found with the provided IDs",
@@ -382,7 +385,23 @@ export const bulkDeactivateUsers = async (req, res) => {
 
         const activeIds = activeUsers.map((u) => u._id);
 
-        // Bulk deactivate
+        // Check active bookings for ALL users being deactivated
+        const usersWithActiveBookings = await Booking.distinct("userId", {
+            userId: { $in: activeIds },
+            status: { $in: USER_BLOCKING_BOOKING_STATUSES },
+            isActive: true,
+        }).session(session);
+
+        if (usersWithActiveBookings.length > 0) {
+            await safeAbortSession(session);
+            return sendError(
+                res,
+                `Cannot deactivate — ${usersWithActiveBookings.length} user(s) have active bookings in progress`,
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        // Fixed: updateMany now uses session
         const result = await User.updateMany(
             { _id: { $in: activeIds } },
             {
@@ -392,19 +411,18 @@ export const bulkDeactivateUsers = async (req, res) => {
                     deactivated_at: new Date(),
                     deactivated_by: auth_id,
                 },
-            }
-        ).session(session);
+            },
+            { session }
+        );
 
         await session.commitTransaction();
         session.endSession();
 
-        // Cache invalidation (non-blocking)
+        // Invalidate cache non-blocking
         Promise.all([
             ...activeIds.map((id) => del(`user:${id}`)),
             delByPattern("users:*"),
-        ]).catch((err) =>
-            console.error("Cache invalidation error:", err)
-        );
+        ]).catch((err) => console.error("[bulkDeactivate] Cache invalidation error:", err));
 
         return sendResponse({
             res,
@@ -413,15 +431,12 @@ export const bulkDeactivateUsers = async (req, res) => {
                 requested: ids.length,
                 deactivated: result.modifiedCount,
                 alreadyInactive: ids.length - activeUsers.length,
+                skippedBookings: 0,
             },
         });
     } catch (err) {
-        try {
-            await session.abortTransaction();
-        } catch (_) { }
-        session.endSession();
-
-        console.error("Bulk Deactivate Error:", err);
+        await safeAbortSession(session);
+        console.error("[bulkDeactivateUsers] Error:", err);
         return sendError(res, "Failed to deactivate users");
     }
 };

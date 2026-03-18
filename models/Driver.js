@@ -11,21 +11,21 @@ import {
 const DocumentSchema = new mongoose.Schema(
     {
         doc_type: {
-            type:     String,
+            type: String,
             required: true,
-            enum:     ["LICENSE", "AADHAAR", "PAN", "RC", "INSURANCE", "OTHER"],
+            enum: ["LICENSE", "AADHAAR", "PAN", "RC", "INSURANCE", "OTHER"],
         },
         url: {
-            type:     String,
+            type: String,
             required: true,
         },
         verified: {
-            type:    Boolean,
+            type: Boolean,
             default: false,
         },
         verified_by: {
             type: mongoose.Schema.Types.ObjectId,
-            ref:  "Admin",
+            ref: "Admin",
         },
         verified_at: Date,
     },
@@ -35,27 +35,27 @@ const DocumentSchema = new mongoose.Schema(
 const DriverSchema = new mongoose.Schema(
     {
         first_name: {
-            type:      String,
-            trim:      true,
+            type: String,
+            trim: true,
             maxlength: 100,
         },
         last_name: {
-            type:      String,
-            trim:      true,
+            type: String,
+            trim: true,
             maxlength: 100,
         },
         phone: {
-            type:      String,
-            required:  true,
-            unique:    true,
+            type: String,
+            required: true,
+            unique: true,
             maxlength: 15,
         },
         email: {
-            type:      String,
-            unique:    true,
-            sparse:    true,
+            type: String,
+            unique: true,
+            sparse: true,
             lowercase: true,
-            trim:      true,
+            trim: true,
         },
         gender: {
             type: String,
@@ -63,75 +63,75 @@ const DriverSchema = new mongoose.Schema(
         },
         date_of_birth: Date,
         address: {
-            type:      String,
-            trim:      true,
+            type: String,
+            trim: true,
             maxlength: 500,
         },
 
-        // ── Online / Active state ─────────────────────────────────────
+        // Online / Active state
         is_online: {
-            type:    Boolean,
+            type: Boolean,
             default: false,
-            index:   true,
+            index: true,
         },
         is_active: {
-            type:    Boolean,
+            type: Boolean,
             default: true,
-            index:   true,
+            index: true,
         },
 
-        // ── Trip state ────────────────────────────────────────────────
+        // Trip state
         // Tracks whether driver is currently on an active booking trip.
         // Used by Redis meta + driver-assignment eligibility checks.
         is_on_trip: {
-            type:    Boolean,
+            type: Boolean,
             default: false,
-            index:   true,
+            index: true,
         },
         current_booking_id: {
             type: mongoose.Schema.Types.ObjectId,
-            ref:  "Booking",
+            ref: "Booking",
             default: null,
         },
 
         // ── Verification & Status ─────────────────────────────────────
         is_verified: {
-            type:    Boolean,
+            type: Boolean,
             default: false,
-            index:   true,
+            index: true,
         },
         status: {
-            type:    String,
-            enum:    Object.values(ACCOUNT_STATUS),
+            type: String,
+            enum: Object.values(ACCOUNT_STATUS),
             default: ACCOUNT_STATUS.PENDING,
-            index:   true,
+            index: true,
         },
         verification_status: {
-            type:    String,
-            enum:    Object.values(VERIFICATION_STATUS),
+            type: String,
+            enum: Object.values(VERIFICATION_STATUS),
             default: VERIFICATION_STATUS.PENDING,
-            index:   true,
+            index: true,
         },
 
         // ── Service area & vehicle ─────────────────────────────────────
         service_area_id: {
-            type:  mongoose.Schema.Types.ObjectId,
-            ref:   "ServiceableArea",
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "ServiceableArea",
             index: true,
         },
         is_serviceable: {
-            type:    Boolean,
+            type: Boolean,
             default: false,
-            index:   true,
+            index: true,
         },
         vehicle_type: {
-            type:    String,
-            enum:    Object.values(VEHICLE_TYPES),
+            type: String,
+            enum: Object.values(VEHICLE_TYPES),
             default: VEHICLE_TYPES.SCOOTER,
-            index:   true,
+            index: true,
         },
         license_number: {
-            type:   String,
+            type: String,
             sparse: true,
             unique: true,
         },
@@ -139,31 +139,31 @@ const DriverSchema = new mongoose.Schema(
         // ── Location ──────────────────────────────────────────────────
         currentLocation: {
             type: {
-                type:    String,
-                enum:    ["Point"],
+                type: String,
+                enum: ["Point"],
                 default: "Point",
             },
             coordinates: {
                 type: [Number],   // [lng, lat] — GeoJSON order
             },
-            address:   String,
+            address: String,
             updatedAt: Date,
         },
 
         // ── Misc ──────────────────────────────────────────────────────
-        last_login_at:  Date,
+        last_login_at: Date,
         last_active_at: {
-            type:  Date,
+            type: Date,
             index: true,
         },
         account_deactivated_reason: {
-            type:      String,
+            type: String,
             maxlength: 500,
-            default:   null,
+            default: null,
         },
         updated_by: {
             type: mongoose.Schema.Types.ObjectId,
-            ref:  "Admin",
+            ref: "Admin",
         },
         documents: [DocumentSchema],
     },
@@ -195,7 +195,7 @@ const syncDriverToRedis = async (doc) => {
             doc.is_active &&
             doc.is_online &&
             !doc.is_on_trip &&
-            doc.status              === ACCOUNT_STATUS.ACTIVE &&
+            doc.status === ACCOUNT_STATUS.ACTIVE &&
             doc.verification_status === VERIFICATION_STATUS.VERIFIED;
 
         if (shouldBeInRedis) {

@@ -18,6 +18,7 @@ import {
     BOOKING_LIMITS,
     REDIS_KEYS,
 } from "../../constants/user/booking.js";
+import { safeAbortSession } from "../../utils/helper.js";
 
 
 // Validate that a scheduled time meets minimum lead time
@@ -31,29 +32,9 @@ export const validateScheduledTime = (scheduledAt, minLeadMinutes) => {
     };
 };
 
-// ─── SESSION SAFETY ───────────────────────────────────────────────────────────
-
-/**
- * Abort a transaction + end session safely.
- * Safe to call even if session is not in a transaction or already ended.
- */
-export const safeAbortSession = async (session) => {
-    try {
-        if (session?.inTransaction()) {
-            await session.abortTransaction();
-        }
-    } catch (_) {
-        // Ignore abort errors — session may already be ended
-    } finally {
-        try { session?.endSession(); } catch (_) { }
-    }
-};
 
 // ─── USER VERIFICATION ────────────────────────────────────────────────────────
 
-/**
- * Verify user exists, is active, and account is in good standing.
- */
 export const verifyUserForBooking = async (userId, session = null) => {
     const query = User.findById(userId)
         .select("status is_active")
@@ -112,7 +93,7 @@ export const checkActiveBookingLimit = async (userId, session = null) => {
  * Sorted by distance ASC, available slots DESC.
  * Only returns stores that:
  *   - are active, online, verified
- *   - have available capacity (booking_assigned_count < max_booking_capacity)
+ *   - have available capacity (current_booking_count < max_booking_capacity)
  */
 export const findNearestAvailableStore = async (lat, lng, session = null) => {
     try {
@@ -138,7 +119,7 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
                 // Compute available slots inline
                 $addFields: {
                     availableSlots: {
-                        $subtract: ["$max_booking_capacity", "$booking_assigned_count"],
+                        $subtract: ["$max_booking_capacity", "$current_booking_count"],
                     },
                 },
             },
@@ -157,12 +138,11 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
                 $project: {
                     _id: 1,
                     store_name: 1,
-                    store_address: 1,
                     location: 1,
                     distance: 1,
                     availableSlots: 1,
                     max_booking_capacity: 1,
-                    booking_assigned_count: 1,
+                    current_booking_count: 1,
                     service_area_id: 1,
                 },
             },
@@ -183,7 +163,7 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
 };
 
 /**
- * Atomically increment store's booking_assigned_count.
+ * Atomically increment store's current_booking_count.
  * The $expr guard ensures we never exceed max capacity — acts as
  * an optimistic lock so two concurrent bookings can't both take the last slot.
  */
@@ -195,10 +175,10 @@ export const assignStoreToBooking = async (storeId, session) => {
                 _id: storeId,
                 // Capacity guard — only succeeds if a slot is still free
                 $expr: {
-                    $lt: ["$booking_assigned_count", "$max_booking_capacity"],
+                    $lt: ["$current_booking_count", "$max_booking_capacity"],
                 },
             },
-            { $inc: { booking_assigned_count: 1 } },
+            { $inc: { current_booking_count: 1 } },
             { returnDocument: "after", session }
         ).lean();
 
@@ -223,8 +203,8 @@ export const releaseStoreCapacity = async (storeId, session = null) => {
     try {
         const options = session ? { session } : {};
         await Store.findOneAndUpdate(
-            { _id: storeId, booking_assigned_count: { $gt: 0 } },
-            { $inc: { booking_assigned_count: -1 } },
+            { _id: storeId, current_booking_count: { $gt: 0 } },
+            { $inc: { current_booking_count: -1 } },
             options
         );
     } catch (err) {

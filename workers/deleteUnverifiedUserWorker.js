@@ -17,7 +17,7 @@ export const createDeleteUnverifiedUserWorker = () => {
 
             const deletedUser = await User.findOneAndDelete({
                 phone,
-                isVerified: false,
+                is_verified: false,
                 status: ACCOUNT_STATUS.PENDING,
             });
 

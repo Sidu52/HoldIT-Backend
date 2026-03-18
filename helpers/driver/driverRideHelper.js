@@ -97,7 +97,7 @@ export const getDriverActiveRide = async (driverId, selectFields) => {
     })
         .select(selectFields)
         .populate("userId", "first_name last_name phone")
-        .populate("storeId", "store_name store_address store_contact_number location")
+        .populate("storeId", "store_name store_contact_number location")
         .lean();
 };
 

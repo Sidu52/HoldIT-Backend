@@ -40,7 +40,7 @@ const adminSchema = new mongoose.Schema(
         password_hash: {
             type: String,
             required: function () {
-                return this.isVerified;
+                return this.is_verified;
             },
         },
         status: {
@@ -63,7 +63,7 @@ const adminSchema = new mongoose.Schema(
         last_login_at: {
             type: Date,
         },
-        isVerified: {
+        is_verified: {
             type: Boolean,
             default: false,
         },

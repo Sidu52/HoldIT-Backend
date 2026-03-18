@@ -15,7 +15,7 @@ const adminRoutes = (app) => {
     app.use("/api/v1/admin/driver", adminDriversRoutes);
     app.use("/api/v1/admin/stores", adminStoresRoutes);
     app.use("/api/v1/admin/booking", adminBookingsRoutes);
-    app.use("/api/v1/admin/admins", adminAdminsRoutes);
+    app.use("/api/v1/admin", adminAdminsRoutes);
     app.use("/api/v1/admin/storeowner", storeOwnerRoutes);
 
 }

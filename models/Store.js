@@ -1,13 +1,8 @@
-// models/Store.js
-
 import mongoose from "mongoose";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../utils/constants.js";
 
 const StoreSchema = new mongoose.Schema(
     {
-        // ── Auth ──────────────────────────────────────────────────────
-        // Phone is the login identifier for OTP auth, same pattern as Driver/User.
-        // store_contact_number is kept separately as the public-facing contact.
         phone: {
             type: String,
             required: true,
@@ -15,27 +10,17 @@ const StoreSchema = new mongoose.Schema(
             trim: true,
             index: true,
         },
-        isVerified: {
-            type: Boolean,
-            default: false,
+        store_owner_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "StoreOwner",
+            index: true,
         },
-        last_login_at: Date,
-        last_active_at: Date,
-
-        // ── Store Info ────────────────────────────────────────────────
         store_name: {
             type: String,
             required: true,
             trim: true,
             maxlength: 200,
         },
-        store_address: {
-            type: String,
-            trim: true,
-            maxlength: 500,
-        },
-        store_open_time: String,
-        store_close_time: String,
         store_description: {
             type: String,
             maxlength: 1000,
@@ -44,8 +29,8 @@ const StoreSchema = new mongoose.Schema(
             type: String,
             maxlength: 15,
         },
-
-        // ── Location ──────────────────────────────────────────────────
+        store_open_time: String,
+        store_close_time: String,
         location: {
             type: {
                 type: String,
@@ -54,20 +39,17 @@ const StoreSchema = new mongoose.Schema(
                 required: true,
             },
             coordinates: {
-                type: [Number],   // [lng, lat] — GeoJSON order
+                type: [Number], // [lng, lat]
                 required: true,
             },
             address: String,
         },
-
-        // ── Service area ──────────────────────────────────────────────
         service_area_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "ServiceableArea",
             index: true,
         },
 
-        // ── Online / Active state ─────────────────────────────────────
         is_online: {
             type: Boolean,
             default: false,
@@ -79,26 +61,7 @@ const StoreSchema = new mongoose.Schema(
             index: true,
         },
 
-        // ── Verification & Status ─────────────────────────────────────
-        verification_status: {
-            type: String,
-            enum: Object.values(VERIFICATION_STATUS),
-            default: VERIFICATION_STATUS.PENDING,
-            index: true,
-        },
-        status: {
-            type: String,
-            enum: Object.values(ACCOUNT_STATUS),
-            default: ACCOUNT_STATUS.PENDING,
-            index: true,
-        },
-        verified_by: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Admin",
-        },
-
-        // ── Capacity & Rating ─────────────────────────────────────────
-        booking_assigned_count: {
+        current_booking_count: {
             type: Number,
             default: 0,
             min: 0,
@@ -119,27 +82,57 @@ const StoreSchema = new mongoose.Schema(
             min: 0,
         },
 
-        // ── Ownership ─────────────────────────────────────────────────
-        store_owner_id: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "StoreOwner",
+        is_verified: {
+            type: Boolean,
+            default: false,
+        },
+        verification_status: {
+            type: String,
+            enum: Object.values(VERIFICATION_STATUS),
+            default: VERIFICATION_STATUS.PENDING,
             index: true,
         },
+        verified_by: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Admin",
+        },
+        verified_at: Date,
 
+        status: {
+            type: String,
+            enum: Object.values(ACCOUNT_STATUS),
+            default: ACCOUNT_STATUS.PENDING,
+            index: true,
+        },
         store_deactivated_reason: {
             type: String,
             maxlength: 500,
         },
+        deactivated_at: Date,
+        deactivated_by: { 
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Admin",
+        },
+        is_signup: {
+            type: Boolean,
+            default: false,
+        },
+        last_login_at: Date,
+        last_active_at: Date,
+        status_updated_by: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Admin",
+        },
+        status_updated_at: Date,
     },
     { timestamps: true }
 );
 
-// ── Indexes ───────────────────────────────────────────────────────────────────
 StoreSchema.index({ location: "2dsphere" });
 StoreSchema.index({ service_area_id: 1, is_active: 1, is_online: 1 });
 StoreSchema.index({ status: 1, verification_status: 1 });
+StoreSchema.index({ store_owner_id: 1, is_active: 1 });
 
-// ── Redis sync hooks ──────────────────────────────────────────────────────────
 const syncStoreToRedis = async (doc) => {
     if (!doc) return;
     try {

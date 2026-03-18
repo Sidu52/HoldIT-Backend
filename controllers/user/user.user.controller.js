@@ -583,7 +583,7 @@ export const getNearestStore = async (req, res) => {
                     availableSlots: {
                         $subtract: [
                             { $ifNull: ["$max_booking_capacity", 50] },
-                            { $ifNull: ["$booking_assigned_count", 0] },
+                            { $ifNull: ["$current_booking_count", 0] },
                         ],
                     },
                 },
@@ -592,7 +592,6 @@ export const getNearestStore = async (req, res) => {
                 $project: {
                     _id: 1,
                     store_name: 1,
-                    store_address: 1,
                     store_open_time: 1,
                     store_close_time: 1,
                     location: 1,
@@ -665,7 +664,7 @@ export const getStoreById = async (req, res) => {
             is_deleted: { $ne: true },
         })
             .select(
-                "store_name store_address store_open_time store_close_time store_description location store_capacity"
+                "store_name store_open_time store_close_time store_description location store_capacity"
             )
             .lean();
 
