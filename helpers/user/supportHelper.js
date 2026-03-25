@@ -8,26 +8,9 @@ import {
     SUPPORT_LIMITS,
     SUPPORT_JOB_OPTIONS,
 } from "../../constants/user/support.js";
+import logger from "../../utils/logger.js";
 
-
-export const getCachedData = async (cacheKey) => {
-    try {
-        const cached = await get(cacheKey);
-        return cached ? JSON.parse(cached) : null;
-    } catch (err) {
-        console.error("Support cache read error:", err);
-        return null;
-    }
-};
-
-
-export const setCacheData = async (cacheKey, data, ttl) => {
-    try {
-        await set(cacheKey, JSON.stringify(data), "EX", ttl);
-    } catch (err) {
-        console.error("Support cache write error:", err);
-    }
-};
+export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
 
 
 export const invalidateTicketCache = async (userId, ticketId = null) => {
@@ -38,7 +21,7 @@ export const invalidateTicketCache = async (userId, ticketId = null) => {
         }
         await Promise.all(promises);
     } catch (err) {
-        console.error("Support cache invalidation error:", err);
+        logger.error("Support cache invalidation error:", err);
     }
 };
 
@@ -145,24 +128,14 @@ export const enrichTicketList = (tickets, userId) => {
 };
 
 
-export const buildPagination = (page, limit, total) => {
-    const totalPages = Math.ceil(total / limit);
-    return {
-        currentPage: page,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-    };
-};
+export { buildPagination } from "../../utils/helper.js";
 
-export const queueSupportJob = (queueName, jobName, data) => {
+export const queueSupportJob = async (queueName, jobName, data) => {
     const jobId = `${queueName}-${data.ticketId || Date.now()}`;
 
-    addJobToQueue(
+    await addJobToQueue(
         queueName,
         { name: jobName, data },
         { jobId, ...SUPPORT_JOB_OPTIONS }
-    ).catch((err) => console.error(`Failed to queue ${jobName}:`, err));
+    ).catch((err) => logger.error(`Failed to queue ${jobName}:`, err));
 };

@@ -5,6 +5,7 @@ import redis from "../../services/redisService.js";
 import { cancelJob } from "../../services/jobService.js";
 import { markDriverOnTrip } from "../../services/driverGeoService.js";
 import { BOOKING_STATUS, JOB_QUEUES } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
 import {
     REDIS_KEYS,
     REDIS_TTL,
@@ -204,7 +205,7 @@ export const rejectBookingOffer = async (bookingId, driverId, reason = "") => {
         redis.del(REDIS_KEYS.DRIVER_OFFERED(driverId)),
     ]);
 
-    console.log(
+    logger.info(
         `[DriverBooking] Driver ${driverId} rejected booking ${bookingId}: ${reason}`
     );
 

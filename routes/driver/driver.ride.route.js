@@ -12,6 +12,7 @@ import {
     arriveAtStoreController,
     cancelRideController,
     getPendingOfferController,
+    completeDeliveryController,
 } from "../../controllers/driver/driver.ride.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { cancelRideSchema } from "../../validations/driver/ride.driver.validation.js";
@@ -44,5 +45,8 @@ router.post(
     validate(cancelRideSchema),
     cancelRideController
 );
+
+// DELIVERY
+router.put("/rides/:booking_id/complete-delivery", apiLimiter, completeDeliveryController);
 
 export default router;

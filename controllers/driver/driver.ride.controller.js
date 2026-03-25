@@ -20,6 +20,7 @@ import {
     processArriveAtStore,
     buildPagination,
     processDriverCancelRide,
+    processCompleteDelivery,
 } from "../../helpers/driver/driverRideHelper.js";
 
 import { getOfferStatus } from "../../helpers/user/driverAssignHelper.js";
@@ -27,6 +28,8 @@ import { invalidateBookingCache } from "../../helpers/user/bookingHelper.js";
 import { REDIS_KEYS } from "../../constants/user/booking.js";
 import redis from "../../services/redisService.js";
 import Booking from "../../models/Booking.js";
+import logger from "../../utils/logger.js";
+
 
 // GET PENDING OFFER
 export const getPendingOfferController = async (req, res) => {
@@ -77,7 +80,7 @@ export const getPendingOfferController = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Get Pending Offer Error:", err);
+        logger.error("Get Pending Offer Error:", err);
         return sendError(res, "Failed to fetch pending offer.");
     }
 };
@@ -100,7 +103,7 @@ export const getAssignedRidesController = async (req, res) => {
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.ASSIGNED_RIDES_FETCHED, data: responseData });
     } catch (err) {
-        console.error("Get Assigned Rides Error:", err);
+        logger.error("Get Assigned Rides Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.FETCH_FAILED);
     }
 };
@@ -126,7 +129,7 @@ export const getActiveRideController = async (req, res) => {
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.ACTIVE_RIDE_FETCHED, data: ride });
     } catch (err) {
-        console.error("Get Active Ride Error:", err);
+        logger.error("Get Active Ride Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.FETCH_FAILED);
     }
 };
@@ -154,7 +157,7 @@ export const getRideDetailsController = async (req, res) => {
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.RIDE_DETAIL_FETCHED, data: ride });
     } catch (err) {
-        console.error("Get Ride Details Error:", err);
+        logger.error("Get Ride Details Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.DETAIL_FAILED);
     }
 };
@@ -188,7 +191,7 @@ export const getRideHistoryController = async (req, res) => {
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.HISTORY_FETCHED, data: responseData });
     } catch (err) {
-        console.error("Get Ride History Error:", err);
+        logger.error("Get Ride History Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.HISTORY_FAILED);
     }
 };
@@ -237,7 +240,7 @@ export const acceptRideController = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Accept Ride Error:", err);
+        logger.error("Accept Ride Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.ACCEPT_FAILED);
     }
 };
@@ -258,7 +261,7 @@ export const rejectRideController = async (req, res) => {
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.RIDE_REJECTED });
     } catch (err) {
-        console.error("Reject Ride Error:", err);
+        logger.error("Reject Ride Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.REJECT_FAILED);
     }
 };
@@ -286,7 +289,7 @@ export const arriveAtPickupController = async (req, res) => {
             data: { bookingId: booking._id, status: booking.status },
         });
     } catch (err) {
-        console.error("Arrive At Pickup Error:", err);
+        logger.error("Arrive At Pickup Error:", err);
         return sendError(res, "Failed to update arrival status.");
     }
 };
@@ -314,7 +317,7 @@ export const completePickupController = async (req, res) => {
             data: { bookingId: booking._id, status: booking.status },
         });
     } catch (err) {
-        console.error("Complete Pickup Error:", err);
+        logger.error("Complete Pickup Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.COMPLETE_PICKUP_FAILED);
     }
 };
@@ -342,7 +345,7 @@ export const arriveAtStoreController = async (req, res) => {
             data: { bookingId: booking._id, status: booking.status },
         });
     } catch (err) {
-        console.error("Arrive At Store Error:", err);
+        logger.error("Arrive At Store Error:", err);
         return sendError(res, "Failed to update store arrival.");
     }
 };
@@ -377,7 +380,35 @@ export const cancelRideController = async (req, res) => {
             data: { bookingId: result.bookingId, action: result.action },
         });
     } catch (err) {
-        console.error("Cancel Ride Error:", err);
+        logger.error("Cancel Ride Error:", err);
         return sendError(res, "Failed to cancel ride.");
+    }
+};
+
+// COMPLETE DELIVERY — luggage returned to user
+export const completeDeliveryController = async (req, res) => {
+    try {
+        const driverId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        const booking = await processCompleteDelivery(booking_id, driverId);
+
+        if (!booking) {
+            return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        }
+
+        await Promise.all([
+            invalidateDriverRideCache(driverId, booking_id),
+            invalidateBookingCache(booking.userId.toString(), booking_id),
+        ]);
+
+        return sendResponse({
+            res,
+            message: "Delivery completed successfully.",
+            data: { bookingId: booking._id, status: booking.status },
+        });
+    } catch (err) {
+        logger.error("Complete Delivery Error:", err);
+        return sendError(res, "Failed to complete delivery.");
     }
 };

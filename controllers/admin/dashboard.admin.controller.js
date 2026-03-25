@@ -6,6 +6,8 @@ import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { getDateRange } from "../../utils/helper.js";
 import { get, set } from "../../services/redisService.js";
 import { BOOKING_STATUS, STATUS_CODES, ACCOUNT_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
+
 
 // CONSTANTS
 const SUMMARY_CACHE_TTL = 60; // 1 minute
@@ -306,7 +308,7 @@ export const getDashboardSummary = async (req, res) => {
             data: responseData,
         });
     } catch (error) {
-        console.error("Dashboard Summary Error:", error);
+        logger.error("Dashboard Summary Error:", error);
         return sendError(res, "Failed to fetch dashboard summary");
     }
 };
@@ -391,7 +393,7 @@ export const getChartData = async (req, res) => {
             data: responseData,
         });
     } catch (error) {
-        console.error("Chart Data Error:", error);
+        logger.error("Chart Data Error:", error);
         return sendError(res, "Failed to fetch chart data");
     }
 };

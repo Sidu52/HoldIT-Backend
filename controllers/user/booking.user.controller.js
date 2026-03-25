@@ -42,6 +42,8 @@ import {
 import { STORE_MESSAGES } from "../../constants/user/store.js";
 import { DRIVER_MESSAGES } from "../../constants/user/driver.js";
 import { safeAbortSession } from "../../utils/helper.js";
+import logger from "../../utils/logger.js";
+
 
 // SCHEDULE 
 export const schedulePickup = async (req, res) => {
@@ -108,6 +110,8 @@ export const schedulePickup = async (req, res) => {
             pickupLocation.lng,
             session
         );
+
+        console.log("store", store);
 
         if (!store) {
             await safeAbortSession(session);
@@ -201,7 +205,7 @@ export const schedulePickup = async (req, res) => {
                 }
             );
         } catch (jobErr) {
-            console.error(
+            logger.error(
                 `[schedulePickup] ⚠️ Driver search job failed to queue for booking ` +
                 `${booking._id}. Booking created but driver search not started.`,
                 jobErr.message
@@ -210,7 +214,7 @@ export const schedulePickup = async (req, res) => {
 
         // Invalidate user booking cache
         await invalidateBookingCache(userId).catch((err) =>
-            console.warn("[schedulePickup] Cache invalidation failed:", err.message)
+            logger.warn("[schedulePickup] Cache invalidation failed:", err.message)
         );
 
         return sendResponse({
@@ -239,7 +243,7 @@ export const schedulePickup = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("[schedulePickup] Unhandled error:", err);
+        logger.error("[schedulePickup] Unhandled error:", err);
         return sendError(res, BOOKING_MESSAGES.SCHEDULE_FAILED);
     }
 };
@@ -296,7 +300,7 @@ export const getMyBookings = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get My Bookings Error:", err);
+        logger.error("Get My Bookings Error:", err);
         return sendError(res, BOOKING_MESSAGES.FETCH_FAILED);
     }
 };
@@ -329,7 +333,7 @@ export const getBookingById = async (req, res) => {
             data: booking,
         });
     } catch (err) {
-        console.error("Get Booking By ID Error:", err);
+        logger.error("Get Booking By ID Error:", err);
         return sendError(res, BOOKING_MESSAGES.FETCH_DETAIL_FAILED);
     }
 };
@@ -411,7 +415,7 @@ export const cancelBooking = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("Cancel Booking Error:", err);
+        logger.error("Cancel Booking Error:", err);
         return sendError(res, BOOKING_MESSAGES.CANCEL_FAILED);
     }
 };
@@ -451,7 +455,7 @@ export const getActiveBookings = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get Active Bookings Error:", err);
+        logger.error("Get Active Bookings Error:", err);
         return sendError(res, BOOKING_MESSAGES.ACTIVE_FETCH_FAILED);
     }
 };
@@ -505,7 +509,7 @@ export const getBookingHistory = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get Booking History Error:", err);
+        logger.error("Get Booking History Error:", err);
         return sendError(res, BOOKING_MESSAGES.HISTORY_FETCH_FAILED);
     }
 };
@@ -593,7 +597,7 @@ export const requestReturn = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Request Return Error:", err);
+        logger.error("Request Return Error:", err);
         return sendError(res, BOOKING_MESSAGES.RETURN_FAILED);
     }
 };
@@ -645,7 +649,7 @@ export const getAssignDriver = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Assign Driver Error:", err);
+        logger.error("Assign Driver Error:", err);
         return sendError(res, BOOKING_MESSAGES.ASSIGN_DRIVER_FAILED);
     }
 };
@@ -705,7 +709,7 @@ export const getAssignStore = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Get Assign Store Error:", err);
+        logger.error("Get Assign Store Error:", err);
         return sendError(
             res,
             BOOKING_MESSAGES.GET_ASSIGN_STORE_FAILED

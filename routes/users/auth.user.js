@@ -1,5 +1,5 @@
 import express from "express";
-import { apiLimiter } from "../../config/rateLimiter.js";
+import { apiLimiter, loginLimiter, otpLimiter, refreshLimiter } from "../../config/rateLimiter.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -22,7 +22,7 @@ const router = express.Router();
 // Login / Register
 router.post(
     "/login",
-    apiLimiter,
+    loginLimiter,
     validate(loginSchema),
     authUser
 );
@@ -30,7 +30,7 @@ router.post(
 // Resend OTP
 router.post(
     "/resend-otp",
-    apiLimiter,
+    otpLimiter,
     validate(resendOTPSchema),
     sendOTP
 );
@@ -38,7 +38,7 @@ router.post(
 // Verify OTP
 router.post(
     "/verify-otp",
-    apiLimiter,
+    otpLimiter,
     validate(verifyOTPSchema),
     verifyOTP
 );
@@ -46,7 +46,7 @@ router.post(
 // Refresh token
 router.post(
     "/refresh",
-    apiLimiter,
+    refreshLimiter,
     refreshToken
 );
 

@@ -27,13 +27,23 @@ import {
     isBookingAwaitingDriver,
     getBookingForDriverSearch,
     updateBookingStatus,
-    autoCancelBooking,
     scheduleOfferNextDriver,
     scheduleOfferTimeoutCheck,
     getDriverName,
 } from "../../helpers/user/driverAssignHelper.js";
+import { autoCancelBooking } from "../../helpers/user/bookingHelper.js";
+import logger from "../../utils/logger.js";
 
 let worker;
+
+// JOB_HANDLERS must be declared BEFORE createDriverAssignWorker so the
+// closure can resolve the map. Function declarations (handleSearchDrivers etc.)
+// are hoisted, so forward-referencing them here is safe.
+const JOB_HANDLERS = {
+    [DRIVER_JOB_NAMES.SEARCH_DRIVERS]: handleSearchDrivers,
+    [DRIVER_JOB_NAMES.OFFER_NEXT_DRIVER]: handleOfferNextDriver,
+    [DRIVER_JOB_NAMES.CHECK_OFFER_TIMEOUT]: handleOfferTimeout,
+};
 
 export const createDriverAssignWorker = () => {
     worker = new Worker(
@@ -42,7 +52,7 @@ export const createDriverAssignWorker = () => {
             const handler = JOB_HANDLERS[job.name];
 
             if (!handler) {
-                console.warn(`[DriverAssign] Unknown job: ${job.name}`);
+                logger.warn(`[DriverAssign] Unknown job: ${job.name}`);
                 return { success: false, reason: "unknown_job" };
             }
 
@@ -56,52 +66,37 @@ export const createDriverAssignWorker = () => {
     );
 
     worker.on("error", (err) => {
-        console.error("[DriverAssign] Worker error:", err.message);
+        logger.error(`[DriverAssign] Worker error: ${err.message}`);
     });
 
     worker.on("completed", (job, result) => {
         if (result?.driverAssigned) {
-            console.log(
+            logger.info(
                 `[DriverAssign] ${result.driverName} assigned → ${result.bookingId}`
             );
         }
     });
 
     worker.on("failed", async (job, err) => {
-        console.error(
-            `[DriverAssign] Job ${job.name} failed for ${job.data?.bookingId}:`,
-            err.message,
-            `(attempt ${job.attemptsMade})`
+        logger.error(
+            `[DriverAssign] Job ${job.name} failed for ${job.data?.bookingId}: ${err.message} (attempt ${job.attemptsMade})`
         );
     });
 
     return worker;
 };
 
-const JOB_HANDLERS = {
-    [DRIVER_JOB_NAMES.SEARCH_DRIVERS]: handleSearchDrivers,
-    [DRIVER_JOB_NAMES.OFFER_NEXT_DRIVER]: handleOfferNextDriver,
-    [DRIVER_JOB_NAMES.CHECK_OFFER_TIMEOUT]: handleOfferTimeout,
-};
-
-// Find all candidates, store in Redis, start offering
+// --- Job Handler Functions ---
 async function handleSearchDrivers(job) {
     const { bookingId, type = "PICKUP" } = job.data;
-
-    console.log(`\n[Search] ═══════════════════════════════`);
-    console.log(`[Search] bookingId=${bookingId} type=${type}`);
-
     const searchLocked = await markSearchActive(bookingId);
-    console.log(`[Search] searchLocked=${searchLocked}`);
 
     if (!searchLocked) {
-        console.log(`[Search] Already active for ${bookingId} — skipping`);
         return { success: false, reason: "search_already_active" };
     }
 
     try {
         const { awaiting, reason } = await isBookingAwaitingDriver(bookingId);
-        console.log(`[Search] isBookingAwaitingDriver: awaiting=${awaiting} reason=${reason}`);
 
         if (!awaiting) {
             await clearSearchActive(bookingId);
@@ -109,33 +104,26 @@ async function handleSearchDrivers(job) {
         }
 
         const booking = await getBookingForDriverSearch(bookingId);
-        console.log(`[Search] booking:`, JSON.stringify({
-            status: booking?.status,
-            storeId: booking?.storeId,
-            serviceAreaId: booking?.serviceAreaId,
-            pickupLocation: booking?.pickupLocation,
-        }));
-
         if (!booking) {
             await clearSearchActive(bookingId);
             return { success: false, reason: "booking_not_found" };
+        }
+
+        if (booking.userId) {
+            emitBookingDriverSearching(safeGetIO(), bookingId, booking.userId);
         }
 
         const location = type === "PICKUP"
             ? booking.pickupLocation
             : booking.deliveryLocation;
 
-        console.log(`[Search] location for type=${type}:`, JSON.stringify(location));
-
         if (!location?.lat || !location?.lng) {
-            console.log(`[Search] Invalid location — cancelling`);
             await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.INVALID_LOCATION);
             await clearSearchActive(bookingId);
             return { success: false, reason: "invalid_location" };
         }
 
         const geoKeys = await getDriverGeoKeys(booking.serviceAreaId);
-        console.log(`[Search] geoKeys:`, geoKeys);
 
         const nearbyDrivers = await searchNearbyDrivers(
             geoKeys,
@@ -143,8 +131,6 @@ async function handleSearchDrivers(job) {
             location.lat,   // ← lat second
             bookingId
         );
-
-        console.log(`[Search] nearbyDrivers from Redis: ${nearbyDrivers.length}`);
 
         if (nearbyDrivers.length === 0) {
             await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.NO_DRIVER_FOUND);
@@ -155,21 +141,16 @@ async function handleSearchDrivers(job) {
         const driverIds = nearbyDrivers.map((d) => d.driverId);
         const verifiedDrivers = await verifyDriversInDB(driverIds);
 
-        console.log(`[Search] verifiedDrivers: ${verifiedDrivers.length}`);
-
         const verifiedSet = new Set(verifiedDrivers.map((d) => d._id.toString()));
         const staleIds = driverIds.filter((id) => !verifiedSet.has(id));
 
         if (staleIds.length > 0) {
-            console.log(`[Search] Cleaning ${staleIds.length} stale driver(s):`, staleIds);
             await cleanStaleDrivers(geoKeys, staleIds);
         }
 
         const validCandidates = nearbyDrivers
             .filter((d) => verifiedSet.has(d.driverId))
             .slice(0, DRIVER_ASSIGNMENT.MAX_OFFER_ATTEMPTS);
-
-        console.log(`[Search] validCandidates: ${validCandidates.length}`);
 
         if (validCandidates.length === 0) {
             await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.NO_DRIVER_FOUND);
@@ -179,40 +160,35 @@ async function handleSearchDrivers(job) {
 
         await storeCandidates(bookingId, validCandidates.map((d) => d.driverId));
         await scheduleOfferNextDriver(bookingId, type, 1);
-
-        console.log(`[Search] ✅ Search complete — ${validCandidates.length} candidate(s) queued`);
-        console.log(`[Search] ═══════════════════════════════\n`);
-
+        logger.info(`[Search] ✅ Search complete — ${validCandidates.length} candidate(s) queued`);
         return { success: true, candidateCount: validCandidates.length, bookingId };
     } catch (err) {
-        console.error(`[Search] FATAL ERROR for ${bookingId}:`, err);
+        logger.error(`[Search] FATAL ERROR for ${bookingId}:`, err);
         await clearSearchActive(bookingId);
         throw err;
     }
 }
 
 async function handleOfferNextDriver(job) {
-    const { bookingId, type, attemptNumber } = job.data;
+    try {
+        const { bookingId, type, attemptNumber } = job.data;
+        logger.info(
+            `\n[Offer] ── Attempt #${attemptNumber} for ${bookingId} ──`
+        );
 
-    console.log(
-        `\n[Offer] ── Attempt #${attemptNumber} for ${bookingId} ──`
-    );
+        // Pre-check booking
+        const { awaiting, reason } = await isBookingAwaitingDriver(bookingId);
 
-    // ---- Step 1: Pre-check booking ----
-    const { awaiting, reason } = await isBookingAwaitingDriver(bookingId);
-
-    if (!awaiting) {
-        console.log(`[Offer] Booking ${bookingId} resolved: ${reason}`);
-        await cleanupBookingRedisKeys(bookingId);
-        return { success: false, reason };
-    }
+        if (!awaiting) {
+            await cleanupBookingRedisKeys(bookingId);
+            return { success: false, reason };
+        }
 
     // Pop next candidate
     const nextDriverId = await popNextCandidate(bookingId);
 
     if (!nextDriverId) {
         // ALL CANDIDATES EXHAUSTED  AUTO CANCEL
-        console.log(`[Offer] All candidates exhausted for ${bookingId}`);
         await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED);
         return { success: false, reason: "all_exhausted" };
     }
@@ -226,7 +202,6 @@ async function handleOfferNextDriver(job) {
         meta?.is_online !== "true";
 
     if (isUnavailable) {
-        console.log(`[Offer] Driver ${nextDriverId} now unavailable. Skipping.`);
         await markDriverTried(bookingId, nextDriverId);
         return tryNextDriver(bookingId, type, attemptNumber);
     }
@@ -236,9 +211,6 @@ async function handleOfferNextDriver(job) {
     const existingLock = await redis.get(driverLockKey);
 
     if (existingLock && existingLock !== bookingId) {
-        console.log(
-            `[Offer] Driver ${nextDriverId} has pending offer for ${existingLock}. Skipping.`
-        );
         await markDriverTried(bookingId, nextDriverId);
         return tryNextDriver(bookingId, type, attemptNumber);
     }
@@ -251,7 +223,6 @@ async function handleOfferNextDriver(job) {
 );
 
     if (!created) {
-        console.log(`[Offer] Cannot offer to ${nextDriverId}: ${offerReason}`);
         await markDriverTried(bookingId, nextDriverId);
         return tryNextDriver(bookingId, type, attemptNumber);
     }
@@ -263,13 +234,12 @@ async function handleOfferNextDriver(job) {
 
     const driverName = getDriverName(driver);
 
-    console.log(
+    logger.info(
         `[Offer] Offer sent to ${driverName} (${nextDriverId})`
     );
-    console.log(
+    logger.info(
         `[Offer] Timeout in ${DRIVER_ASSIGNMENT.OFFER_TIMEOUT_SECONDS}s`
     );
-
 
     await scheduleOfferTimeoutCheck(
         bookingId,
@@ -285,21 +255,35 @@ async function handleOfferNextDriver(job) {
         attemptNumber,
         bookingId,
     };
+    } catch (error) {
+        if (job.moveToFailed) await job.moveToFailed(error, job.token);
+        throw error;
+    }
 }
 
 async function tryNextDriver(bookingId, type, currentAttempt) {
     const remaining = await getRemainingCandidateCount(bookingId);
 
     if (remaining === 0) {
-        console.log(`[Offer] No more candidates for ${bookingId}`);
         await autoCancelBooking(
             bookingId,
             AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED
         );
+
+        try {
+            const bookingForSocket = await Booking.findById(bookingId).select("userId pickupLocation").lean();
+            if (bookingForSocket) {
+                emitBookingNoDriverAvailable(safeGetIO(), bookingId, bookingForSocket.userId);
+                emitAdminAlertNoDriver(safeGetIO(), bookingId, bookingForSocket.userId, bookingForSocket.pickupLocation, currentAttempt, "All drivers exhausted");
+            }
+        } catch (e) {
+            console.error("[SocketEmitter] Failed to fetch booking details for failure notification:", e.message);
+        }
+
         return { success: false, reason: "all_exhausted" };
     }
 
-    console.log(`[Offer] ${remaining} candidates remaining. Trying next...`);
+    logger.info(`[Offer] ${remaining} candidates remaining. Trying next...`);
 
     // Schedule immediately
     await scheduleOfferNextDriver(bookingId, type, currentAttempt + 1);
@@ -308,47 +292,52 @@ async function tryNextDriver(bookingId, type, currentAttempt) {
 }
 
 async function handleOfferTimeout(job) {
-    const { bookingId, type, driverId, attemptNumber } = job.data;
+    try {
+        const { bookingId, type, driverId, attemptNumber } = job.data;
 
-    console.log(
-        `\n[Timeout] Checking offer: ${bookingId} → driver ${driverId}`
-    );
+        logger.info(
+            `\n[Timeout] Checking offer: ${bookingId} → driver ${driverId}`
+        );
 
-    const { awaiting, reason } = await isBookingAwaitingDriver(bookingId);
+        const { awaiting, reason } = await isBookingAwaitingDriver(bookingId);
 
-    if (!awaiting) {
-        // Driver accepted, or booking was cancelled by user
-        console.log(`[Timeout] Booking ${bookingId} already resolved: ${reason}`);
-        await clearOffer(bookingId, driverId);
-        return { success: true, reason: "already_resolved" };
-    }
+        if (!awaiting) {
+            // Driver accepted, or booking was cancelled by user
+            logger.info(`[Timeout] Booking ${bookingId} already resolved: ${reason}`);
+            await clearOffer(bookingId, driverId);
+            return { success: true, reason: "already_resolved" };
+        }
 
     //  Check offer status in Redis
     const { exists, offer } = await getOfferStatus(bookingId);
 
     if (!exists) {
-        console.log(`[Timeout] Offer expired for ${bookingId}`);
+        logger.info(`[Timeout] Offer expired for ${bookingId}`);
         await handleDriverTimeout(bookingId, type, driverId, attemptNumber);
         return { success: true, reason: "offer_expired" };
     }
 
     // Driver accepted between offer creation and timeout check
     if (offer.status === "accepted") {
-        console.log(`[Timeout] Driver accepted just before timeout for ${bookingId}`);
+        logger.info(`[Timeout] Driver accepted just before timeout for ${bookingId}`);
         return { success: true, reason: "accepted_in_time" };
     }
 
     // Different driver in offer (shouldn't happen, but safety check)
     if (offer.driverId !== driverId) {
-        console.log(`[Timeout] Different driver in offer. Expected ${driverId}, got ${offer.driverId}`);
+        logger.info(`[Timeout] Different driver in offer. Expected ${driverId}, got ${offer.driverId}`);
         return { success: true, reason: "different_driver" };
     }
 
-    // Offer still pending → driver timed out
-    console.log(`[Timeout] Driver ${driverId} timed out for ${bookingId}`);
-    await handleDriverTimeout(bookingId, type, driverId, attemptNumber);
+        // Offer still pending → driver timed out
+        logger.info(`[Timeout] Driver ${driverId} timed out for ${bookingId}`);
+        await handleDriverTimeout(bookingId, type, driverId, attemptNumber);
 
-    return { success: true, reason: "driver_timed_out" };
+        return { success: true, reason: "driver_timed_out" };
+    } catch (error) {
+        if (job.moveToFailed) await job.moveToFailed(error, job.token);
+        throw error;
+    }
 }
 
 async function handleDriverTimeout(bookingId, type, driverId, attemptNumber) {
@@ -359,7 +348,7 @@ async function handleDriverTimeout(bookingId, type, driverId, attemptNumber) {
 
     if (remaining === 0) {
         // ALL DRIVERS EXHAUSTED → AUTO CANCEL
-        console.log(
+        logger.info(
             `[Timeout] All candidates exhausted for ${bookingId}. Auto-cancelling.`
         );
         await autoCancelBooking(
@@ -368,7 +357,7 @@ async function handleDriverTimeout(bookingId, type, driverId, attemptNumber) {
         );
         return;
     }
-    console.log(
+    logger.info(
         `[Timeout] ${remaining} candidates remaining. Offering next for ${bookingId}`
     );
 

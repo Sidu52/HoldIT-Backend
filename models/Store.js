@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 const StoreSchema = new mongoose.Schema(
     {
@@ -152,7 +154,7 @@ const syncStoreToRedis = async (doc) => {
             await removeStoreFromRedis(doc._id, doc.service_area_id);
         }
     } catch (err) {
-        console.error(`[Store Hook] Redis sync failed for ${doc._id}:`, err.message);
+        logger.error(`[Store Hook] Redis sync failed for ${doc._id}:`, err.message);
     }
 };
 

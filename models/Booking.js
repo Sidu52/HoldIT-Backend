@@ -14,6 +14,12 @@ const LocationSchema = new mongoose.Schema(
 const DriverAssignmentSchema = new mongoose.Schema(
     {
         driverId: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" },
+        returnOtp: {
+            type: String,
+            required: true,
+            unique: true,
+            index: true,
+        },
         assignedAt: Date,
         acceptedAt: Date,
         startedAt: Date,
@@ -228,6 +234,31 @@ BookingSchema.pre("save", async function () {
     }
 
     this.luggage.totalCount = total;
+});
+
+// Guard against terminal state transitions
+const TERMINAL_STATUSES = [
+    BOOKING_STATUS.DELIVERED,
+    BOOKING_STATUS.CANCELLED,
+    BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL
+];
+
+BookingSchema.pre(["updateOne", "findOneAndUpdate", "findByIdAndUpdate"], async function () {
+    const update = this.getUpdate();
+    const newStatus = update.$set?.status || update.status;
+    
+    if (!newStatus) return;
+
+    try {
+        const docToUpdate = await this.model.findOne(this.getQuery());
+        if (!docToUpdate) return;
+
+        if (TERMINAL_STATUSES.includes(docToUpdate.status) && newStatus !== docToUpdate.status) {
+            throw new Error(`Strict Error: Cannot transition booking from terminal status '${docToUpdate.status}' to '${newStatus}'`);
+        }
+    } catch (err) {
+        throw err;
+    }
 });
 
 // INDEXES

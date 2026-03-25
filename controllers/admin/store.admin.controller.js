@@ -10,6 +10,8 @@ import {
     BOOKING_STATUS,
 } from "../../utils/constants.js";
 import { checkServiceability } from "../../utils/serviceable.js";
+import logger from "../../utils/logger.js";
+
 
 const LIST_CACHE_TTL = 120;
 const DETAIL_CACHE_TTL = 300;
@@ -32,7 +34,7 @@ const invalidateStoreCache = async (storeId = null) => {
         if (storeId) promises.push(del(`store:${storeId}`));
         await Promise.all(promises);
     } catch (err) {
-        console.error("Store cache invalidation error:", err);
+        logger.error("Store cache invalidation error:", err);
     }
 };
 
@@ -143,7 +145,7 @@ export const createStore = async (req, res) => {
             );
         }
 
-        console.error("[createStore] Error:", err);
+        logger.error("[createStore] Error:", err);
         return sendError(res, "Failed to create store");
     }
 };
@@ -234,7 +236,7 @@ export const getStores = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("[getStores] Error:", err);
+        logger.error("[getStores] Error:", err);
         return sendError(res, "Failed to fetch stores");
     }
 };
@@ -275,7 +277,7 @@ export const getStoreById = async (req, res) => {
             data: store,
         });
     } catch (err) {
-        console.error("[getStoreById] Error:", err);
+        logger.error("[getStoreById] Error:", err);
         return sendError(res, "Failed to fetch store");
     }
 };
@@ -343,7 +345,7 @@ export const updateStore = async (req, res) => {
             data: updatedStore,
         });
     } catch (err) {
-        console.error("[updateStore] Error:", err);
+        logger.error("[updateStore] Error:", err);
         return sendError(res, "Failed to update store");
     }
 };
@@ -413,7 +415,7 @@ export const updateStoreOnline = async (req, res) => {
             data: updatedStore,
         });
     } catch (err) {
-        console.error("[updateStoreOnline] Error:", err);
+        logger.error("[updateStoreOnline] Error:", err);
         return sendError(res, "Failed to update store online/offline");
     }
 };
@@ -505,7 +507,7 @@ export const toggleStoreStatus = async (req, res) => {
             data: updatedStore,
         });
     } catch (err) {
-        console.error("[toggleStoreStatus] Error:", err);
+        logger.error("[toggleStoreStatus] Error:", err);
         return sendError(res, "Failed to update store status");
     }
 };
@@ -574,7 +576,7 @@ export const updateStoreVerification = async (req, res) => {
             data: updatedStore,
         });
     } catch (err) {
-        console.error("[updateStoreVerification] Error:", err);
+        logger.error("[updateStoreVerification] Error:", err);
         return sendError(res, "Failed to update store verification");
     }
 };

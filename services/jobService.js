@@ -1,6 +1,8 @@
 import { Queue } from "bullmq";
 import { createBullConnection } from "./redisService.js";
 import { JOB_QUEUES } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 // QUEUE REGISTRY
 const QUEUE_NAMES = Object.values(JOB_QUEUES);
@@ -21,7 +23,7 @@ for (const name of QUEUE_NAMES) {
     });
 }
 
-console.log(`✅ [Queues] Initialized: ${QUEUE_NAMES.join(", ")}`);
+logger.info(`✅ [Queues] Initialized: ${QUEUE_NAMES.join(", ")}`);
 
 //  PUBLIC API
 export const addJobToQueue = async (queueName, jobData, options = {}) => {
@@ -44,7 +46,7 @@ export const addJobToQueue = async (queueName, jobData, options = {}) => {
 export const cancelJob = async (queueName, jobId) => {
     const queue = queues[queueName];
     if (!queue) {
-        console.warn(`[JobService] cancelJob: queue "${queueName}" not found`);
+        logger.warn(`[JobService] cancelJob: queue "${queueName}" not found`);
         return;
     }
 
@@ -57,11 +59,11 @@ export const cancelJob = async (queueName, jobId) => {
         // Only remove jobs that haven't started processing yet
         if (state === "delayed" || state === "waiting") {
             await job.remove();
-            console.log(`[JobService] Cancelled job ${jobId} (was ${state})`);
+            logger.info(`[JobService] Cancelled job ${jobId} (was ${state})`);
         }
     } catch (err) {
         // Non-fatal job may have already completed/been removed
-        console.warn(`[JobService] Failed to cancel job ${jobId}:`, err.message);
+        logger.warn(`[JobService] Failed to cancel job ${jobId}:`, err.message);
     }
 };
 
@@ -73,11 +75,11 @@ export const closeQueues = async () => {
     await Promise.allSettled(
         Object.entries(queues).map(([name, q]) =>
             q.close().catch((err) =>
-                console.warn(`[JobService] Failed to close queue ${name}:`, err.message)
+                logger.warn(`[JobService] Failed to close queue ${name}:`, err.message)
             )
         )
     );
-    console.log("[JobService] All queues closed");
+    logger.info("[JobService] All queues closed");
 };
 
 export default queues;

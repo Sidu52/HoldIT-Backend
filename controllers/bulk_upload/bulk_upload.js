@@ -2,6 +2,8 @@ import { User, Driver, Store, StoreOwner, Admin, Booking, ServiceableArea } from
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { ACCOUNT_STATUS, STATUS_CODES } from "../../utils/constants.js";
 import mongoose from "mongoose";
+import logger from "../../utils/logger.js";
+
 
 export const bulkUploadServiceableAreas = async (req, res) => {
     try {
@@ -58,7 +60,7 @@ export const bulkUploadServiceableAreas = async (req, res) => {
             STATUS_CODES.SUCCESS
         );
     } catch (error) {
-        console.error("Bulk Upload Error:", error);
+        logger.error("Bulk Upload Error:", error);
 
         return sendError(
             res,
@@ -70,7 +72,7 @@ export const bulkUploadServiceableAreas = async (req, res) => {
 export const bulkUploadUsers = async (req, res) => {
     try {
         const { users } = req.body;
-        console.log("user")
+        logger.info("user")
 
         if (!Array.isArray(users) || users.length === 0) {
             return sendError(
@@ -165,7 +167,7 @@ export const bulkUploadDriver = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Bulk upload error:", error);
+        logger.error("Bulk upload error:", error);
 
         return res.status(500).json({
             success: false,
@@ -222,7 +224,7 @@ export const bulkUploadStoreOwner = async (req, res) => {
             writeErrors: result.mongoose?.validationErrors || []
         });
     } catch (error) {
-        console.error("Bulk upload store owner error:", error);
+        logger.error("Bulk upload store owner error:", error);
 
         if (error.code === 11000) {
             return res.status(409).json({
@@ -299,7 +301,7 @@ export const bulkUploadAdmin = async (req, res) => {
             data: result,
         });
     } catch (error) {
-        console.error("Bulk upload error:", error);
+        logger.error("Bulk upload error:", error);
 
         // Handle duplicate key error
         if (error.code === 11000) {

@@ -1,6 +1,8 @@
 import Driver from "../models/Driver.js";
 import { addDriverToRedis } from "./driverGeoService.js";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 const BATCH_SIZE = 50;
 
@@ -32,14 +34,14 @@ export const syncDriversToRedis = async () => {
             verification_status: VERIFICATION_STATUS.VERIFIED,
         });
         if (!availableDrivers.length) {
-            console.warn(
+            logger.warn(
                 `[Driver Sync] No available drivers to sync` +
                 (onTripCount ? ` (${onTripCount} currently on trip — skipped correctly)` : "")
             );
             return { synced: 0, failed: 0, skipped: onTripCount, total: onTripCount };
         }
 
-        console.log(
+        logger.info(
             `[Driver Sync] ${availableDrivers.length} available driver(s) to sync` +
             (onTripCount ? `, ${onTripCount} on trip (skipped)` : "")
         );
@@ -65,7 +67,7 @@ export const syncDriversToRedis = async () => {
                         result.status === "rejected"
                             ? result.reason?.message
                             : "addDriverToRedis returned false — check coordinates or fields";
-                    console.error(
+                    logger.error(
                         `[Driver Sync] Failed for driver ${batch[j]._id}: ${reason}`
                     );
                 }
@@ -73,13 +75,13 @@ export const syncDriversToRedis = async () => {
         }
 
         const total = availableDrivers.length + onTripCount;
-        console.log(
+        logger.info(
             `[Driver Sync] ${synced} synced, ${failed} failed, ${onTripCount} on-trip skipped (total: ${total})`
         );
 
         return { synced, failed, skipped: onTripCount, total };
     } catch (err) {
-        console.error("[Driver Sync] Fatal error:", err.message);
+        logger.error("[Driver Sync] Fatal error:", err.message);
         return { synced: 0, failed: 0, skipped: 0, total: 0 };
     }
 };

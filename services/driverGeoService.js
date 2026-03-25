@@ -1,10 +1,12 @@
 import redis from "./redisService.js";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 // ADD
 export const addDriverToRedis = async (driver) => {
     if (!driver?._id) {
-        console.warn("[DriverGeo] addDriverToRedis: missing driver or _id");
+        logger.warn("[DriverGeo] addDriverToRedis: missing driver or _id");
         return false;
     }
 
@@ -27,7 +29,7 @@ export const addDriverToRedis = async (driver) => {
         !Array.isArray(driver.currentLocation.coordinates) ||
         driver.currentLocation.coordinates.length < 2
     ) {
-        console.warn(`[DriverGeo] Driver ${driver._id} has no valid coordinates`);
+        logger.warn(`[DriverGeo] Driver ${driver._id} has no valid coordinates`);
         return false;
     }
 
@@ -38,7 +40,7 @@ export const addDriverToRedis = async (driver) => {
         lng < -180 || lng > 180 ||
         lat < -90 || lat > 90
     ) {
-        console.warn(
+        logger.warn(
             `[DriverGeo] Driver ${driver._id} has invalid coordinates [${lng}, ${lat}]`
         );
         return false;
@@ -74,10 +76,10 @@ export const addDriverToRedis = async (driver) => {
 
         await pipeline.exec();
 
-        console.log(`[DriverGeo] Driver ${driverId} added at [${lng}, ${lat}]`);
+        logger.info(`[DriverGeo] Driver ${driverId} added at [${lng}, ${lat}]`);
         return true;
     } catch (err) {
-        console.error(`[DriverGeo] addDriverToRedis failed for ${driverId}:`, err.message);
+        logger.error(`[DriverGeo] addDriverToRedis failed for ${driverId}:`, err.message);
         return false;
     }
 };
@@ -85,7 +87,7 @@ export const addDriverToRedis = async (driver) => {
 // REMOVE
 export const removeDriverFromRedis = async (driverId, serviceAreaId = null) => {
     if (!driverId) {
-        console.warn("[DriverGeo] removeDriverFromRedis: missing driverId");
+        logger.warn("[DriverGeo] removeDriverFromRedis: missing driverId");
         return false;
     }
 
@@ -112,10 +114,10 @@ export const removeDriverFromRedis = async (driverId, serviceAreaId = null) => {
 
         await pipeline.exec();
 
-        console.log(`[DriverGeo] Driver ${driverIdStr} removed from Redis`);
+        logger.info(`[DriverGeo] Driver ${driverIdStr} removed from Redis`);
         return true;
     } catch (err) {
-        console.error(`[DriverGeo] removeDriverFromRedis failed for ${driverIdStr}:`, err.message);
+        logger.error(`[DriverGeo] removeDriverFromRedis failed for ${driverIdStr}:`, err.message);
         return false;
     }
 };
@@ -131,7 +133,7 @@ export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = n
         lng < -180 || lng > 180 ||
         lat < -90 || lat > 90
     ) {
-        console.warn(`[DriverGeo] Invalid coordinates for ${driverId}: [${lng}, ${lat}]`);
+        logger.warn(`[DriverGeo] Invalid coordinates for ${driverId}: [${lng}, ${lat}]`);
         return false;
     }
 
@@ -150,7 +152,7 @@ export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = n
         await pipeline.exec();
         return true;
     } catch (err) {
-        console.error(`[DriverGeo] updateDriverLocation failed for ${driverIdStr}:`, err.message);
+        logger.error(`[DriverGeo] updateDriverLocation failed for ${driverIdStr}:`, err.message);
         return false;
     }
 };
@@ -170,7 +172,7 @@ export const markDriverOnTrip = async (driverId, bookingId) => {
         });
         return true;
     } catch (err) {
-        console.error(`[DriverGeo] markDriverOnTrip failed for ${driverId}:`, err.message);
+        logger.error(`[DriverGeo] markDriverOnTrip failed for ${driverId}:`, err.message);
         return false;
     }
 };
@@ -186,7 +188,7 @@ export const markDriverAvailable = async (driverId) => {
         });
         return true;
     } catch (err) {
-        console.error(`[DriverGeo] markDriverAvailable failed for ${driverId}:`, err.message);
+        logger.error(`[DriverGeo] markDriverAvailable failed for ${driverId}:`, err.message);
         return false;
     }
 };

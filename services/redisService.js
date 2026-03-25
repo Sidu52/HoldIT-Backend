@@ -1,5 +1,7 @@
 import Redis from "ioredis";
 import dotenv from "dotenv";
+import logger from "../utils/logger.js";
+
 dotenv.config();
 
 // CONFIGURATION & VALIDATION
@@ -17,7 +19,7 @@ const getRedisConfig = () => {
 
     // Individual params
     if (!process.env.REDIS_HOST || !process.env.REDIS_PORT) {
-        console.error("Either REDIS_URL or (REDIS_HOST + REDIS_PORT) must be defined in .env");
+        logger.error("Either REDIS_URL or (REDIS_HOST + REDIS_PORT) must be defined in .env");
         process.exit(1);
     }
 
@@ -48,7 +50,7 @@ const createRedisClient = (config, label = "Redis") => {
             connectTimeout: 10000,
             retryStrategy(times) {
                 if (times > 10) {
-                    console.error(`[${label}] Max reconnection attempts reached`);
+                    logger.error(`[${label}] Max reconnection attempts reached`);
                     return null;
                 }
                 return Math.min(times * 200, 5000);
@@ -61,7 +63,7 @@ const createRedisClient = (config, label = "Redis") => {
             connectTimeout: 10000,
             retryStrategy(times) {
                 if (times > 10) {
-                    console.error(`[${label}] Max reconnection attempts reached`);
+                    logger.error(`[${label}] Max reconnection attempts reached`);
                     return null;
                 }
                 return Math.min(times * 200, 5000);
@@ -70,11 +72,11 @@ const createRedisClient = (config, label = "Redis") => {
     }
 
     // Events
-    client.on("connect", () => console.log(`[${label}] Connected`));
-    client.on("ready", () => console.log(`[${label}] Ready`));
-    client.on("error", (err) => console.error(`[${label}] Error:`, err.message));
-    client.on("reconnecting", () => console.log(`[${label}] Reconnecting...`));
-    client.on("close", () => console.warn(`[${label}] Connection closed`));
+    client.on("connect", () => logger.info(`[${label}] Connected`));
+    client.on("ready", () => logger.info(`[${label}] Ready`));
+    client.on("error", (err) => logger.error(`[${label}] Error:`, err.message));
+    client.on("reconnecting", () => logger.info(`[${label}] Reconnecting...`));
+    client.on("close", () => logger.warn(`[${label}] Connection closed`));
 
     return client;
 };
@@ -93,9 +95,9 @@ export const initRedis = async () => {
     try {
         await redis.connect();
         await redis.ping();
-        console.log("[Redis] Connection verified (PONG)");
+        logger.info("[Redis] Connection verified (PONG)");
     } catch (err) {
-        console.error("[Redis] Initialization failed:", err.message);
+        logger.error("[Redis] Initialization failed:", err.message);
         process.exit(1);
     }
 };

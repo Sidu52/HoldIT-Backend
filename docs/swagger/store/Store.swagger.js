@@ -289,3 +289,75 @@
  *       security:
  *         - bearerAuth:
  */
+
+/**
+ * @swagger
+ *   /api/v1/store/bookings/{booking_id}/return-otp:
+ *     post:
+ *       summary: Generate Return OTP
+ *       tags:
+ *         - Store
+ *       parameters:
+ *         - in: path
+ *           name: booking_id
+ *           required: true
+ *           schema:
+ *             type: string
+ *       responses:
+ *         200:
+ *           description: Successful response
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 type: object
+ *                 properties:
+ *                   status:
+ *                     type: boolean
+ *                     example: true
+ *                 required:
+ *                   - status
+ *       security:
+ *         - bearerAuth:
+ */
+
+/**
+ * @swagger
+ *   /api/v1/store/bookings/{booking_id}/verify-return-otp:
+ *     post:
+ *       summary: Verify Return OTP
+ *       tags:
+ *         - Store
+ *       parameters:
+ *         - in: path
+ *           name: booking_id
+ *           required: true
+ *           schema:
+ *             type: string
+ *       responses:
+ *         200:
+ *           description: Successful response
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 type: object
+ *                 properties:
+ *                   status:
+ *                     type: boolean
+ *                     example: true
+ *                 required:
+ *                   - status
+ *       security:
+ *         - bearerAuth:
+ *       requestBody:
+ *         required: true
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 otp:
+ *                   type: string
+ *                   example: "1234"
+ *               required:
+ *                 - otp
+ */

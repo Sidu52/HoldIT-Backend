@@ -2,6 +2,8 @@
 import { acceptBookingOffer, rejectBookingOffer, getDriverActiveBooking } from "../../helpers/driver/bookingHelper.js";
 import { sendResponse,sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
+
 
 // ─── ACCEPT BOOKING ───────────────────────────────────────────────────────────
 
@@ -52,7 +54,7 @@ export const acceptBooking = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("[Driver] acceptBooking error:", err.message);
+        logger.error("[Driver] acceptBooking error:", err.message);
         return sendError(res, "Failed to accept booking");
     }
 };
@@ -94,7 +96,7 @@ export const rejectBooking = async (req, res) => {
             data: null,
         });
     } catch (err) {
-        console.error("[Driver] rejectBooking error:", err.message);
+        logger.error("[Driver] rejectBooking error:", err.message);
         return sendError(res, "Failed to reject booking");
     }
 };
@@ -123,7 +125,7 @@ export const getActiveBooking = async (req, res) => {
             data: booking,
         });
     } catch (err) {
-        console.error("[Driver] getActiveBooking error:", err.message);
+        logger.error("[Driver] getActiveBooking error:", err.message);
         return sendError(res, "Failed to fetch active booking");
     }
 };

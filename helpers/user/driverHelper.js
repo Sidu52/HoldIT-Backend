@@ -6,23 +6,7 @@ import {
 } from "../../constants/user/driver.js";
 
 // CACHE
-export const getCachedData = async (cacheKey) => {
-    try {
-        const cached = await get(cacheKey);
-        return cached ? JSON.parse(cached) : null;
-    } catch (err) {
-        console.error("Driver cache read error:", err);
-        return null;
-    }
-};
-
-export const setCacheData = async (cacheKey, data, ttl) => {
-    try {
-        await set(cacheKey, JSON.stringify(data), "EX", ttl);
-    } catch (err) {
-        console.error("Driver cache write error:", err);
-    }
-};
+export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
 
 export const findVisibleDriverById = async (driverId, selectFields) => {
     return Driver.findOne({
@@ -160,14 +144,4 @@ export const formatDriverName = (firstName, lastName) => {
     return [firstName, lastName].filter(Boolean).join(" ") || "Driver";
 };
 
-export const buildPagination = (page, limit, total) => {
-    const totalPages = Math.ceil(total / limit);
-    return {
-        currentPage: page,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-    };
-};
+export { buildPagination } from "../../utils/helper.js";

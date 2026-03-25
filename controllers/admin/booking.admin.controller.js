@@ -8,6 +8,8 @@ import Driver from "../../models/Driver.js";
 import { assignStoreToBooking } from "../../helpers/user/bookingHelper.js";
 import Store from "../../models/Store.js";
 import User from "../../models/User.js";
+import logger from "../../utils/logger.js";
+
 
 // CONSTANTS
 const LIST_CACHE_TTL = 120; // 2 minutes
@@ -184,7 +186,7 @@ export const getBookings = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("[getBookings] Error:", err);
+        logger.error("[getBookings] Error:", err);
         return sendError(res, "Failed to fetch bookings");
     }
 };
@@ -226,7 +228,7 @@ export const getBookingById = async (req, res) => {
             data: booking,
         });
     } catch (err) {
-        console.error("Get Booking By ID Error:", err);
+        logger.error("Get Booking By ID Error:", err);
         return sendError(res, "Failed to fetch booking");
     }
 };
@@ -286,7 +288,7 @@ export const cancelBooking = async (req, res) => {
         // Release store capacity back
         if (booking.storeId) {
             await releaseStoreCapacity(booking.storeId, session).catch((err) =>
-                console.warn("[cancelBooking] Store capacity release failed:", err.message)
+                logger.warn("[cancelBooking] Store capacity release failed:", err.message)
             );
         }
 
@@ -305,13 +307,13 @@ export const cancelBooking = async (req, res) => {
             await Promise.allSettled(
                 jobsToRemove.map((jobId) =>
                     removeJobFromQueue(DRIVER_ASSIGN_QUEUE, jobId).catch((err) =>
-                        console.warn(`[cancelBooking] Failed to remove job ${jobId}:`, err.message)
+                        logger.warn(`[cancelBooking] Failed to remove job ${jobId}:`, err.message)
                     )
                 )
             );
         } catch (jobErr) {
             // Non-fatal — booking is already cancelled in DB
-            console.error(
+            logger.error(
                 `[cancelBooking] Job cancellation failed for booking ${id}. ` +
                 `Booking cancelled but some jobs may still be queued.`,
                 jobErr.message
@@ -320,7 +322,7 @@ export const cancelBooking = async (req, res) => {
 
         // Invalidate user booking cache
         await invalidateBookingCache(booking.userId).catch((err) =>
-            console.warn("[cancelBooking] Cache invalidation failed:", err.message)
+            logger.warn("[cancelBooking] Cache invalidation failed:", err.message)
         );
 
         return sendResponse({
@@ -331,7 +333,7 @@ export const cancelBooking = async (req, res) => {
 
     } catch (err) {
         await safeAbortSession(session);
-        console.error("[cancelBooking] Unhandled error:", err);
+        logger.error("[cancelBooking] Unhandled error:", err);
         return sendError(res, "Failed to cancel booking");
     }
 };
@@ -401,10 +403,10 @@ export const assignDriver = async (req, res) => {
 
         // Cancel any pending auto-search jobs for this booking
         await removeJobFromQueue(DRIVER_ASSIGN_QUEUE, `search-drivers-${id}`)
-            .catch((err) => console.warn("[assignDriver] Job removal failed:", err.message));
+            .catch((err) => logger.warn("[assignDriver] Job removal failed:", err.message));
 
         await invalidateBookingCache(booking.userId)
-            .catch((err) => console.warn("[assignDriver] Cache invalidation failed:", err.message));
+            .catch((err) => logger.warn("[assignDriver] Cache invalidation failed:", err.message));
 
         return sendResponse({
             res,
@@ -413,7 +415,7 @@ export const assignDriver = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("[assignDriver] Error:", err);
+        logger.error("[assignDriver] Error:", err);
         return sendError(res, "Failed to assign driver");
     }
 };
@@ -490,10 +492,10 @@ export const reassignDriver = async (req, res) => {
 
         // Cancel any stale jobs tied to old driver search
         await removeJobFromQueue(DRIVER_ASSIGN_QUEUE, `search-drivers-${id}`)
-            .catch((err) => console.warn("[reassignDriver] Job removal failed:", err.message));
+            .catch((err) => logger.warn("[reassignDriver] Job removal failed:", err.message));
 
         await invalidateBookingCache(booking.userId)
-            .catch((err) => console.warn("[reassignDriver] Cache invalidation failed:", err.message));
+            .catch((err) => logger.warn("[reassignDriver] Cache invalidation failed:", err.message));
 
         return sendResponse({
             res,
@@ -502,7 +504,7 @@ export const reassignDriver = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("[reassignDriver] Error:", err);
+        logger.error("[reassignDriver] Error:", err);
         return sendError(res, "Failed to reassign driver");
     }
 };
@@ -582,7 +584,7 @@ export const reassignStore = async (req, res) => {
         session.endSession();
 
         await invalidateBookingCache(booking.userId)
-            .catch((err) => console.warn("[reassignStore] Cache invalidation failed:", err.message));
+            .catch((err) => logger.warn("[reassignStore] Cache invalidation failed:", err.message));
 
         return sendResponse({
             res,
@@ -591,7 +593,7 @@ export const reassignStore = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("[reassignStore] Error:", err);
+        logger.error("[reassignStore] Error:", err);
         return sendError(res, "Failed to reassign store");
     }
 };
@@ -655,7 +657,7 @@ const createStatusProgressController = ({
             session.endSession();
 
             await invalidateBookingCache(booking.userId)
-                .catch((err) => console.warn(`[${controllerName}] Cache invalidation failed:`, err.message));
+                .catch((err) => logger.warn(`[${controllerName}] Cache invalidation failed:`, err.message));
 
             return sendResponse({
                 res,
@@ -664,7 +666,7 @@ const createStatusProgressController = ({
             });
         } catch (err) {
             await safeAbortSession(session);
-            console.error(`[${controllerName}] Error:`, err);
+            logger.error(`[${controllerName}] Error:`, err);
             return sendError(res, `Failed to update booking status`);
         }
     };
@@ -773,7 +775,7 @@ export const assignReturnDriver = async (req, res) => {
         session.endSession();
 
         await invalidateBookingCache(booking.userId)
-            .catch((err) => console.warn("[assignReturnDriver] Cache invalidation failed:", err.message));
+            .catch((err) => logger.warn("[assignReturnDriver] Cache invalidation failed:", err.message));
 
         return sendResponse({
             res,
@@ -782,7 +784,7 @@ export const assignReturnDriver = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("[assignReturnDriver] Error:", err);
+        logger.error("[assignReturnDriver] Error:", err);
         return sendError(res, "Failed to assign return driver");
     }
 };
@@ -861,7 +863,7 @@ export const updateBookingStatus = async (req, res) => {
             data: updatedBooking,
         });
     } catch (err) {
-        console.error("Update Booking Status Error:", err);
+        logger.error("Update Booking Status Error:", err);
         return sendError(res, "Failed to update booking status");
     }
 };

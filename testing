@@ -1,0 +1,4820 @@
+{
+  "info": {
+    "_postman_id": "b5de6037-9566-4f6e-be32-a139d642700b",
+    "name": "Holdit",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "50940681",
+    "_collection_link": "https://go.postman.co/collection/50940681-b5de6037-9566-4f6e-be32-a139d642700b?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Bulk Upload",
+      "item": [
+        {
+          "name": "Service Area",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{user_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"areas\": [\r\n    { \"name\": \"Andheri West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400058\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8295, 19.1367] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Andheri East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400069\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8680, 19.1136] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Bandra West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400050\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8264, 19.0607] }, \"service_radius_km\": 6, \"delivery_charge\": 40 },\r\n    { \"name\": \"Bandra East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400051\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8479, 19.0596] }, \"service_radius_km\": 6, \"delivery_charge\": 40 },\r\n    { \"name\": \"Juhu\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400049\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8322, 19.1075] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Versova\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400061\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8131, 19.1351] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Powai\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400076\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9058, 19.1176] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Vikhroli\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400083\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9340, 19.1050] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Ghatkopar West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400086\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9050, 19.0856] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Ghatkopar East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400077\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9173, 19.0790] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n\r\n    { \"name\": \"Kurla West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400070\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8794, 19.0726] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Kurla East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400024\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8880, 19.0650] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Chembur\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400071\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8974, 19.0522] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Sion\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400022\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8628, 19.0400] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Dadar West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400028\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8410, 19.0180] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Dadar East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400014\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8456, 19.0067] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Matunga\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400019\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8535, 19.0267] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Lower Parel\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400013\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8258, 18.9977] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Worli\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400018\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8155, 18.9870] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Prabhadevi\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400025\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8300, 19.0164] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n\r\n    { \"name\": \"Byculla\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400027\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8326, 18.9766] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Mazgaon\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400010\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8436, 18.9681] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Colaba\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400005\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8147, 18.9067] }, \"service_radius_km\": 3, \"delivery_charge\": 20 },\r\n    { \"name\": \"Cuffe Parade\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400005\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8180, 18.9155] }, \"service_radius_km\": 3, \"delivery_charge\": 20 },\r\n\r\n    { \"name\": \"Malad West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400064\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8347, 19.1860] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Malad East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400097\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8736, 19.1823] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Goregaon West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400062\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8234, 19.1663] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Goregaon East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400063\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8607, 19.1647] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n\r\n    { \"name\": \"Kandivali West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400067\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8304, 19.2050] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Kandivali East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400101\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8644, 19.2016] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n\r\n    { \"name\": \"Borivali West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400092\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8354, 19.2350] }, \"service_radius_km\": 7, \"delivery_charge\": 40 },\r\n    { \"name\": \"Borivali East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400066\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8646, 19.2307] }, \"service_radius_km\": 7, \"delivery_charge\": 40 },\r\n\r\n    { \"name\": \"Dahisar West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400068\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8296, 19.2507] }, \"service_radius_km\": 7, \"delivery_charge\": 45 },\r\n    { \"name\": \"Dahisar East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400068\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8675, 19.2489] }, \"service_radius_km\": 7, \"delivery_charge\": 45 }\r\n  ]\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/serviceable_area/bulk_upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "serviceable_area",
+                "bulk_upload"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{user_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"areas\": [\r\n    { \"name\": \"Andheri West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400058\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8295, 19.1367] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Andheri East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400069\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8680, 19.1136] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Bandra West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400050\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8264, 19.0607] }, \"service_radius_km\": 6, \"delivery_charge\": 40 },\r\n    { \"name\": \"Bandra East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400051\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8479, 19.0596] }, \"service_radius_km\": 6, \"delivery_charge\": 40 },\r\n    { \"name\": \"Juhu\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400049\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8322, 19.1075] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Versova\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400061\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8131, 19.1351] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Powai\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400076\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9058, 19.1176] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Vikhroli\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400083\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9340, 19.1050] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Ghatkopar West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400086\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9050, 19.0856] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Ghatkopar East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400077\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.9173, 19.0790] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n\r\n    { \"name\": \"Kurla West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400070\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8794, 19.0726] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Kurla East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400024\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8880, 19.0650] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Chembur\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400071\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8974, 19.0522] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Sion\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400022\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8628, 19.0400] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Dadar West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400028\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8410, 19.0180] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Dadar East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400014\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8456, 19.0067] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Matunga\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400019\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8535, 19.0267] }, \"service_radius_km\": 5, \"delivery_charge\": 30 },\r\n    { \"name\": \"Lower Parel\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400013\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8258, 18.9977] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Worli\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400018\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8155, 18.9870] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Prabhadevi\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400025\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8300, 19.0164] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n\r\n    { \"name\": \"Byculla\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400027\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8326, 18.9766] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Mazgaon\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400010\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8436, 18.9681] }, \"service_radius_km\": 4, \"delivery_charge\": 25 },\r\n    { \"name\": \"Colaba\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400005\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8147, 18.9067] }, \"service_radius_km\": 3, \"delivery_charge\": 20 },\r\n    { \"name\": \"Cuffe Parade\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400005\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8180, 18.9155] }, \"service_radius_km\": 3, \"delivery_charge\": 20 },\r\n\r\n    { \"name\": \"Malad West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400064\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8347, 19.1860] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Malad East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400097\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8736, 19.1823] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Goregaon West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400062\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8234, 19.1663] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Goregaon East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400063\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8607, 19.1647] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n\r\n    { \"name\": \"Kandivali West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400067\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8304, 19.2050] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n    { \"name\": \"Kandivali East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400101\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8644, 19.2016] }, \"service_radius_km\": 6, \"delivery_charge\": 35 },\r\n\r\n    { \"name\": \"Borivali West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400092\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8354, 19.2350] }, \"service_radius_km\": 7, \"delivery_charge\": 40 },\r\n    { \"name\": \"Borivali East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400066\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8646, 19.2307] }, \"service_radius_km\": 7, \"delivery_charge\": 40 },\r\n\r\n    { \"name\": \"Dahisar West\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400068\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8296, 19.2507] }, \"service_radius_km\": 7, \"delivery_charge\": 45 },\r\n    { \"name\": \"Dahisar East\", \"city\": \"Mumbai\", \"state\": \"Maharashtra\", \"pincode\": \"400068\", \"location\": { \"type\": \"Point\", \"coordinates\": [72.8675, 19.2489] }, \"service_radius_km\": 7, \"delivery_charge\": 45 }\r\n  ]\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/serviceable_area/bulk_upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "serviceable_area",
+                "bulk_upload"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin APIs",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Invite Admin",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"ss1@gmail.com\",\n  \"role\":\"operation_manager\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/invite",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "invite"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Admin Password Update",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "auth",
+                    "logout"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify Admin Invite Token",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/auth/verify?token=4a791377b7adef44a6946591588de2e83381883650f068e11d44c10b44f5b3b1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "auth",
+                    "verify"
+                  ],
+                  "query": [
+                    {
+                      "key": "",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "token",
+                      "value": "4a791377b7adef44a6946591588de2e83381883650f068e11d44c10b44f5b3b1"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Admin Signup With Token",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Sidhu Als\",\n  \"password\": \"Sidhu&7879\",\n  \"gender\":\"MALE\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/auth/signup?token=4a791377b7adef44a6946591588de2e83381883650f068e11d44c10b44f5b3b1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "auth",
+                    "signup"
+                  ],
+                  "query": [
+                    {
+                      "key": "token",
+                      "value": "4a791377b7adef44a6946591588de2e83381883650f068e11d44c10b44f5b3b1"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Admin Login",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"hitechsidu992@gmail.com\",\n  \"password\": \"Sidhu&7879\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Admin Logout",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"hitechsidu992@gmail.com\",\n  \"password\": \"Sidhu&7879\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "auth",
+                    "logout"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Refresh Token",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_refresh_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"ss1@gmail.com\",\n  \"role\":\"operation_manager\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/auth/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "auth",
+                    "refresh"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Admin",
+          "item": [
+            {
+              "name": "Profile",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Profile",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\":\"Sidhu\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get All Team Memnber",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "page",
+                    "value": "1",
+                    "type": "text"
+                  },
+                  {
+                    "key": "limit",
+                    "value": "10",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/team",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "team"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "",
+                      "value": null,
+                      "type": "text",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Fetch Admins",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "page",
+                    "value": "1",
+                    "type": "text"
+                  },
+                  {
+                    "key": "limit",
+                    "value": "10",
+                    "type": "text"
+                  },
+                  {
+                    "key": "is_signUp",
+                    "value": "true",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/admins",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "admins"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "type": "text",
+                      "disabled": true
+                    },
+                    {
+                      "key": "",
+                      "value": null,
+                      "type": "text",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Fetch Super_Admin",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "page",
+                    "value": "1",
+                    "type": "text"
+                  },
+                  {
+                    "key": "limit",
+                    "value": "10",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/super-admins",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "super-admins"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "New Request",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"auth_id\":\"69631a69478b39509abeb2b7\",\r\n    \"status\":\"active\",\r\n    \"reason\":\"Verfied Manually\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/account-status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "account-status"
+                  ],
+                  "query": [
+                    {
+                      "key": "",
+                      "value": null,
+                      "type": "text",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Booking",
+          "item": [
+            {
+              "name": "Bokings",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"auth_id\":\"69631a69478b39509abeb2b7\",\r\n    \"status\":\"active\",\r\n    \"reason\":\"Verfied Manually\"\r\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking?page=1&limit=10&search=Sidhu",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    },
+                    {
+                      "key": "search",
+                      "value": "Sidhu",
+                      "type": "text"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Booking By ID",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"auth_id\":\"69631a69478b39509abeb2b7\",\r\n    \"status\":\"active\",\r\n    \"reason\":\"Verfied Manually\"\r\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Cancel Booking",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"auth_id\":\"69631a69478b39509abeb2b7\",\r\n    \"status\":\"active\",\r\n    \"reason\":\"Verfied Manually\"\r\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "cancel"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Assign Driver",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/assign-driver",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "assign-driver"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Re Assign Driver",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/reassign-driver",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "reassign-driver"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Re Assign Store",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"storeId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/reassign-store",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "reassign-store"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Return Assign Driver",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/assign-return-driver",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "assign-return-driver"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Mark Arribed",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/mark-arrived",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "mark-arrived"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Mark Pickup",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/mark-picked-up",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "mark-picked-up"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Mark Stored",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/mark-stored",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "mark-stored"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Request Return",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/request-return",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "request-return"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Mark Delivered",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"driverId\":\"69631a69478b39509abeb2b7\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/booking/:booking_id/mark-delivered",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "booking",
+                    ":booking_id",
+                    "mark-delivered"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69904551247310091c4036d2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Dashboard",
+          "item": [
+            {
+              "name": "Summary",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/dashboard/summary",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "dashboard",
+                    "summary"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Chart",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/dashboard/chart",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "dashboard",
+                    "chart"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Driver",
+          "item": [
+            {
+              "name": "Drivers",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/driver?page=1&limit=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "driver"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "type": "text"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "type": "text"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Driver By Id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/driver/:driver_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "driver",
+                    ":driver_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "driver_id",
+                      "value": "6960a2a7a029a1ebb62a91b3"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Bulk Deactivate Account",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"ids\":[\"6960a2a7a029a1ebb62a91b3\"],\r\n    \"reason\":\"Regin from post\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/driver/bulk-deactivate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "driver",
+                    "bulk-deactivate"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Driver",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"first_name\":\"rahul\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/driver/:driver_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "driver",
+                    ":driver_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "driver_id",
+                      "value": "6960a2a7a029a1ebb62a91b3"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Driver Location",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"lng\": 19.1367,\r\n  \"lat\": 72.8295\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/driver/:driver_id/location",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "driver",
+                    ":driver_id",
+                    "location"
+                  ],
+                  "variable": [
+                    {
+                      "key": "driver_id",
+                      "value": "6960a2a7a029a1ebb62a91b3"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Driver Account",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"is_active\":true\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/driver/:driver_id/account",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "driver",
+                    ":driver_id",
+                    "account"
+                  ],
+                  "variable": [
+                    {
+                      "key": "driver_id",
+                      "value": "6960a2a7a029a1ebb62a91b3"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Serviceable Area",
+          "item": []
+        },
+        {
+          "name": "Store",
+          "item": [
+            {
+              "name": "Stores",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores?page=1&limit=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Store By ID",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores/:store_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores",
+                    ":store_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_id",
+                      "value": "69b7eccbccc1eb5bf3a96d46"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Store",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"store_name\": \"Downtown Storage Hub\",\r\n    \"max_booking_capacity\": 100,\r\n    \"store_open_time\": \"08:00\",\r\n    \"store_close_time\": \"22:00\",\r\n    \"store_contact_number\": \"9876543210\",\r\n    \"store_description\": \"Secure luggage storage in the heart of downtown.\",\r\n    \"lat\": 19.0760,\r\n    \"lng\": 72.8777,\r\n    \"address\": \"123 Main Street, Mumbai, Maharashtra 400001\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores/:store_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores",
+                    ":store_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_id",
+                      "value": "69b7eccbccc1eb5bf3a96d46"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Create Store",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"phone\": \"1234567898\",\r\n    \"store_name\": \"Mumbai Central Luggage Hub\",\r\n    \"lat\": 19.0760,\r\n    \"lng\": 72.8777,\r\n    \"address\": \"Platform 1, CST Station, Mumbai 400001\",\r\n    \"store_description\": \"Secure luggage storage near CST.\",\r\n    \"store_open_time\": \"07:00\",\r\n    \"store_close_time\": \"23:00\",\r\n    \"store_contact_number\": \"9876543210\",\r\n    \"max_booking_capacity\": 80,\r\n    \"store_owner_id\": \"69633722ab729be239a689c2\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Store Status",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"is_active\":true\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores/:store_id/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores",
+                    ":store_id",
+                    "status"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_id",
+                      "value": "69b7eccbccc1eb5bf3a96d46"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Store Verification",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"verification_status\":\"verified\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores/:store_id/verification",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores",
+                    ":store_id",
+                    "verification"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_id",
+                      "value": "69b7eccbccc1eb5bf3a96d46"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Online/Offline",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"is_online\":true\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores/:store_id/duty",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores",
+                    ":store_id",
+                    "duty"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_id",
+                      "value": "69b7eccbccc1eb5bf3a96d46"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Store",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"is_online\":true\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores/:store_id/duty",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "stores",
+                    ":store_id",
+                    "duty"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_id",
+                      "value": "69b7eccbccc1eb5bf3a96d46"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Store Owner",
+          "item": [
+            {
+              "name": "Store Owners",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/storeowner",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "storeowner"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Store Owners By ID",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/storeowner/:store_owner_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "storeowner",
+                    ":store_owner_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_owner_id",
+                      "value": "69633722ab729be239a689c2"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Store Owners By ID Copy",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"first_name\": \"Rahul\",\r\n  \"last_name\": \"Sharma\",\r\n  \"email\": \"rahul.sharma@example.com\",\r\n  \"phone\": \"+919876543210\",\r\n  \"gender\": \"male\",\r\n  \"date_of_birth\": \"1995-06-15\",\r\n  \"address\": \"123 MG Road, Mumbai, Maharashtra\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/storeowner",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "storeowner"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Store Owner",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"first_name\": \"Rahul\",\r\n  \"last_name\": \"Sharma\",\r\n  \"email\": \"rahul.sharma@example.com\",\r\n  \"phone\": \"+919876543210\",\r\n  \"gender\": \"male\",\r\n  \"date_of_birth\": \"1995-06-15\",\r\n  \"address\": \"123 MG Road, Mumbai, Maharashtra\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/storeowner/:store_owner_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "storeowner",
+                    ":store_owner_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_owner_id",
+                      "value": "69ba4d604721cec506da7244"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Store Owner Status",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"status\": \"active\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/storeowner/:store_owner_id/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "storeowner",
+                    ":store_owner_id",
+                    "status"
+                  ],
+                  "variable": [
+                    {
+                      "key": "store_owner_id",
+                      "value": "69ba4d604721cec506da7244"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  ""
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "User",
+          "item": [
+            {
+              "name": "Users",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"status\": \"active\"\r\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/user",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "user"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Users Copy",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{super_admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"ids\": [\r\n    \"696c879538ad2da77ca68d60\"\r\n  ],\r\n  \"reason\":\"frud\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/user/bulk-deactivate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "user",
+                    "bulk-deactivate"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "User By ID",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/user/:user_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "user",
+                    ":user_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "user_id",
+                      "value": "696c879538ad2da77ca68d60"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "User Profile",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"first_name\":\"Sidhu\",\r\n    \"last_name\":\"Sharma\",\r\n    \"gender\":\"male\",\r\n    \"email\":\"ss@gmail.com\",\r\n    \"phone\":1234567890\r\n\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/user/:user_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "user",
+                    ":user_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "user_id",
+                      "value": "696c879538ad2da77ca68d60"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Status",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"is_active\":true\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/user/:user_id/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "user",
+                    ":user_id",
+                    "status"
+                  ],
+                  "variable": [
+                    {
+                      "key": "user_id",
+                      "value": "696c879538ad2da77ca68d60"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Verify Users",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{super_admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"siddhantsharma9926@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "auth",
+                "verify"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Driver API",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Driver Login/Signup",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"9000000003\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Re Send OTP",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"9000000003\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/auth/resend-otp",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "auth",
+                    "resend-otp"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify OTP",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"9000000003\",\n  \"otp\": \"1847\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/auth/verify-otp",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "auth",
+                    "verify-otp"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Refresh Token",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_refresh_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/auth/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "auth",
+                    "refresh"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Update",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\":\"SS\",\n  \"verification_status\": \"verified\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/auth/complete-profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "auth",
+                    "complete-profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Logout",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "auth",
+                    "logout"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Location",
+          "item": [
+            {
+              "name": "Location",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"lng\": 19.1367,\n  \"lat\": 72.8295\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/update-driver-location",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "update-driver-location"
+                  ],
+                  "query": [
+                    {
+                      "key": "",
+                      "value": null,
+                      "type": "text",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Rides",
+          "item": [
+            {
+              "name": "Driver Assign Rides",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/assigned",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    "assigned"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Ride Offer",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/offer/pending",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    "offer",
+                    "pending"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Assign Rides History",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/history",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    "history"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Assign Ride By Booking Id",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/complete-pickup",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "complete-pickup"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7908dc19f9e53de407798"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Assign Active Rides",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/active",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    "active"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Accept ride",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/accept",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "accept"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Arrived Pickup",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/arrive-pickup",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "arrive-pickup"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Ride",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/reject",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "reject"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7908dc19f9e53de407798"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Ride Cancel",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"reason\":\"I am unable to deliver order please cancel it.\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "cancel"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7dbd55d4e9412da5f1bf7"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Arrived Store",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/arrive-store",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "arrive-store"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Marked Stored for testing",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/mark-stored",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "mark-stored"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Complete Pickup",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{driver_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/driver/rides/:booking_id/complete-pickup",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "driver",
+                    "rides",
+                    ":booking_id",
+                    "complete-pickup"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Driver on duty",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_online\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver/update-driver-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver",
+                "update-driver-status"
+              ],
+              "query": [
+                {
+                  "key": "",
+                  "value": null,
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Booking",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver/bookings/:bookingId/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver",
+                "bookings",
+                ":bookingId",
+                "accept"
+              ],
+              "variable": [
+                {
+                  "key": "bookingId",
+                  "value": "69b7a633c4b8fecd6146a873"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Driver Arrived",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver/bookings/:bookingId/arrived",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver",
+                "bookings",
+                ":bookingId",
+                "arrived"
+              ],
+              "query": [
+                {
+                  "key": "",
+                  "value": null,
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "bookingId",
+                  "value": "6949825fa0b82ec93b54c32e"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Driver Conform Pickup",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"otp\":\"481068\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver/bookings/:bookingId/confirm-pickup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver",
+                "bookings",
+                ":bookingId",
+                "confirm-pickup"
+              ],
+              "query": [
+                {
+                  "key": "",
+                  "value": null,
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "bookingId",
+                  "value": "6949825fa0b82ec93b54c32e"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Driver request pickup otp",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver/bookings/:bookingId/resend-pickup-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver",
+                "bookings",
+                ":bookingId",
+                "resend-pickup-otp"
+              ],
+              "query": [
+                {
+                  "key": "",
+                  "value": null,
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "bookingId",
+                  "value": "6949825fa0b82ec93b54c32e"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Driver request Store otp",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver/bookings/:bookingId/resend-pickup-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver",
+                "bookings",
+                ":bookingId",
+                "resend-pickup-otp"
+              ],
+              "query": [
+                {
+                  "key": "",
+                  "value": null,
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "bookingId",
+                  "value": "6949825fa0b82ec93b54c32e"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Driver Update Info",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\":\"SS\",\n  \"is_on_trip\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver/update-driver-info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver",
+                "update-driver-info"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Profile",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"pickupLocation\": {\r\n    \"lat\": 19.1367,\r\n    \"lng\": 72.8295,\r\n    \"address\": \"Andheri West, Mumbai, Maharashtra\"\r\n  },\r\n  \"pickupScheduledAt\": \"2026-02-20T15:30:00.000Z\",\r\n  \"luggage\": {\r\n    \"small\": 1,\r\n    \"medium\": 1,\r\n    \"large\": 0,\r\n    \"other\": 0\r\n  },\r\n  \"notes\": \"Please call 15 minutes before arrival.\"\r\n}\r\n"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/driver",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User API",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Re Send OTP",
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"8085984844\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/auth/resend-otp",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "auth",
+                    "resend-otp"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "User Signup/Login",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"8085984844\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify OTP",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"8085984844\",\n  \"otp\": \"4320\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/auth/verify-otp",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "auth",
+                    "verify-otp"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Refresh Token",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_refresh_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/auth/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "auth",
+                    "refresh"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "User Complete Profile",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"Sidu\",\n  \"last_name\": \"Sharma\",\n  \"gender\":\"male\",\n  \"email\":\"hitechsidu992@gmail.com\",\n  \"dob\": \"2001-01-01\",\n  \"email\":\"hi@gmail.com\",\n  \"address\":\"Xyz place\",\n  \"lat\":10.458,\n  \"lng\":10.458\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/auth/complete-profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "auth",
+                    "complete-profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Logout",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "auth",
+                    "logout"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Bookings",
+          "item": [
+            {
+              "name": "Bookings",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "page",
+                    "value": "1",
+                    "type": "text",
+                    "disabled": true
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking?page=1&limit=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    },
+                    {
+                      "key": "status",
+                      "value": "all",
+                      "type": "text",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Bookings History",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "page",
+                    "value": "1",
+                    "type": "text",
+                    "disabled": true
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking/history?page=1&limit=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking",
+                    "history"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    },
+                    {
+                      "key": "status",
+                      "value": "all",
+                      "type": "text",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Booking_Id",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking/:booking_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking",
+                    ":booking_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Active Booking",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking/active",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking",
+                    "active"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Booking_Shedule",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"pickupLocation\": {\r\n    \"lat\": 19.1367,\r\n    \"lng\": 72.8295,\r\n    \"address\": \"Andheri West, Mumbai, Maharashtra\"\r\n  },\r\n  \"pickupScheduledAt\": \"2026-03-18T15:30:00.000Z\",\r\n  \"luggage\": {\r\n    \"small\": 1,\r\n    \"medium\": 1,\r\n    \"large\": 0,\r\n    \"other\": 0\r\n  },\r\n  \"notes\": \"Please call 15 minutes before arrival.\"\r\n}\r\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Cancel_Booking",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"reason\":\"Testing\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking/:booking_id/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking",
+                    ":booking_id",
+                    "cancel"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Assign Store",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking/:booking_id/assign-store",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking",
+                    ":booking_id",
+                    "assign-store"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7908dc19f9e53de407798"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Assign Driver",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/booking/:booking_id/assign-driver",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "booking",
+                    ":booking_id",
+                    "assign-driver"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7908dc19f9e53de407798"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "User",
+          "item": [
+            {
+              "name": "Profile",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Profile",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"coordinates\":[\r\n        19.1367,\r\n    72.8295\r\n    ]\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Location",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"lat\":19.1367,\r\n    \"lng\":72.8295\r\n} ",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/location",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "location"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "User Addresses",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/addresses",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "addresses"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "User Addresses By Id",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/address/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "address",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "69b2a15ee9188bf081383c48"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Addresses By Id",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "DELETE",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/address/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "address",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "69b2a15ee9188bf081383c48"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Addresses By Id",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"city\":\"Mumbai\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/address/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "address",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "69b2a15ee9188bf081383c48"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Add Address",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"street\":\"SS Schoool\",\r\n    \"city\": \"Mumbai\",\r\n    \"state\": \"Maharastra\",\r\n    \"postal_code\":\"0000000\",\r\n    \"country\":\"India\",\r\n    \"coordinates\":[\r\n        47.25555,\r\n        89.28855\r\n    ],\r\n    \"is_default\":false\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/addresses",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "addresses"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Nearest Stores",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "lat",
+                    "value": "10.252545",
+                    "type": "text",
+                    "disabled": true
+                  },
+                  {
+                    "key": "lng",
+                    "value": "14.251589",
+                    "type": "text",
+                    "disabled": true
+                  },
+                  {
+                    "key": "max_distance",
+                    "value": "40000",
+                    "type": "text",
+                    "disabled": true
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/stores/nearest?lat=25.2565485&lng=17.55552588&max_distance=40000",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "stores",
+                    "nearest"
+                  ],
+                  "query": [
+                    {
+                      "key": "lat",
+                      "value": "25.2565485"
+                    },
+                    {
+                      "key": "lng",
+                      "value": "17.55552588"
+                    },
+                    {
+                      "key": "max_distance",
+                      "value": "40000"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Stores By ID",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{user_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "lat",
+                    "value": "10.252545",
+                    "type": "text",
+                    "disabled": true
+                  },
+                  {
+                    "key": "lng",
+                    "value": "14.251589",
+                    "type": "text",
+                    "disabled": true
+                  },
+                  {
+                    "key": "max_distance",
+                    "value": "40000",
+                    "type": "text",
+                    "disabled": true
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/user/stores/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "user",
+                    "stores",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "69633722ab729be239a689c0"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Store API",
+      "item": [
+        {
+          "name": "auth",
+          "item": [
+            {
+              "name": "SignUp/Login",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"9999999991\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/auth",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "auth"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Re Send OTP",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"9999999991\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/auth/resend",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "auth",
+                    "resend"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify OTP",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"9999999991\",\n  \"otp\": \"5338\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/auth/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "auth",
+                    "verify"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Refresh Token",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_refresh_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/auth/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "auth",
+                    "refresh"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Logout",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "auth",
+                    "logout"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Store",
+          "item": [
+            {
+              "name": "Profile",
+              "protocolProfileBehavior": {
+                "disableBodyPruning": true
+              },
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Profile",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"store_name\": \"FreshMart Grocery\",\r\n  \"store_address\": \"123 Market Street, Andheri East, Mumbai, Maharashtra 400069\",\r\n  \"store_open_time\": \"09:00\",\r\n  \"store_close_time\": \"22:00\",\r\n  \"store_description\": \"A neighborhood grocery store offering fresh fruits, vegetables, dairy products, and daily essentials.\",\r\n  \"store_contact_number\": 9876543210\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Go Online",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/status/online",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "status",
+                    "online"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Go Offline",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/status/offline",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "status",
+                    "offline"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Complete Store Profile",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"store_name\": \"FreshMart Grocery\",\r\n  \"store_address\": \"123 Market Street, Andheri East, Mumbai, Maharashtra 400069\",\r\n  \"store_open_time\": \"09:00\",\r\n  \"store_close_time\": \"22:00\",\r\n  \"store_description\": \"A neighborhood grocery store offering fresh fruits, vegetables, dairy products, and daily essentials.\",\r\n  \"store_contact_number\": \"9876543210\",\r\n  \"lat\": 19.1367,\r\n   \"lng\": 72.8295,\r\n  \"address\":\"123 Market Street, Andheri East, Mumbai, Maharashtra 400069\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/complete-profile",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "complete-profile"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Booking",
+          "item": [
+            {
+              "name": "Incoming Bookings",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/bookings/incoming",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "bookings",
+                    "incoming"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Active Bookings",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/bookings/active",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "bookings",
+                    "active"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Bookings History",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/bookings/history",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "bookings",
+                    "history"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Bookings By ID",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{store_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/store/bookings/:booking_id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "store",
+                    "bookings",
+                    ":booking_id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "booking_id",
+                      "value": "69b7ddfd52072779f2c684af"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    }
+  ]
+}
