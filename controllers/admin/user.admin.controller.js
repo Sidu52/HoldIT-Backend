@@ -5,6 +5,8 @@ import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set, del, delByPattern } from "../../services/redisService.js";
 import { STATUS_CODES, ACCOUNT_STATUS, BOOKING_STATUS } from "../../utils/constants.js";
 import { safeAbortSession } from "../../utils/helper.js";
+import logger from "../../utils/logger.js";
+
 
 const LIST_CACHE_TTL = 120;
 const DETAIL_CACHE_TTL = 300;
@@ -38,7 +40,7 @@ const invalidateUserCache = async (userId = null) => {
         if (userId) promises.push(del(`user:${userId}`));
         await Promise.all(promises);
     } catch (err) {
-        console.error("User cache invalidation error:", err);
+        logger.error("User cache invalidation error:", err);
     }
 };
 
@@ -128,7 +130,7 @@ export const getUsers = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("[getUsers] Error:", err);
+        logger.error("[getUsers] Error:", err);
         return sendError(res, "Failed to fetch users");
     }
 };
@@ -163,7 +165,7 @@ export const getUserById = async (req, res) => {
             data: user,
         });
     } catch (err) {
-        console.error("[getUserById] Error:", err);
+        logger.error("[getUserById] Error:", err);
         return sendError(res, "Failed to fetch user");
     }
 };
@@ -236,7 +238,7 @@ export const updateUserProfile = async (req, res) => {
             const field = Object.keys(err.keyPattern || {})[0] ?? "field";
             return sendError(res, `${field} already exists`, STATUS_CODES.CONFLICT);
         }
-        console.error("[updateUserProfile] Error:", err);
+        logger.error("[updateUserProfile] Error:", err);
         return sendError(res, "Failed to update user profile");
     }
 };
@@ -352,7 +354,7 @@ export const updateUserStatus = async (req, res) => {
             data: updatedUser,
         });
     } catch (err) {
-        console.error("[updateUserStatus] Error:", err);
+        logger.error("[updateUserStatus] Error:", err);
         return sendError(res, "Failed to update user status");
     }
 };
@@ -422,7 +424,7 @@ export const bulkDeactivateUsers = async (req, res) => {
         Promise.all([
             ...activeIds.map((id) => del(`user:${id}`)),
             delByPattern("users:*"),
-        ]).catch((err) => console.error("[bulkDeactivate] Cache invalidation error:", err));
+        ]).catch((err) => logger.error("[bulkDeactivate] Cache invalidation error:", err));
 
         return sendResponse({
             res,
@@ -436,7 +438,7 @@ export const bulkDeactivateUsers = async (req, res) => {
         });
     } catch (err) {
         await safeAbortSession(session);
-        console.error("[bulkDeactivateUsers] Error:", err);
+        logger.error("[bulkDeactivateUsers] Error:", err);
         return sendError(res, "Failed to deactivate users");
     }
 };

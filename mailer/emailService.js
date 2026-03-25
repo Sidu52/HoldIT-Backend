@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import logger from "../utils/logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,9 +26,9 @@ const transporter = nodemailer.createTransport({
 
 // Verify connection on startup
 transporter.verify().then(() => {
-  console.log("Email service ready");
+   logger.info("✅ Email service ready");
 }).catch((err) => {
-  console.error("Email service failed to initialize:", err.message);
+  logger.error("Email service failed to initialize:", err.message);
 });
 
 // TEMPLATE CACHE & RENDERING
@@ -143,12 +144,12 @@ const sendEmail = async ({
     const info = await transporter.sendMail(mailOptions);
 
     if (NODE_ENV !== "production") {
-      console.log(`📧 Email sent to ${to}: ${info.messageId}`);
+      logger.info(`📧 Email sent to ${to}: ${info.messageId}`);
     }
 
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(`Failed to send email to ${to}:`, error.message);
+    logger.error(`Failed to send email to ${to}:`, error.message);
     throw new Error(`Failed to send email: ${error.message}`);
   }
 };

@@ -7,6 +7,8 @@ import {
 } from "../../services/redisService.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { ACCOUNT_STATUS, STATUS_CODES } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
+
 
 // Cache TTLs and constants
 const LIST_CACHE_TTL = 300; // 5 minutes
@@ -37,7 +39,7 @@ const invalidateAreaCache = async (areaId = null) => {
     }
     await Promise.all(promises);
   } catch (err) {
-    console.error("Cache invalidation error:", err);
+    logger.error("Cache invalidation error:", err);
   }
 };
 
@@ -100,7 +102,7 @@ export const createServiceableArea = async (req, res) => {
       data: area,
     });
   } catch (error) {
-    console.error("Create Serviceable Area Error:", error);
+    logger.error("Create Serviceable Area Error:", error);
     return sendError(res, "Failed to create serviceable area");
   }
 };
@@ -212,7 +214,7 @@ export const getServiceableAreas = async (req, res) => {
       data: responseData,
     });
   } catch (error) {
-    console.error("Get Serviceable Areas Error:", error);
+    logger.error("Get Serviceable Areas Error:", error);
     return sendError(res, "Failed to fetch serviceable areas");
   }
 };
@@ -261,7 +263,7 @@ export const getServiceableAreaById = async (req, res) => {
       data: area,
     });
   } catch (error) {
-    console.error("Get Serviceable Area Error:", error);
+    logger.error("Get Serviceable Area Error:", error);
     return sendError(res, "Failed to fetch serviceable area");
   }
 };
@@ -347,7 +349,7 @@ export const updateServiceableArea = async (req, res) => {
       data: area,
     });
   } catch (error) {
-    console.error("Update Serviceable Area Error:", error);
+    logger.error("Update Serviceable Area Error:", error);
     return sendError(res, "Failed to update serviceable area");
   }
 };
@@ -404,7 +406,7 @@ export const toggleServiceableAreaStatus = async (req, res) => {
       data: updatedArea,
     });
   } catch (error) {
-    console.error("Toggle Status Error:", error);
+    logger.error("Toggle Status Error:", error);
     return sendError(res, "Failed to update status");
   }
 };
@@ -446,7 +448,7 @@ export const deleteServiceableArea = async (req, res) => {
       message: "Serviceable area deleted successfully",
     });
   } catch (error) {
-    console.error("Delete Serviceable Area Error:", error);
+    logger.error("Delete Serviceable Area Error:", error);
     return sendError(res, "Failed to delete serviceable area");
   }
 };

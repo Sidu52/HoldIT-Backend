@@ -1,6 +1,8 @@
 import Store from "../models/Store.js";
 import { addStoreToRedis } from "./storeServices.js";
 import { VERIFICATION_STATUS } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 const BATCH_SIZE = 50;
 
@@ -20,11 +22,11 @@ export const syncStoresToRedis = async () => {
             .lean();
 
         if (!stores.length) {
-            console.warn("⚠️  [Store Sync] No active/verified stores found in database");
+            logger.warn("⚠️  [Store Sync] No active/verified stores found in database");
             return { synced: 0, failed: 0 };
         }
 
-        console.log(`[Store Sync] Found ${stores.length} store(s) to sync`);
+        logger.info(`[Store Sync] Found ${stores.length} store(s) to sync`);
 
         let synced = 0;
         let failed = 0;
@@ -47,17 +49,17 @@ export const syncStoresToRedis = async () => {
                         result.status === "rejected"
                             ? result.reason?.message
                             : "addStoreToRedis returned false";
-                    console.error(
+                    logger.error(
                         `[Store Sync] Failed for store ${batch[j]._id}: ${reason}`
                     );
                 }
             }
         }
 
-        console.log(`[Store Sync] ${synced} synced, ${failed} failed (total: ${stores.length})`);
+        logger.info(`[Store Sync] ${synced} synced, ${failed} failed (total: ${stores.length})`);
         return { synced, failed, total: stores.length };
     } catch (err) {
-        console.error("[Store Sync] Fatal error:", err.message);
+        logger.error("[Store Sync] Fatal error:", err.message);
         return { synced: 0, failed: 0, total: 0 };
     }
 };

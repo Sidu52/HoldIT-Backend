@@ -5,25 +5,8 @@ import {
 } from "../../constants/user/store.js";
 
 // Cache
-export const getCachedData = async (cacheKey) => {
-    try {
-        const cached = await get(cacheKey);
-        return cached ? JSON.parse(cached) : null;
-    } catch (err) {
-        console.error("Store cache read error:", err);
-        return null;
-    }
-};
-
-
+export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
 // Query Builders
-export const setCacheData = async (cacheKey, data, ttl) => {
-    try {
-        await set(cacheKey, JSON.stringify(data), "EX", ttl);
-    } catch (err) {
-        console.error("Store cache write error:", err);
-    }
-};
 
 // Data Transformers
 export const buildSearchFilter = (query) => {
@@ -162,14 +145,4 @@ export const findStoreById = async (storeId, selectFields) => {
         .lean();
 };
 
-export const buildPagination = (page, limit, total) => {
-    const totalPages = Math.ceil(total / limit);
-    return {
-        currentPage: page,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-    };
-};
+export { buildPagination } from "../../utils/helper.js";

@@ -28,9 +28,7 @@ const ALLOWED_PROFILE_FIELDS = [
 // Fields to exclude from responses
 const EXCLUDED_FIELDS = "-password_hash -invited_by -__v";
 
-// ============================================
-// HELPER: Invalidate Team List Cache
-// ============================================
+
 const invalidateTeamCache = async () => {
     try {
         const { keys } = await scanKeys("team:*");
@@ -38,7 +36,7 @@ const invalidateTeamCache = async () => {
             await Promise.all(keys.map((key) => del(key)));
         }
     } catch (err) {
-        console.error("Failed to invalidate team cache:", err);
+        logger.error("Failed to invalidate team cache:", err);
     }
 };
 
@@ -47,6 +45,8 @@ import { scanKeys } from "../../services/redisService.js";
 import User from "../../models/User.js";
 import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
+import logger from "../../utils/logger.js";
+
 
 // Escape Regex Special Characters
 const escapeRegex = (str) => {
@@ -140,7 +140,7 @@ export const createAdminInvite = async (req, res) => {
             },
             rawFields: ["invitation_link"],
         }).catch((err) =>
-            console.error("Failed to send invite email:", err.message)
+            logger.error("Failed to send invite email:", err.message)
         );
 
         return sendResponse({
@@ -153,7 +153,7 @@ export const createAdminInvite = async (req, res) => {
             }),
         });
     } catch (err) {
-        console.error("Create Admin Invite Error:", err);
+        logger.error("Create Admin Invite Error:", err);
         return sendError(res, "Failed to send invite");
     }
 };
@@ -196,7 +196,7 @@ export const getProfile = async (req, res) => {
             data: admin,
         });
     } catch (err) {
-        console.error("Get Profile Error:", err);
+        logger.error("Get Profile Error:", err);
         return sendError(res, "Failed to fetch profile");
     }
 };
@@ -265,7 +265,7 @@ export const updateProfile = async (req, res) => {
         });
     }
     catch (err) {
-        console.error("Update Profile Error:", err);
+        logger.error("Update Profile Error:", err);
         return sendError(res, "Failed to update profile");
     }
 }
@@ -349,7 +349,7 @@ export const getTeamsMember = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get Team Members Error:", err);
+        logger.error("Get Team Members Error:", err);
         return sendError(res, "Failed to fetch team members");
     }
 };
@@ -424,7 +424,7 @@ const getAdminsByRole = async (req, res, role) => {
             data: responseData,
         });
     } catch (err) {
-        console.error(`Get ${role}s Error:`, err);
+        logger.error(`Get ${role}s Error:`, err);
         return sendError(res, `Failed to fetch ${role}s`);
     }
 };
@@ -530,7 +530,7 @@ export const updateAccountStatus = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Update Account Status Error:", err);
+        logger.error("Update Account Status Error:", err);
         return sendError(res, "Failed to update account status");
     }
 };

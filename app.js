@@ -2,25 +2,29 @@ import express from "express";
 import dotenv from "dotenv";
 dotenv.config();
 
+import { validateEnv } from "./config/env.validation.js";
+validateEnv();
+
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import swaggerUi from "swagger-ui-express";
+import logger from "./utils/logger.js";
 
 import { connectMongo, disconnectMongo } from "./services/mongoService.js";
 import { initRedis } from "./services/redisService.js";
-import { initSocket } from "./services/socketService.js";
-import { initializeWorkers } from "./workers/initializeWorkers.js";
+import { initSocket } from "./src/socket/index.js";
+import { initializeWorkers, closeAllWorkers } from "./workers/initializeWorkers.js";
 import { syncStoresToRedis } from "./services/storeSync.js";
 import { syncDriversToRedis } from "./services/driverSync.js";
 import { closeQueues } from "./services/jobService.js";
 import { setupSwagger } from "./swagger.routes.js";
+import { validateObjectIdParams, enforcePaginationLimit } from "./middlewares/safety.middleware.js";
 
 import AdminRoutes from "./routes/admin/index.js";
 import UserRoutes from "./routes/users/index.js";
 import DriverRoutes from "./routes/driver/index.js";
 import StoreRoutes from "./routes/store/index.js";
-import BulkUpload from "./routes/bulk_upload/bulk_upload.js";
 
 const app = express();
 
@@ -54,18 +58,21 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Global Safety Interceptors
+app.use(validateObjectIdParams);
+app.use(enforcePaginationLimit);
+
 // ROUTES
 AdminRoutes(app);
 DriverRoutes(app);
 StoreRoutes(app);
 UserRoutes(app);
 
-// app.use("/api/v1/", BulkUpload);
  setupSwagger(app);
 
 // ERROR HANDLER
 app.use((err, req, res, next) => {
-    console.error("[Server Error]", err);
+    logger.error(`[Server Error] ${err.message}`, { stack: err.stack, path: req.path });
     res.status(err.status || 500).json({
         success: false,
         message: process.env.NODE_ENV === "production" ? "Internal server error" : err.message,
@@ -89,7 +96,7 @@ const start = async () => {
 
     //  HTTP server
     const server = app.listen(PORT, () => {
-        console.log(`[Server] Running on port ${PORT}`);
+        logger.info(`[Server] Running on port ${PORT}`);
     });
 
     // Socket.IO
@@ -97,17 +104,20 @@ const start = async () => {
 
     // GRACEFUL SHUTDOWN
     const shutdown = async (signal) => {
+        logger.info(`[Server] Received ${signal}. Shutting down gracefully...`);
         server.close(async () => {
+            closeSocket();
             await Promise.allSettled([
+                closeAllWorkers(),
                 closeQueues(),
                 disconnectMongo(),
             ]);
-            console.log("[Server] Shutdown complete");
+            logger.info("[Server] Shutdown complete");
             process.exit(0);
         });
 
         setTimeout(() => {
-            console.error("[Server] Forced exit after timeout");
+            logger.error("[Server] Forced exit after timeout");
             process.exit(1);
         }, 15000);
     };
@@ -117,6 +127,6 @@ const start = async () => {
 };
 
 start().catch((err) => {
-    console.error("[Server] Failed to start:", err.message);
+    logger.error(`[Server] Failed to start: ${err.message}`, { stack: err.stack });
     process.exit(1);
 });

@@ -1,5 +1,7 @@
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import redis from "../services/redisService.js";
+import logger from "../utils/logger.js";
+
 
 const createLimiter = (keyPrefix, points, duration) =>
   new RateLimiterRedis({
@@ -9,6 +11,23 @@ const createLimiter = (keyPrefix, points, duration) =>
     duration,
   });
 
+
+/**
+ * Resolve the requester's role for use as a rate limit key segment.
+ * Priority: decoded JWT role → route path prefix → null
+ */
+const resolveRole = (req) => {
+  if (req.user?.role) return req.user.role;
+
+  // Infer role from the URL path (e.g. /api/user/... → "user")
+  const segments = req.path.split("/").filter(Boolean);
+  const knownRoles = ["user", "driver", "store", "admin"];
+  for (const seg of segments) {
+    if (knownRoles.includes(seg)) return seg;
+  }
+
+  return null;
+};
 
 /**
  * Generic rate limiter middleware
@@ -21,9 +40,8 @@ const rateLimiterMiddleware = (limiter, options) => {
       const role = useRole ? resolveRole(req) : null;
 
       if (useRole && !role) {
-        return res.status(400).json({
-          message: "Role not found for rate limiting",
-        });
+        // Don't block the request, just skip role-keying
+        return next();
       }
 
       // Identifier: phone/email/auth_id
@@ -31,28 +49,26 @@ const rateLimiterMiddleware = (limiter, options) => {
         req.body?.phone ||
         req.body?.email ||
         req.user?.auth_id ||
-        req.query.phone
-
+        req.query?.phone;
 
       if (useIdentifier && !identifier) {
-        return res.status(400).json({
-          message: "Identifier missing for rate limiting",
-        });
+        // Fall back to IP so the limiter still works
+        const fallbackKey = [role, req.ip].filter(Boolean).join(":");
+        await limiter.consume(fallbackKey);
+        return next();
       }
 
       const keyParts = [];
-
       if (useRole) keyParts.push(role);
       if (useIdentifier) keyParts.push(identifier);
       if (useIP) keyParts.push(req.ip);
 
       const key = keyParts.join(":");
-
       await limiter.consume(key);
 
       next();
     } catch (err) {
-      console.log(err);
+      logger.warn(`[RateLimiter] Limit hit — ${req.method} ${req.path} from ${req.ip}`);
       return res.status(429).json({
         message: "Too many requests, please try again later",
       });

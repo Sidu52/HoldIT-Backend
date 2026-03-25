@@ -1,3 +1,4 @@
+import logger from "./logger.js";
 export const logSearchQuery = async ({
     query,
     lat,
@@ -7,7 +8,7 @@ export const logSearchQuery = async ({
     userId,
 }) => {
     if (process.env.NODE_ENV === "development") {
-        console.log("Search Analytics:", {
+        logger.info("Search Analytics:", {
             query,
             coordinates: lat && lng ? `${lat},${lng}` : null,
             radius,

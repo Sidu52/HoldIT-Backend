@@ -1,7 +1,3 @@
-
-
-
-
 import mongoose from "mongoose";
 import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
@@ -19,7 +15,7 @@ import {
     REDIS_KEYS,
 } from "../../constants/user/booking.js";
 import { safeAbortSession } from "../../utils/helper.js";
-
+import logger from "../../utils/logger.js";
 
 // Validate that a scheduled time meets minimum lead time
 export const validateScheduledTime = (scheduledAt, minLeadMinutes) => {
@@ -31,7 +27,6 @@ export const validateScheduledTime = (scheduledAt, minLeadMinutes) => {
         scheduledTime,
     };
 };
-
 
 // ─── USER VERIFICATION ────────────────────────────────────────────────────────
 
@@ -86,14 +81,9 @@ export const checkActiveBookingLimit = async (userId, session = null) => {
     };
 };
 
-// ─── STORE SEARCH & ASSIGNMENT ────────────────────────────────────────────────
-
+// STORE SEARCH & ASSIGNMENT
 /**
  * Find the nearest available store using MongoDB $geoNear.
- * Sorted by distance ASC, available slots DESC.
- * Only returns stores that:
- *   - are active, online, verified
- *   - have available capacity (current_booking_count < max_booking_capacity)
  */
 export const findNearestAvailableStore = async (lat, lng, session = null) => {
     try {
@@ -116,21 +106,13 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
                 },
             },
             {
-                // Compute available slots inline
                 $addFields: {
                     availableSlots: {
                         $subtract: ["$max_booking_capacity", "$current_booking_count"],
                     },
                 },
             },
-            // {
-            //     // Only stores with at least 1 free slot
-            //     $match: {
-            //         availableSlots: { $gte: STORE_SEARCH.MIN_AVAILABLE_CAPACITY },
-            //     },
-            // },
             {
-                // Closest first, most available second
                 $sort: { distance: 1, availableSlots: -1 },
             },
             { $limit: 1 },
@@ -157,23 +139,19 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
 
         return { store: results[0], error: null };
     } catch (err) {
-        console.error("[bookingHelper] findNearestAvailableStore error:", err.message);
+        logger.error("[bookingHelper] findNearestAvailableStore error:", err.message);
         return { store: null, error: "SEARCH_FAILED" };
     }
 };
 
 /**
  * Atomically increment store's current_booking_count.
- * The $expr guard ensures we never exceed max capacity — acts as
- * an optimistic lock so two concurrent bookings can't both take the last slot.
  */
 export const assignStoreToBooking = async (storeId, session) => {
     try {
-        const store = await Store.findById(storeId);
         const updatedStore = await Store.findOneAndUpdate(
             {
                 _id: storeId,
-                // Capacity guard — only succeeds if a slot is still free
                 $expr: {
                     $lt: ["$current_booking_count", "$max_booking_capacity"],
                 },
@@ -188,14 +166,13 @@ export const assignStoreToBooking = async (storeId, session) => {
 
         return { success: true, store: updatedStore };
     } catch (err) {
-        console.error("[bookingHelper] assignStoreToBooking error:", err.message);
+        logger.error("[bookingHelper] assignStoreToBooking error:", err.message);
         return { success: false, store: null };
     }
 };
 
 /**
  * Decrement store capacity when a booking is cancelled.
- * Guards with $gt: 0 so count never goes negative.
  */
 export const releaseStoreCapacity = async (storeId, session = null) => {
     if (!storeId) return;
@@ -208,20 +185,15 @@ export const releaseStoreCapacity = async (storeId, session = null) => {
             options
         );
     } catch (err) {
-        console.error(`[bookingHelper] releaseStoreCapacity failed for ${storeId}:`, err.message);
+        logger.error(`[bookingHelper] releaseStoreCapacity failed for ${storeId}:`, err.message);
     }
 };
 
 // ─── CANCELLATION ─────────────────────────────────────────────────────────────
 
 /**
- * Single source of truth for system-initiated booking cancellation.
- * Used by:
- *   - autoCancelWorker (no driver found)
- *   - driverAssignHelper (search exhausted)
- *
- * Uses a transaction to atomically cancel + release store capacity.
- * Queues post-cancellation notification job after commit.
+ * Atomic system-initiated booking cancellation.
+ * Unified version used by: autoCancelWorker, driverSearchJob (exhaustion).
  */
 export const autoCancelBooking = async (bookingId, reason) => {
     const session = await mongoose.startSession();
@@ -261,7 +233,7 @@ export const autoCancelBooking = async (bookingId, reason) => {
 
         if (!booking) {
             await safeAbortSession(session);
-            console.log(`[AutoCancel] Booking ${bookingId} already in terminal state`);
+            logger.info(`[AutoCancel] Booking ${bookingId} already terminal or not found`);
             return { success: false };
         }
 
@@ -272,31 +244,37 @@ export const autoCancelBooking = async (bookingId, reason) => {
         await session.commitTransaction();
         session.endSession();
 
-        // Post-commit side effects — non-fatal if these fail
-        await Promise.allSettled([
-            queueCancellationNotification(booking),
-            invalidateBookingCache(booking.userId.toString(), bookingId),
-        ]);
+        // --- POST-COMMIT SIDE EFFECTS ---
+        try {
+            // Lazy import to avoid circular dependency
+            const { cleanupBookingRedisKeys } = await import("./driverAssignHelper.js");
+            
+            await Promise.allSettled([
+                cleanupBookingRedisKeys(bookingId),
+                queueCancellationNotification(booking),
+                invalidateBookingCache(booking.userId.toString(), bookingId),
+            ]);
+        } catch (postErr) {
+            logger.error(`[AutoCancel] Post-commit cleanup error for ${bookingId}:`, postErr.message);
+        }
 
-        console.log(`[AutoCancel] Booking ${bookingId} cancelled — reason: ${reason}`);
+        logger.info(`[AutoCancel] Booking ${bookingId} auto-cancelled: ${reason}`);
         return { success: true };
     } catch (err) {
         await safeAbortSession(session);
-        console.error(`[AutoCancel] Failed for booking ${bookingId}:`, err.message);
+        logger.error(`[AutoCancel] Fatal failure for ${bookingId}:`, err);
         return { success: false };
     }
 };
 
 /**
  * Queue a notification job after a booking is cancelled.
- * Also queues a refund job if the booking was paid.
  */
 const queueCancellationNotification = async (booking) => {
     const bookingId = booking._id.toString();
     const userId = booking.userId.toString();
 
-    // Cancellation notification
-    addJobToQueue(
+    await addJobToQueue(
         JOB_QUEUES.BOOKING_CANCELLED,
         {
             name: "BOOKING_CANCELLED",
@@ -313,12 +291,11 @@ const queueCancellationNotification = async (booking) => {
             ...DEFAULT_JOB_OPTIONS,
         }
     ).catch((err) =>
-        console.error(`[bookingHelper] Failed to queue cancel notification for ${bookingId}:`, err.message)
+        logger.error(`[bookingHelper] Failed to queue cancel notification for ${bookingId}:`, err.message)
     );
 
-    // Refund job — only if payment was completed
     if (booking.payment?.status === "PAID") {
-        addJobToQueue(
+        await addJobToQueue(
             JOB_QUEUES.RETURN_PROCESS,
             {
                 name: "PROCESS_REFUND",
@@ -335,7 +312,7 @@ const queueCancellationNotification = async (booking) => {
                 ...DEFAULT_JOB_OPTIONS,
             }
         ).catch((err) =>
-            console.error(`[bookingHelper] Failed to queue refund for ${bookingId}:`, err.message)
+            logger.error(`[bookingHelper] Failed to queue refund for ${bookingId}:`, err.message)
         );
     }
 };
@@ -352,28 +329,11 @@ export const invalidateBookingCache = async (userId, bookingId = null) => {
 
         await Promise.allSettled(ops);
     } catch (err) {
-        console.error("[bookingHelper] Cache invalidation error:", err.message);
+        logger.error("[bookingHelper] Cache invalidation error:", err.message);
     }
 };
 
-
-export const getCachedData = async (cacheKey) => {
-    try {
-        const cached = await get(cacheKey);
-        return cached ? JSON.parse(cached) : null;
-    } catch (err) {
-        console.error("[bookingHelper] Cache read error:", err.message);
-        return null;
-    }
-};
-
-export const setCacheData = async (cacheKey, data, ttl) => {
-    try {
-        await set(cacheKey, JSON.stringify(data), "EX", ttl);
-    } catch (err) {
-        console.error("[bookingHelper] Cache write error:", err.message);
-    }
-};
+export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
 
 // ─── BOOKING QUERIES ──────────────────────────────────────────────────────────
 
@@ -383,7 +343,6 @@ export const findUserBooking = async (bookingId, userId, selectFields = "") => {
         .lean();
 };
 
-// Returns a mutable (non-lean) booking for use with .save()
 export const findMutableUserBooking = async (bookingId, userId, selectFields = "") => {
     return Booking.findOne({ _id: bookingId, userId }).select(selectFields);
 };
@@ -398,17 +357,7 @@ export const findDriver = async (driverId, selectFields = "") => {
 
 // ─── PAGINATION ───────────────────────────────────────────────────────────────
 
-export const buildPagination = (page, limit, total) => {
-    const totalPages = Math.ceil(total / limit);
-    return {
-        currentPage: page,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-    };
-};
+export { buildPagination } from "../../utils/helper.js";
 
 // ─── TIMELINE ─────────────────────────────────────────────────────────────────
 
@@ -441,18 +390,14 @@ export const calculateTotalLuggage = (luggage) => {
 
 // ─── JOB HELPER ───────────────────────────────────────────────────────────────
 
-/**
- * Generic job queuer with default options.
- * Use for non-critical background jobs — fire and forget with error logging.
- */
-export const queueBookingJob = (queueName, jobName, data, extraOptions = {}) => {
+export const queueBookingJob = async (queueName, jobName, data, extraOptions = {}) => {
     const jobId = `${jobName}-${data.bookingId ?? Date.now()}`;
 
-    addJobToQueue(
+    await addJobToQueue(
         queueName,
         { name: jobName, data },
         { jobId, ...DEFAULT_JOB_OPTIONS, ...extraOptions }
     ).catch((err) =>
-        console.error(`[bookingHelper] Failed to queue ${jobName}:`, err.message)
+        logger.error(`[bookingHelper] Failed to queue ${jobName}:`, err.message)
     );
 };

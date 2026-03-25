@@ -3,6 +3,8 @@ import Driver from "../../models/Driver.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set, del, delByPattern } from "../../services/redisService.js";
 import { STATUS_CODES, ACCOUNT_STATUS } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
+
 
 // CONSTANTS
 const LIST_CACHE_TTL = 120; // 2 minutes
@@ -23,7 +25,7 @@ const invalidateDriverCache = async (driverId = null) => {
         }
         await Promise.all(promises);
     } catch (err) {
-        console.error("Cache invalidation error:", err);
+        logger.error("Cache invalidation error:", err);
     }
 };
 
@@ -120,7 +122,7 @@ export const getDrivers = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get Drivers Error:", err);
+        logger.error("Get Drivers Error:", err);
         return sendError(res, "Failed to fetch drivers");
     }
 };
@@ -160,7 +162,7 @@ export const getDriverById = async (req, res) => {
             data: driver,
         });
     } catch (err) {
-        console.error("Get Driver By ID Error:", err);
+        logger.error("Get Driver By ID Error:", err);
         return sendError(res, "Failed to fetch driver");
     }
 };
@@ -239,7 +241,7 @@ export const updateDriver = async (req, res) => {
             data: updatedDriver,
         });
     } catch (err) {
-        console.error("[updateDriver] Error:", err);
+        logger.error("[updateDriver] Error:", err);
         return sendError(res, "Failed to update driver");
     }
 };
@@ -287,7 +289,7 @@ export const updateDriverLocation = async (req, res) => {
             data: updatedDriver,
         });
     } catch (err) {
-        console.error("[updateDriverLocation] Error:", err);
+        logger.error("[updateDriverLocation] Error:", err);
         return sendError(res, "Failed to update driver location");
     }
 };
@@ -388,7 +390,7 @@ export const updateDriverAccount = async (req, res) => {
 
         // Invalidate cache (from updateDriverStatus)
         await invalidateDriverCache(driver_id)
-            .catch((err) => console.warn("[updateDriverAccount] Cache invalidation failed:", err.message));
+            .catch((err) => logger.warn("[updateDriverAccount] Cache invalidation failed:", err.message));
 
         return sendResponse({
             res,
@@ -396,7 +398,7 @@ export const updateDriverAccount = async (req, res) => {
             data: updatedDriver,
         });
     } catch (err) {
-        console.error("[updateDriverAccount] Error:", err);
+        logger.error("[updateDriverAccount] Error:", err);
         return sendError(res, "Failed to update driver account");
     }
 };
@@ -452,7 +454,7 @@ export const bulkDeactivateDrivers = async (req, res) => {
             ...activeIds.map((id) => del(`driver:${id}`)),
             delByPattern("drivers:*"),
         ]).catch((err) =>
-            console.error("Cache invalidation error:", err)
+            logger.error("Cache invalidation error:", err)
         );
 
         return sendResponse({
@@ -471,7 +473,7 @@ export const bulkDeactivateDrivers = async (req, res) => {
         } catch (_) { }
         session.endSession();
 
-        console.error("Bulk Deactivate Error:", err);
+        logger.error("Bulk Deactivate Error:", err);
         return sendError(res, "Failed to deactivate drivers");
     }
 };

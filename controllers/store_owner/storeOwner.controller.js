@@ -1,0 +1,527 @@
+import mongoose from "mongoose";
+import StoreOwner from "../../models/StoreOwner.js";
+import Store from "../../models/Store.js";
+import { sendError, sendResponse } from "../../utils/apiResponse.js";
+import { get, set, del } from "../../services/redisService.js";
+import {
+    STATUS_CODES,
+    ACCOUNT_STATUS,
+    ON_BOARDING_STATUS,
+    VERIFICATION_STATUS,
+} from "../../utils/constants.js";
+import { checkServiceability } from "../../helpers/store/store.helper.js";
+import logger from "../../utils/logger.js";
+import Booking from "../../models/Booking.js";
+
+const PROFILE_CACHE_TTL = 300;
+const STORES_CACHE_TTL = 120;
+const DASHBOARD_CACHE_TTL = 60;
+
+// PROFILE
+export const getProfile = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const cacheKey = `owner_profile:${ownerId}`;
+
+        const cached = await get(cacheKey);
+        if (cached) {
+            return sendResponse({ res, message: "Profile fetched.", data: { owner: JSON.parse(cached) } });
+        }
+
+        const owner = await StoreOwner.findById(ownerId)
+            .select("-__v")
+            .lean();
+
+        if (!owner) {
+            return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        await set(cacheKey, JSON.stringify(owner), "EX", PROFILE_CACHE_TTL);
+
+        return sendResponse({ res, message: "Profile fetched.", data: { owner } });
+    } catch (err) {
+        logger.error("StoreOwner getProfile Error:", err);
+        return sendError(res, "Failed to fetch profile.");
+    }
+};
+
+export const updateProfile = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const {
+            first_name,
+            last_name,
+            email,
+            gender,
+            date_of_birth,
+            address,
+        } = req.body;
+
+        const owner = await StoreOwner.findByIdAndUpdate(
+            ownerId,
+            {
+                $set: {
+                    ...(first_name && { first_name: first_name.trim() }),
+                    ...(last_name && { last_name: last_name.trim() }),
+                    ...(email && { email: email.trim().toLowerCase() }),
+                    ...(gender && { gender }),
+                    ...(date_of_birth && { date_of_birth }),
+                    ...(address && { address: address.trim() }),
+                },
+            },
+            { new: true, runValidators: true }
+        )
+            .select("-__v")
+            .lean();
+
+        if (!owner) {
+            return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        await del(`owner_profile:${ownerId}`);
+
+        return sendResponse({ res, message: "Profile updated.", data: { owner } });
+    } catch (err) {
+        logger.error("StoreOwner updateProfile Error:", err);
+        return sendError(res, "Failed to update profile.");
+    }
+};
+
+export const completeProfile = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const {
+            first_name,
+            last_name,
+            email,
+            gender,
+            date_of_birth,
+            address,
+        } = req.body;
+
+        const owner = await StoreOwner.findById(ownerId)
+            .select("onboarding_status")
+            .lean();
+
+        if (!owner) {
+            return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        if (owner.onboarding_status === ON_BOARDING_STATUS.COMPLETED) {
+            return sendError(
+                res,
+                "Profile already completed. Use profile update instead.",
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        const updatedOwner = await StoreOwner.findByIdAndUpdate(
+            ownerId,
+            {
+                $set: {
+                    first_name: first_name.trim(),
+                    last_name: last_name.trim(),
+                    email: email.trim().toLowerCase(),
+                    gender,
+                    date_of_birth,
+                    address: address?.trim(),
+                    onboarding_status: ON_BOARDING_STATUS.COMPLETED,
+                },
+            },
+            { new: true, runValidators: true }
+        )
+            .select("-__v")
+            .lean();
+
+        await del(`owner_profile:${ownerId}`);
+
+        return sendResponse({
+            res,
+            message: "Profile completed successfully.",
+            data: { owner: updatedOwner },
+        });
+    } catch (err) {
+        logger.error("StoreOwner completeProfile Error:", err);
+        return sendError(res, "Failed to complete profile.");
+    }
+};
+
+// STORES
+export const getStores = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const cacheKey = `owner_stores:${ownerId}`;
+
+        const cached = await get(cacheKey);
+        if (cached) {
+            return sendResponse({ res, message: "Stores fetched.", data: { stores: JSON.parse(cached) } });
+        }
+
+        const stores = await Store.find({ store_owner_id: ownerId })
+            .select("-__v")
+            .lean();
+
+        await set(cacheKey, JSON.stringify(stores), "EX", STORES_CACHE_TTL);
+
+        return sendResponse({ res, message: "Stores fetched.", data: { stores } });
+    } catch (err) {
+        logger.error("StoreOwner getStores Error:", err);
+        return sendError(res, "Failed to fetch stores.");
+    }
+};
+
+export const getStore = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const { id } = req.params;
+
+        if (!mongoose.isValidObjectId(id)) {
+            return sendError(res, "Invalid store ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const store = await Store.findOne({ _id: id, store_owner_id: ownerId })
+            .select("-__v")
+            .lean();
+
+        if (!store) {
+            return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        return sendResponse({ res, message: "Store fetched.", data: { store } });
+    } catch (err) {
+        logger.error("StoreOwner getStore Error:", err);
+        return sendError(res, "Failed to fetch store.");
+    }
+};
+
+export const createStore = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const {
+            phone,
+            store_name,
+            store_description,
+            store_contact_number,
+            store_open_time,
+            store_close_time,
+            location: { latitude, longitude, address },
+        } = req.body;
+
+        // Verify owner is onboarded before allowing store creation
+        const owner = await StoreOwner.findById(ownerId)
+            .select("onboarding_status status")
+            .lean();
+
+        if (!owner) {
+            return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        if (owner.onboarding_status !== ON_BOARDING_STATUS.COMPLETED) {
+            return sendError(
+                res,
+                "Please complete your profile before creating a store.",
+                STATUS_CODES.FORBIDDEN
+            );
+        }
+
+        const { isServiceable, serviceAreaId } = await checkServiceability(latitude, longitude);
+        if (!isServiceable) {
+            return sendError(
+                res,
+                "This location is not in our service area. You'll be notified when we expand.",
+                STATUS_CODES.FORBIDDEN
+            );
+        }
+
+        // Prevent duplicate phone across stores
+        const phoneExists = await Store.exists({ phone });
+        if (phoneExists) {
+            return sendError(res, "A store with this phone number already exists.", STATUS_CODES.CONFLICT);
+        }
+
+        const store = await Store.create({
+            store_owner_id: ownerId,
+            phone,
+            store_name: store_name.trim(),
+            store_description: store_description?.trim(),
+            store_contact_number,
+            store_open_time,
+            store_close_time,
+            location: {
+                type: "Point",
+                coordinates: [longitude, latitude],
+                address: address.trim(),
+            },
+            service_area_id: serviceAreaId,
+            is_verified: false,
+            is_active: true,
+            status: ACCOUNT_STATUS.PENDING,
+            verification_status: VERIFICATION_STATUS.PENDING,
+        });
+
+        await del(`owner_stores:${ownerId}`);
+
+        return sendResponse({
+            res,
+            statusCode: STATUS_CODES.CREATED,
+            message: "Store created successfully. Pending admin verification.",
+            data: { store },
+        });
+    } catch (err) {
+        logger.error("StoreOwner createStore Error:", err);
+        return sendError(res, "Failed to create store.");
+    }
+};
+
+export const updateStore = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const { id } = req.params;
+
+        if (!mongoose.isValidObjectId(id)) {
+            return sendError(res, "Invalid store ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const {
+            store_name,
+            store_description,
+            store_contact_number,
+            store_open_time,
+            store_close_time,
+            location,
+        } = req.body;
+
+        const store = await Store.findOne({ _id: id, store_owner_id: ownerId })
+            .select("_id")
+            .lean();
+
+        if (!store) {
+            return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        const locationUpdate = {};
+        if (location) {
+            const { latitude, longitude, address } = location;
+            const { isServiceable, serviceAreaId } = await checkServiceability(latitude, longitude);
+
+            if (!isServiceable) {
+                return sendError(
+                    res,
+                    "This location is not in our service area.",
+                    STATUS_CODES.FORBIDDEN
+                );
+            }
+
+            locationUpdate.location = {
+                type: "Point",
+                coordinates: [longitude, latitude],
+                address: address.trim(),
+            };
+            locationUpdate.service_area_id = serviceAreaId;
+        }
+
+        const updatedStore = await Store.findByIdAndUpdate(
+            id,
+            {
+                $set: {
+                    ...(store_name && { store_name: store_name.trim() }),
+                    ...(store_description && { store_description: store_description.trim() }),
+                    ...(store_contact_number && { store_contact_number }),
+                    ...(store_open_time && { store_open_time }),
+                    ...(store_close_time && { store_close_time }),
+                    ...locationUpdate,
+                },
+            },
+            { new: true, runValidators: true }
+        )
+            .select("-__v")
+            .lean();
+
+        await del(`owner_stores:${ownerId}`);
+
+        return sendResponse({ res, message: "Store updated.", data: { store: updatedStore } });
+    } catch (err) {
+        logger.error("StoreOwner updateStore Error:", err);
+        return sendError(res, "Failed to update store.");
+    }
+};
+
+export const deleteStore = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const { id } = req.params;
+
+        if (!mongoose.isValidObjectId(id)) {
+            return sendError(res, "Invalid store ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const store = await Store.findOne({ _id: id, store_owner_id: ownerId })
+            .select("is_online is_active current_booking_count")
+            .lean();
+
+        if (!store) {
+            return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        if (!store.is_active) {
+            return sendError(res, "Store is already deactivated.", STATUS_CODES.CONFLICT);
+        }
+
+        if (store.is_online) {
+            return sendError(
+                res,
+                "Store is currently online. Please go offline before deactivating.",
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        if (store.current_booking_count > 0) {
+            return sendError(
+                res,
+                "Store has active bookings. Please complete or cancel them before deactivating.",
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        await Store.findByIdAndUpdate(id, {
+            $set: {
+                is_active: false,
+                is_online: false,
+                deactivated_at: new Date(),
+            },
+        });
+
+        await del(`owner_stores:${ownerId}`);
+        await del(`owner_dashboard:${ownerId}`);
+
+        return sendResponse({ res, message: "Store deactivated successfully." });
+    } catch (err) {
+        logger.error("StoreOwner deleteStore Error:", err);
+        return sendError(res, "Failed to deactivate store.");
+    }
+};
+
+// DASHBOARD
+export const getDashboard = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const cacheKey = `owner_dashboard:${ownerId}`;
+
+        const cached = await get(cacheKey);
+        if (cached) {
+            return sendResponse({ res, message: "Dashboard fetched.", data: JSON.parse(cached) });
+        }
+
+        const stores = await Store.find({ store_owner_id: ownerId })
+            .select("store_name status verification_status is_online is_active rating rating_count current_booking_count")
+            .lean();
+
+        const totalStores = stores.length;
+        const activeStores = stores.filter(s => s.status === ACCOUNT_STATUS.ACTIVE).length;
+        const onlineStores = stores.filter(s => s.is_online).length;
+        const pendingVerification = stores.filter(
+            s => s.verification_status === VERIFICATION_STATUS.PENDING
+        ).length;
+
+        // Aggregate orders across all stores owned
+        const storeIds = stores.map(s => s._id);
+
+        const BookingStats = await Booking.aggregate([
+            { $match: { storeId: { $in: storeIds } } },
+            { $group: {
+                _id: "$status",
+                count: { $sum: 1 },
+            }}
+        ]);
+
+        const avgRating =
+            stores.length > 0
+                ? (stores.reduce((sum, s) => sum + (s.rating || 0), 0) / stores.length).toFixed(2)
+                : 0;
+
+        const dashboard = {
+            stores: {
+                total: totalStores,
+                active: activeStores,
+                online: onlineStores,
+                pending_verification: pendingVerification,
+            },
+            rating: {
+                average: parseFloat(avgRating),
+            },
+            store_list: stores,
+            orders: BookingStats
+        };
+
+        await set(cacheKey, JSON.stringify(dashboard), "EX", DASHBOARD_CACHE_TTL);
+
+        return sendResponse({ res, message: "Dashboard fetched.", data: dashboard });
+    } catch (err) {
+        logger.error("StoreOwner getDashboard Error:", err);
+        return sendError(res, "Failed to fetch dashboard.");
+    }
+};
+
+// GO ONLINE
+export const goOnline = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const { store_id, is_online } = req.body;
+
+        if (!mongoose.isValidObjectId(store_id)) {
+            return sendError(res, "Invalid store ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const store = await Store.findOne({ _id: store_id, store_owner_id: ownerId })
+            .select("status verification_status is_active is_online")
+            .lean();
+
+        if (!store) {
+            return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        // Only verified, active stores can go online
+        if (
+            store.status !== ACCOUNT_STATUS.ACTIVE ||
+            store.verification_status !== VERIFICATION_STATUS.VERIFIED
+        ) {
+            return sendError(
+                res,
+                "Store must be verified and active before going online.",
+                STATUS_CODES.FORBIDDEN
+            );
+        }
+
+        if (!store.is_active) {
+            return sendError(res, "Store is deactivated.", STATUS_CODES.FORBIDDEN);
+        }
+
+        if (store.is_online === is_online) {
+            return sendError(
+                res,
+                `Store is already ${is_online ? "online" : "offline"}.`,
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        const updatedStore = await Store.findByIdAndUpdate(
+            store_id,
+            { $set: { is_online } },
+            { new: true }
+        )
+            .select("store_name is_online status")
+            .lean();
+
+        await del(`owner_stores:${ownerId}`);
+        await del(`owner_dashboard:${ownerId}`);
+
+        return sendResponse({
+            res,
+            message: `Store is now ${is_online ? "online" : "offline"}.`,
+            data: { store: updatedStore },
+        });
+    } catch (err) {
+        logger.error("StoreOwner goOnline Error:", err);
+        return sendError(res, "Failed to update store status.");
+    }
+};

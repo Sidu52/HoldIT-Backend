@@ -3,7 +3,8 @@ import Booking from "../../models/Booking.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES, BOOKING_STATUS } from "../../utils/constants.js";
 import { invalidateBookingCache } from "../../helpers/user/bookingHelper.js";
-import { processMarkStored } from "../../helpers/store/store.helper.js";
+import { timingSafeEqual } from "../../helpers/user/authHelper.js";
+import logger from "../../utils/logger.js";
 
 const buildPagination = (page, limit, total) => ({
     currentPage: page,
@@ -14,19 +15,19 @@ const buildPagination = (page, limit, total) => ({
     hasPrevPage: page > 1,
 });
 
-// ── GET INCOMING ──────────────────────────────────────────────────
+// GET INCOMING
 export const getIncomingBookings = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
 
         const bookings = await Booking.find({
             storeId: new mongoose.Types.ObjectId(storeId),
-            status: BOOKING_STATUS.PICKED_UP, // ✅ Fixed: AT_STORE → PICKED_UP (verify vs your constants)
+            status: BOOKING_STATUS.STORE_ASSIGNED,
             isActive: true,
         })
             .select("bookingCode status pickupLocation luggage pickup storage pricing userId createdAt")
             .populate("userId", "first_name last_name phone")
-            .sort({ "pickup.assignment.completedAt": 1 })
+            .sort({ createdAt: 1 })
             .lean();
 
         return sendResponse({
@@ -35,12 +36,12 @@ export const getIncomingBookings = async (req, res) => {
             data: { bookings, total: bookings.length },
         });
     } catch (err) {
-        console.error("Store Get Incoming Error:", err);
+        logger.error("Store Get Incoming Error:", err);
         return sendError(res, "Failed to fetch incoming bookings.");
     }
 };
 
-// ── GET ACTIVE (STORED) ───────────────────────────────────────────
+// GET ACTIVE
 export const getActiveBookings = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
@@ -76,16 +77,20 @@ export const getActiveBookings = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Store Get Active Error:", err);
+        logger.error("Store Get Active Error:", err);
         return sendError(res, "Failed to fetch active bookings.");
     }
 };
 
-// ── GET BOOKING DETAIL ────────────────────────────────────────────
+// GET BOOKING DETAIL
 export const getBookingDetail = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
         const { booking_id } = req.params;
+
+        if (!mongoose.isValidObjectId(booking_id)) {
+            return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
+        }
 
         const booking = await Booking.findOne({
             _id: booking_id,
@@ -106,68 +111,87 @@ export const getBookingDetail = async (req, res) => {
             data: { booking },
         });
     } catch (err) {
-        console.error("Store Get Booking Detail Error:", err);
+        logger.error("Store Get Booking Detail Error:", err);
         return sendError(res, "Failed to fetch booking.");
     }
 };
 
-// ── CONFIRM STORED ────────────────────────────────────────────────
+// CONFIRM STORED
 export const confirmStored = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
         const { booking_id } = req.params;
         const { notes = "" } = req.body;
 
-        const booking = await processMarkStored(booking_id, storeId, notes);
+        if (!mongoose.isValidObjectId(booking_id)) {
+            return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const booking = await Booking.findOne({
+            _id: booking_id,
+            storeId: new mongoose.Types.ObjectId(storeId),
+        })
+            .select("status userId storage")
+            .lean();
 
         if (!booking) {
-            const existing = await Booking.findById(booking_id)
-                .select("status storeId")
-                .lean();
+            return sendError(res, "Booking not found.", STATUS_CODES.NOT_FOUND);
+        }
 
-            if (!existing) {
-                return sendError(res, "Booking not found.", STATUS_CODES.NOT_FOUND);
-            }
-
-            if (existing.storeId?.toString() !== storeId) {
-                return sendError(
-                    res,
-                    "This booking is not assigned to your store.",
-                    STATUS_CODES.FORBIDDEN
-                );
-            }
-
+        if (booking.status !== BOOKING_STATUS.STORE_ASSIGNED) {
             return sendError(
                 res,
-                `Cannot confirm storage — booking is currently in "${existing.status}" status. Driver must arrive at store first.`,
+                `Cannot confirm storage — booking is currently "${booking.status}". Driver must arrive at store first.`,
                 STATUS_CODES.CONFLICT
             );
         }
 
-        // ✅ Fixed: removed invalidateDriverRideCache (driverId was never defined)
-        // ✅ Fixed: removed duplicate invalidateBookingCache call
+        const now = new Date();
+
+        const updated = await Booking.findByIdAndUpdate(
+            booking_id,
+            {
+                $set: {
+                    status: BOOKING_STATUS.STORED,
+                    "storage.storedAt": now,
+                    "storage.notes": notes,
+                    lastStatusUpdatedAt: now,
+                },
+                $push: {
+                    timeline: {
+                        status: BOOKING_STATUS.STORED,
+                        note: notes || "Luggage confirmed as stored by store",
+                        updatedBy: new mongoose.Types.ObjectId(storeId),
+                        updatedByModel: "Store",
+                        createdAt: now,
+                    },
+                },
+            },
+            { new: true }
+        ).select("_id bookingCode status storage userId");
+
         await invalidateBookingCache(
-            booking.userId.toString(),
+            updated.userId.toString(),
             booking_id
-        ).catch(() => {});
+        ).catch(() => { });
 
         return sendResponse({
             res,
             message: "Luggage confirmed as stored successfully.",
             data: {
-                bookingId: booking._id,
-                bookingCode: booking.bookingCode,
-                status: booking.status,
-                storedAt: booking.storage?.storedAt,
+                bookingId: updated._id,
+                bookingCode: updated.bookingCode,
+                status: updated.status,
+                storedAt: updated.storage?.storedAt,
             },
         });
     } catch (err) {
-        console.error("Store Confirm Stored Error:", err);
+        logger.error("Store Confirm Stored Error:", err);
         return sendError(res, "Failed to confirm storage.");
     }
 };
 
-// ── GET HISTORY ───────────────────────────────────────────────────
+// GET HISTORY
 export const getBookingHistory = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
@@ -203,7 +227,90 @@ export const getBookingHistory = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Store Get History Error:", err);
+        logger.error("Store Get History Error:", err);
         return sendError(res, "Failed to fetch booking history.");
+    }
+};
+
+// VERIFY RETURN OTP
+export const verifyReturnOtp = async (req, res) => {
+    try {
+        const storeId = req.user.auth_id;
+        const { booking_id } = req.params;
+        const { otp } = req.body;
+
+        if (!mongoose.isValidObjectId(booking_id)) {
+            return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        if (!otp) {
+            return sendError(res, "OTP is required.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const booking = await Booking.findOne({
+            _id: booking_id,
+            storeId: new mongoose.Types.ObjectId(storeId),
+            status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+        })
+            .select("delivery userId")
+            .lean();
+
+        if (!booking) {
+            return sendError(
+                res,
+                "Booking not found or not ready for return handover.",
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        // OTP is stored on booking.delivery.returnOtp when return driver is assigned
+        const isValid =
+            booking.delivery?.returnOtp &&
+            booking.delivery.returnOtp.length === otp.toString().length &&
+            timingSafeEqual(booking.delivery.returnOtp, otp.toString());
+
+        if (!isValid) {
+            return sendError(res, "Invalid or expired OTP.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const now = new Date();
+
+        const updated = await Booking.findByIdAndUpdate(
+            booking_id,
+            {
+                $set: {
+                    "storage.releasedAt": now,
+                    "delivery.returnOtp": null,
+                    lastStatusUpdatedAt: now,
+                },
+                $push: {
+                    timeline: {
+                        status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                        note: "Luggage handed over to return driver by store",
+                        updatedBy: new mongoose.Types.ObjectId(storeId),
+                        updatedByModel: "Store",
+                        createdAt: now,
+                    },
+                },
+            },
+            { new: true }
+        ).select("_id userId storage");
+
+        await invalidateBookingCache(
+            updated.userId.toString(),
+            booking_id
+        ).catch(() => { });
+
+        return sendResponse({
+            res,
+            message: "Luggage handed over to return driver successfully.",
+            data: {
+                bookingId: updated._id,
+                releasedAt: updated.storage?.releasedAt,
+            },
+        });
+    } catch (err) {
+        logger.error("Store Verify Return OTP Error:", err);
+        return sendError(res, "Failed to verify return OTP.");
     }
 };

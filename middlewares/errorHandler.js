@@ -1,9 +1,11 @@
 import { sendResponse } from "../utils/apiResponse.js";
 import { STATUS_CODES } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 const errorHandler = (err, req, res, next) => {
   // Log full error for debugging
-  console.error(`[${new Date().toISOString()}] Error:`, {
+  logger.error(`[${new Date().toISOString()}] Error:`, {
     message: err.message,
     stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
     path: req.originalUrl,

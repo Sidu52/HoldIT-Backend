@@ -3,6 +3,8 @@ import Store from "../../models/Store.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set, del, delByPattern } from "../../services/redisService.js";
 import { STATUS_CODES, ACCOUNT_STATUS, ON_BOARDING_STATUS } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
+
 
 // ============================================
 // CONSTANTS
@@ -31,7 +33,7 @@ const invalidateOwnerCache = async (ownerId = null) => {
         if (ownerId) promises.push(del(`store_owner:${ownerId}`));
         await Promise.all(promises);
     } catch (err) {
-        console.error("Owner cache invalidation error:", err);
+        logger.error("Owner cache invalidation error:", err);
     }
 };
 
@@ -111,7 +113,7 @@ export const createStoreOwner = async (req, res) => {
                 STATUS_CODES.CONFLICT
             );
         }
-        console.error("[createStoreOwner] Error:", err);
+        logger.error("[createStoreOwner] Error:", err);
         return sendError(res, "Failed to create store owner");
     }
 };
@@ -206,7 +208,7 @@ export const getStoreOwners = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("[getStoreOwners] Error:", err);
+        logger.error("[getStoreOwners] Error:", err);
         return sendError(res, "Failed to fetch store owners");
     }
 };
@@ -252,7 +254,7 @@ export const getStoreOwnerById = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("[getStoreOwnerById] Error:", err);
+        logger.error("[getStoreOwnerById] Error:", err);
         return sendError(res, "Failed to fetch store owner");
     }
 };
@@ -341,7 +343,7 @@ export const updateStoreOwner = async (req, res) => {
                 STATUS_CODES.CONFLICT
             );
         }
-        console.error("[updateStoreOwner] Error:", err);
+        logger.error("[updateStoreOwner] Error:", err);
         return sendError(res, "Failed to update store owner");
     }
 };
@@ -424,7 +426,7 @@ export const updateStoreOwnerStatus = async (req, res) => {
             data: updatedOwner,
         });
     } catch (err) {
-        console.error("[updateStoreOwnerStatus] Error:", err);
+        logger.error("[updateStoreOwnerStatus] Error:", err);
         return sendError(res, "Failed to update store owner status");
     }
 };

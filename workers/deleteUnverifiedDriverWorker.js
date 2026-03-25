@@ -2,6 +2,8 @@ import { Worker } from "bullmq";
 import { redisConnectionConfig } from "../services/redisService.js";
 import Driver from "../models/Driver.js";
 import { ACCOUNT_STATUS, JOB_QUEUES } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 let worker;
 
@@ -12,7 +14,7 @@ export const createDeleteUnverifiedDriverWorker = () => {
             const { phone } = job.data;
 
             if (!phone) {
-                console.error("deleteUnverifiedDriver: Missing phone in job data");
+                logger.error("deleteUnverifiedDriver: Missing phone in job data");
                 return { success: false, reason: "missing_phone" };
             }
 
@@ -24,14 +26,15 @@ export const createDeleteUnverifiedDriverWorker = () => {
                 });
 
                 if (deletedDriver) {
-                    console.log(`Deleted unverified driver: ${phone}`);
+                    logger.info(`Deleted unverified driver: ${phone}`);
                     return { success: true, phone, driverId: deletedDriver._id };
                 } else {
-                    console.log(`Driver ${phone} already verified or deleted — skipping`);
+                    logger.info(`Driver ${phone} already verified or deleted — skipping`);
                     return { success: true, phone, reason: "already_handled" };
                 }
             } catch (error) {
-                console.error(`Failed to delete driver ${phone}:`, error.message);
+                logger.error(`Failed to delete driver ${phone}:`, error.message);
+                if (job.moveToFailed) await job.moveToFailed(error, job.token);
                 throw error;
             }
         },
@@ -46,11 +49,11 @@ export const createDeleteUnverifiedDriverWorker = () => {
     );
 
     worker.on("error", (err) => {
-        console.error("deleteUnverifiedDriverWorker error:", err.message);
+        logger.error("deleteUnverifiedDriverWorker error:", err.message);
     });
 
     worker.on("failed", (job, err) => {
-        console.error(
+        logger.error(
             `deleteUnverifiedDriver failed for ${job?.data?.phone}:`,
             err.message
         );

@@ -19,6 +19,7 @@ import {
     OTP_EXPIRY,
     TOKEN_TYPES,
 } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
 
 // CONSTANTS (Derived from base constants)
 const BCRYPT_SALT_ROUNDS = 12;
@@ -130,7 +131,7 @@ export const verifyAdminInviteToken = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Verify Invite Error:", err);
+        logger.error("Verify Invite Error:", err);
         return sendError(res, "Verification failed");
     }
 };
@@ -150,7 +151,7 @@ export const adminLogin = async (req, res) => {
                 STATUS_CODES.UNAUTHORIZED
             );
         }
-console.log("admin",admin)
+logger.info("admin",admin)
         if (!admin.is_verified) {
             return sendError(
                 res,
@@ -185,7 +186,7 @@ console.log("admin",admin)
         Admin.updateOne(
             { _id: admin._id },
             { last_login_at: new Date() }
-        ).catch((err) => console.error("Failed to update last login:", err));
+        ).catch((err) => logger.error("Failed to update last login:", err));
 
         return sendResponse({
             res,
@@ -199,7 +200,7 @@ console.log("admin",admin)
             },
         });
     } catch (err) {
-        console.error("Admin Login Error:", err);
+        logger.error("Admin Login Error:", err);
         return sendError(res, "Login failed");
     }
 };
@@ -288,7 +289,7 @@ export const signUp = async (req, res) => {
             message: "Account created successfully",
         });
     } catch (err) {
-        console.error("Signup Error:", err);
+        logger.error("Signup Error:", err);
         return sendError(res, "Signup failed");
     }
 };
@@ -312,7 +313,7 @@ export const adminLogout = async (req, res) => {
         });
     } catch (err) {
         clearAuthCookies(res);
-        console.error("Logout error:", err);
+        logger.error("Logout error:", err);
         return sendResponse({
             res,
             message: "Logged out successfully",
@@ -377,12 +378,12 @@ export const createAdminForgotPasswordToken = async (req, res) => {
             },
             rawFields: ["reset_link"],
         }).catch((err) =>
-            console.error("Failed to send reset email:", err.message)
+            logger.error("Failed to send reset email:", err.message)
         );
 
         return sendResponse({ res, message: successMessage });
     } catch (error) {
-        console.error("Forgot password error:", error);
+        logger.error("Forgot password error:", error);
         return sendError(res, "Failed to process request");
     }
 };
@@ -407,7 +408,7 @@ export const verifyAdminForgotPasswordToken = async (req, res) => {
             data: { valid: true },
         });
     } catch (error) {
-        console.error("Verify token error:", error);
+        logger.error("Verify token error:", error);
         return sendError(res, "Token verification failed");
     }
 };
@@ -454,7 +455,7 @@ export const updateAdminPassword = async (req, res) => {
             message: "Password updated successfully. Please login again.",
         });
     } catch (error) {
-        console.error("Update password error:", error);
+        logger.error("Update password error:", error);
         return sendError(res, "Failed to update password");
     }
 };
@@ -510,7 +511,7 @@ export const resetPassword = async (req, res) => {
             message: "Password changed successfully. Please login again.",
         });
     } catch (err) {
-        console.error("Change Password Error:", err);
+        logger.error("Change Password Error:", err);
         return sendError(res, "Password change failed");
     }
 };

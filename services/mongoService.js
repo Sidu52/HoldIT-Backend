@@ -1,84 +1,44 @@
-// import dotenv from "dotenv";
-// dotenv.config();
-// import mongoose from "mongoose";
-
-// export const connectMongo = async () => {
-//     try {
-//         const url = process.env.MONGODB_URI;
-
-//         if (!url) {
-//             throw new Error("MONGODB_URI is not defined in .env");
-//         }
-//         await mongoose.connect(url, {
-//             serverSelectionTimeoutMS: 5000,   // Fail fast if can't connect
-//             heartbeatFrequencyMS: 10000,      // Check connection health
-//             maxPoolSize: 10,                   // Connection pool limit
-//             minPoolSize: 2,                    // Keep minimum connections alive
-//         });
-
-//         console.log("Connected to MongoDB");
-//         mongoose.connection.on("error", (err) => {
-//             console.error("MongoDB connection error:", err.message);
-//         });
-
-//         mongoose.connection.on("disconnected", () => {
-//             console.warn("MongoDB disconnected");
-//         });
-
-//         mongoose.connection.on("reconnected", () => {
-//             console.log("MongoDB reconnected");
-//         });
-//     } catch (error) {
-//         console.error("MongoDB connection error:", error.message);
-//         process.exit(1);
-//     }
-// };
-
-// // Added graceful disconnect function
-// export const disconnectMongo = async () => {
-//     try {
-//         await mongoose.disconnect();
-//         console.log("MongoDB disconnected gracefully");
-//     } catch (error) {
-//         console.error("MongoDB disconnect error:", error.message);
-//     }
-// };
-
-// services/mongoService.js
 
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 dotenv.config();
 
+import logger from "../utils/logger.js";
+
 const MONGO_OPTIONS = {
     serverSelectionTimeoutMS: 5000,
-    heartbeatFrequencyMS:     10000,
-    maxPoolSize:              10,
-    minPoolSize:              2,
-    socketTimeoutMS:          45000,
-    connectTimeoutMS:         10000,
-    family:                   4,      // force IPv4, avoids slow DNS on some hosts
+    heartbeatFrequencyMS: 10000,
+    maxPoolSize: 10,
+    minPoolSize: 2,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 10000,
+    family: 4,      // force IPv4, avoids slow DNS on some hosts
 };
 
 let isConnected = false;
 
-export const connectMongo = async () => {
+export const connectMongo = async (retries = 5) => {
     if (isConnected) return;
 
     const uri = process.env.MONGODB_URI;
     if (!uri) {
-        console.error("❌ [MongoDB] MONGODB_URI is not defined in .env");
+        logger.error("❌ [MongoDB] MONGODB_URI is not defined in .env");
         process.exit(1);
     }
 
-    try {
-        await mongoose.connect(uri, MONGO_OPTIONS);
-        isConnected = true;
-        console.log("✅ [MongoDB] Connected");
-        registerMongoEvents();
-    } catch (err) {
-        console.error("❌ [MongoDB] Initial connection failed:", err.message);
-        process.exit(1);
+    while (retries) {
+        try {
+            await mongoose.connect(uri, MONGO_OPTIONS);
+            isConnected = true;
+            logger.info("✅ [MongoDB] Connected");
+            registerMongoEvents();
+            break;
+        } catch (err) {
+            retries -= 1;
+            logger.error(`❌ [MongoDB] Connection failed. Retries left: ${retries}. Err: ${err.message}`);
+            if (retries === 0) process.exit(1);
+            await new Promise(res => setTimeout(res, 5000));
+        }
     }
 };
 
@@ -86,22 +46,22 @@ const registerMongoEvents = () => {
     const conn = mongoose.connection;
 
     conn.on("error", (err) => {
-        console.error("❌ [MongoDB] Connection error:", err.message);
+        logger.error(`❌ [MongoDB] Connection error: ${err.message}`);
     });
 
     conn.on("disconnected", () => {
         isConnected = false;
-        console.warn("⚠️  [MongoDB] Disconnected — Mongoose will auto-reconnect");
+        logger.warn("⚠️  [MongoDB] Disconnected — Mongoose will auto-reconnect");
     });
 
     conn.on("reconnected", () => {
         isConnected = true;
-        console.log("✅ [MongoDB] Reconnected");
+        logger.info("✅ [MongoDB] Reconnected");
     });
 
     conn.on("close", () => {
         isConnected = false;
-        console.warn("⚠️  [MongoDB] Connection closed");
+        logger.warn("⚠️  [MongoDB] Connection closed");
     });
 };
 
@@ -113,9 +73,9 @@ export const disconnectMongo = async () => {
     try {
         await mongoose.disconnect();
         isConnected = false;
-        console.log("✅ [MongoDB] Disconnected gracefully");
+        logger.info("✅ [MongoDB] Disconnected gracefully");
     } catch (err) {
-        console.error("❌ [MongoDB] Disconnect error:", err.message);
+        logger.error(`❌ [MongoDB] Disconnect error: ${err.message}`);
     }
 };
 

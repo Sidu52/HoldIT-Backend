@@ -22,25 +22,11 @@ import {
     scheduleDriverSearch,
 } from "../user/driverAssignHelper.js";
 import { invalidateBookingCache } from "../user/bookingHelper.js";
+import logger from "../../utils/logger.js";
+
 
 // CACHE
-export const getCachedData = async (cacheKey) => {
-    try {
-        const cached = await get(cacheKey);
-        return cached ? JSON.parse(cached) : null;
-    } catch (err) {
-        console.error("Driver ride cache read error:", err);
-        return null;
-    }
-};
-
-export const setCacheData = async (cacheKey, data, ttl) => {
-    try {
-        await set(cacheKey, JSON.stringify(data), "EX", ttl);
-    } catch (err) {
-        console.error("Driver ride cache write error:", err);
-    }
-};
+export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
 
 export const invalidateDriverRideCache = async (driverId, bookingId = null) => {
     try {
@@ -54,7 +40,7 @@ export const invalidateDriverRideCache = async (driverId, bookingId = null) => {
         }
         await Promise.all(promises);
     } catch (err) {
-        console.error("Driver ride cache invalidation error:", err);
+        logger.error("Driver ride cache invalidation error:", err);
     }
 };
 
@@ -142,8 +128,9 @@ export const getDriverRideHistory = async (driverId, skip, limit, sortDir) => {
 // ACCEPT
 export const processRideAccept = async (bookingId, driverId) => {
     const now = new Date();
+    const objDriverId = new mongoose.Types.ObjectId(driverId);
 
-    const booking = await Booking.findOneAndUpdate(
+    let booking = await Booking.findOneAndUpdate(
         {
             _id: bookingId,
             status: BOOKING_STATUS.STORE_ASSIGNED,
@@ -154,7 +141,7 @@ export const processRideAccept = async (bookingId, driverId) => {
                 status: BOOKING_STATUS.DRIVER_ASSIGNED,
                 lastStatusUpdatedAt: now,
                 "pickup.assignment": {
-                    driverId: new mongoose.Types.ObjectId(driverId),
+                    driverId: objDriverId,
                     assignedAt: now,
                     acceptedAt: now,
                 },
@@ -163,7 +150,7 @@ export const processRideAccept = async (bookingId, driverId) => {
                 timeline: {
                     status: BOOKING_STATUS.DRIVER_ASSIGNED,
                     note: "Driver accepted the ride",
-                    updatedBy: new mongoose.Types.ObjectId(driverId),
+                    updatedBy: objDriverId,
                     updatedByModel: "Driver",
                     createdAt: now,
                 },
@@ -171,6 +158,37 @@ export const processRideAccept = async (bookingId, driverId) => {
         },
         { returnDocument: "after" }
     );
+
+    if (!booking) {
+        booking = await Booking.findOneAndUpdate(
+            {
+                _id: bookingId,
+                status: BOOKING_STATUS.RETURN_REQUESTED,
+                "delivery.assignment.driverId": { $exists: false },
+            },
+            {
+                $set: {
+                    status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                    lastStatusUpdatedAt: now,
+                    "delivery.assignment": {
+                        driverId: objDriverId,
+                        assignedAt: now,
+                        acceptedAt: now,
+                    },
+                },
+                $push: {
+                    timeline: {
+                        status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                        note: "Return driver accepted the ride",
+                        updatedBy: objDriverId,
+                        updatedByModel: "Driver",
+                        createdAt: now,
+                    },
+                },
+            },
+            { returnDocument: "after" }
+        );
+    }
 
     if (!booking) return { success: false, booking: null };
 
@@ -435,20 +453,52 @@ async function flagCriticalCancellation(bookingId, driverId, status, reason) {
     });
     await redis.expire(`ops:critical_cancellation:${bookingId}`, 60 * 60 * 24);
 
-    console.error(
+    logger.error(
         `[CRITICAL] Driver ${driverId} cancelled booking ${bookingId} with luggage in custody. Status: ${status}`
     );
 }
 
-// PAGINATION
-export const buildPagination = (page, limit, total) => {
-    const totalPages = Math.ceil(total / limit);
-    return {
-        currentPage: page,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-    };
+// COMPLETE DELIVERY driver reached the user and handed back the luggage
+export const processCompleteDelivery = async (bookingId, driverId) => {
+    const now = new Date();
+
+    const booking = await Booking.findOneAndUpdate(
+        {
+            _id: bookingId,
+            status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+            "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+        },
+        {
+            $set: {
+                status: BOOKING_STATUS.DELIVERED,
+                lastStatusUpdatedAt: now,
+                "delivery.assignment.completedAt": now,
+                "payment.status": "paid", // usually completed at this point
+            },
+            $push: {
+                timeline: {
+                    status: BOOKING_STATUS.DELIVERED,
+                    note: "Luggage delivered to user",
+                    updatedBy: new mongoose.Types.ObjectId(driverId),
+                    updatedByModel: "Driver",
+                    createdAt: now,
+                },
+            },
+        },
+        { returnDocument: "after" }
+    );
+
+    if (booking) {
+        await Promise.all([
+            markDriverAvailable(driverId),
+            Driver.findByIdAndUpdate(driverId, {
+                $set: { is_on_trip: false, current_booking_id: null },
+            }),
+        ]);
+    }
+
+    return booking;
 };
+
+// PAGINATION
+export { buildPagination } from "../../utils/helper.js";

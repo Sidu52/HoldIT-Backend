@@ -25,6 +25,7 @@ import {
     buildPagination,
     queueSupportJob,
 } from "../../helpers/user/supportHelper.js";
+import logger from "../../utils/logger.js";
 
 
 export const createTicket = async (req, res) => {
@@ -102,7 +103,7 @@ export const createTicket = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Create Ticket Error:", err);
+        logger.error("Create Ticket Error:", err);
         return sendError(res, SUPPORT_MESSAGES.CREATE_FAILED);
     }
 };
@@ -159,7 +160,7 @@ export const getUserTickets = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get User Tickets Error:", err);
+        logger.error("Get User Tickets Error:", err);
         return sendError(res, SUPPORT_MESSAGES.FETCH_FAILED);
     }
 };
@@ -198,7 +199,7 @@ export const getTicketById = async (req, res) => {
             data: ticket,
         });
     } catch (err) {
-        console.error("Get Ticket By ID Error:", err);
+        logger.error("Get Ticket By ID Error:", err);
         return sendError(res, SUPPORT_MESSAGES.DETAIL_FAILED);
     }
 };
@@ -221,7 +222,7 @@ const markAdminMessagesAsRead = (ticketId, userId) => {
                 },
             ],
         }
-    ).catch((err) => console.error("Mark messages read error:", err));
+    ).catch((err) => logger.error("Mark messages read error:", err));
 };
 
 export const replyToTicket = async (req, res) => {
@@ -308,7 +309,7 @@ export const replyToTicket = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Reply To Ticket Error:", err);
+        logger.error("Reply To Ticket Error:", err);
         return sendError(res, SUPPORT_MESSAGES.REPLY_FAILED);
     }
 };

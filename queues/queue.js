@@ -66,5 +66,5 @@ export const closeAllQueues = async () => {
     ];
 
     await Promise.allSettled(allQueues.map((q) => q.close()));
-    console.log("All queues closed");
+    logger.info("All queues closed");
 };

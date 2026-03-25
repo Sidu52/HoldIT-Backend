@@ -2,6 +2,8 @@ import ServiceableArea from "../../models/ServiceableArea.js";
 import User from "../../models/User.js";
 import { del } from "../../services/redisService.js";
 import { CACHE_KEYS } from "../../constants/user/address.js";
+import logger from "../../utils/logger.js";
+
 
 // Check Serviceability
 export const checkServiceability = async (lat, lng) => {
@@ -39,7 +41,7 @@ export const checkServiceability = async (lat, lng) => {
 
         return { isServiceable: false, serviceAreaId: null };
     } catch (err) {
-        console.error("Serviceability check error:", err);
+        logger.error("Serviceability check error:", err);
         return { isServiceable: false, serviceAreaId: null };
     }
 };
@@ -49,7 +51,7 @@ export const invalidateAddressCache = async (userId) => {
     try {
         await del(CACHE_KEYS.USER_ADDRESSES(userId));
     } catch (err) {
-        console.error("Cache invalidation error:", err);
+        logger.error("Cache invalidation error:", err);
     }
 };
 

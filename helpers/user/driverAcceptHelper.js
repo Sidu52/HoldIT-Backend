@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import Booking from "../../models/Booking.js";
 import { BOOKING_STATUS } from "../../utils/constants.js";
 import { createTimelineEntry } from "./bookingHelper.js";
+import logger from "../../utils/logger.js";
+
 
 export const handleDriverAccept = async (bookingId, driverId) => {
     const session = await mongoose.startSession();
@@ -85,7 +87,7 @@ export const handleDriverAccept = async (bookingId, driverId) => {
         } catch (_) {}
         session.endSession();
 
-        console.error("Driver accept error:", err);
+        logger.error("Driver accept error:", err);
         return { success: false, message: "Failed to accept booking.", booking: null };
     }
 };

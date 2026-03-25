@@ -12,7 +12,7 @@ import {
     REDIS_KEYS,
     REDIS_TTL,
 } from "../../constants/user/booking.js";
-
+import logger from "../../utils/logger.js";
 // CANDIDATE PIPELINE
 export const storeCandidates = async (bookingId, driverIds) => {
     if (!driverIds.length) return 0;
@@ -157,21 +157,21 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
     const seenIds = new Set();
 
     if (Math.abs(lat) > 90) {
-        console.error(`[GeoSearch] lat/lng swapped — autocorrecting. lat=${lat}, lng=${lng}`);
+        logger.error(`[GeoSearch] lat/lng swapped — autocorrecting. lat=${lat}, lng=${lng}`);
         [lng, lat] = [lat, lng];
     }
 
     lng = parseFloat(lng);
     lat = parseFloat(lat);
 
-    // console.log(`\n[GeoSearch] ═══════════════════════════════`);
-    // console.log(`[GeoSearch] bookingId : ${bookingId}`);
-    // console.log(`[GeoSearch] lng=${lng}, lat=${lat}`);
-    // console.log(`[GeoSearch] geoKeys   : ${JSON.stringify(geoKeys)}`);
-    // console.log(`[GeoSearch] radii     : ${JSON.stringify(DRIVER_ASSIGNMENT.SEARCH_RADII_KM)}`);
+    // logger.info(`\n[GeoSearch] ═══════════════════════════════`);
+    // logger.info(`[GeoSearch] bookingId : ${bookingId}`);
+    // logger.info(`[GeoSearch] lng=${lng}, lat=${lat}`);
+    // logger.info(`[GeoSearch] geoKeys   : ${JSON.stringify(geoKeys)}`);
+    // logger.info(`[GeoSearch] radii     : ${JSON.stringify(DRIVER_ASSIGNMENT.SEARCH_RADII_KM)}`);
 
     for (const radius of DRIVER_ASSIGNMENT.SEARCH_RADII_KM) {
-        // console.log(`\n[GeoSearch] ── Trying radius ${radius}km ──`);
+        // logger.info(`\n[GeoSearch] ── Trying radius ${radius}km ──`);
         for (const geoKey of geoKeys) {
             try {
                 const keyExists = await redis.exists(geoKey);
@@ -207,20 +207,20 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
                     });
                 }
             } catch (err) {
-                console.error(`[GeoSearch] ERROR key="${geoKey}" radius=${radius}km:`, err.message);
+                logger.error(`[GeoSearch] ERROR key="${geoKey}" radius=${radius}km:`, err.message);
             }
         }
 
         if (allDrivers.length > 0) {
-            // console.log(`[GeoSearch] Found ${allDrivers.length} driver(s) within ${radius}km`);
+            // logger.info(`[GeoSearch] Found ${allDrivers.length} driver(s) within ${radius}km`);
             break;
         }
 
-        // console.log(`[GeoSearch] 0 drivers found within ${radius}km — expanding`);
+        // logger.info(`[GeoSearch] 0 drivers found within ${radius}km — expanding`);
     }
 
-    // console.log(`[GeoSearch] Final result: ${allDrivers.length} driver(s)`);
-    // console.log(`[GeoSearch] ═══════════════════════════════\n`);
+    // logger.info(`[GeoSearch] Final result: ${allDrivers.length} driver(s)`);
+    // logger.info(`[GeoSearch] ═══════════════════════════════\n`);
 
     allDrivers.sort((a, b) => a.distanceKm - b.distanceKm);
     return allDrivers;
@@ -245,7 +245,7 @@ const isDriverEligibleInRedis = async (driverId, bookingId) => {
 
         return true;
     } catch (err) {
-        console.warn(`[EligibilityCheck] Redis check failed for ${driverId}:`, err.message);
+        logger.warn(`[EligibilityCheck] Redis check failed for ${driverId}:`, err.message);
         return true;
     }
 };
@@ -283,7 +283,7 @@ export const cleanStaleDrivers = async (geoKeys, staleDriverIds) => {
     try {
         await pipeline.exec();
     } catch (err) {
-        console.warn("[Cleanup] Stale driver cleanup failed:", err.message);
+        logger.warn("[Cleanup] Stale driver cleanup failed:", err.message);
     }
 };
 
@@ -352,56 +352,7 @@ export const scheduleDriverSearch = async (bookingId, type = "PICKUP") => {
     );
 };
 
-export const autoCancelBooking = async (bookingId, reason) => {
-    try {
-        const now = new Date();
-
-        const booking = await Booking.findOneAndUpdate(
-            {
-                _id: bookingId,
-                status: { $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DELIVERED] },
-            },
-            {
-                $set: {
-                    status: BOOKING_STATUS.CANCELLED,
-                    isActive: false,
-                    cancelledAt: now,
-                    cancelledBy: "SYSTEM",
-                    cancelReason: reason,
-                    lastStatusUpdatedAt: now,
-                },
-                $push: {
-                    timeline: {
-                        status: BOOKING_STATUS.CANCELLED,
-                        note: `Auto-cancelled: ${reason}`,
-                        createdAt: now,
-                    },
-                },
-            },
-            { new: true, select: "_id storeId status" }
-        );
-
-        if (!booking) {
-            console.log(`[AutoCancel] Booking ${bookingId} already in terminal state`);
-            return { success: false };
-        }
-
-        if (booking.storeId) {
-            await Store.findOneAndUpdate(
-                { _id: booking.storeId, current_booking_count: { $gt: 0 } },
-                { $inc: { current_booking_count: -1 } }
-            );
-        }
-
-        await cleanupBookingRedisKeys(bookingId);
-
-        console.log(`[AutoCancel] Booking ${bookingId} cancelled — reason: ${reason}`);
-        return { success: true, booking };
-    } catch (err) {
-        console.error(`[AutoCancel] Failed for ${bookingId}:`, err.message);
-        return { success: false };
-    }
-};
+// --- Removed redundant autoCancelBooking (moved to bookingHelper.js) ---
 
 // JOB SCHEDULERS
 export const scheduleOfferNextDriver = async (bookingId, type, attemptNumber, delay = 0) => {

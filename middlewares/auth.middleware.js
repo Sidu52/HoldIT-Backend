@@ -54,24 +54,4 @@ const extractToken = (req) => {
 
   return null;
 };
-
-export const roleMiddleware = (...allowedRoles) => {
-  return (req, res, next) => {
-    console.log("req",req.user)
-    if (!req.user || !req.user.role) {
-      return sendResponse({
-        res,
-        message: "Unauthorized",
-        statusCode: STATUS_CODES.UNAUTHORIZED
-      });
-    }
-    if (!allowedRoles.includes(req.user.role)) {
-      return sendResponse({
-        res,
-        message: "Forbidden: Access denied",
-        statusCode: STATUS_CODES.FORBIDDEN
-      });
-    }
-    next();
-  };
-};
+

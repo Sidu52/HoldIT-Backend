@@ -1,5 +1,7 @@
 import { sendResponse } from "../utils/apiResponse.js";
 import { STATUS_CODES } from "../utils/constants.js";
+import logger from "../utils/logger.js";
+
 
 
 export const validate = (schema, source = null) => {
@@ -13,7 +15,7 @@ export const validate = (schema, source = null) => {
         if (typeof schema.validate === "function") {
             return validateSingle(req, res, next, schema, "body");
         }
-        console.error("[Validate] Invalid schema format passed to validate()");
+        logger.error("[Validate] Invalid schema format passed to validate()");
         return next();
     };
 };

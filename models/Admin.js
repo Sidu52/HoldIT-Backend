@@ -79,6 +79,20 @@ const adminSchema = new mongoose.Schema(
 adminSchema.index({ role: 1, status: 1 });
 adminSchema.index({ createdAt: -1 });
 
+// Pre-save hook to hash password
+adminSchema.pre("save", async function (next) {
+    if (!this.isModified("password_hash")) {
+        return next();
+    }
+    try {
+        const salt = await bcrypt.genSalt(10);
+        this.password_hash = await bcrypt.hash(this.password_hash, salt);
+        return next();
+    } catch (err) {
+        return next(err);
+    }
+});
+
 // Method to compare password
 adminSchema.methods.comparePassword = async function (candidatePassword) {
     if (!this.password_hash) {

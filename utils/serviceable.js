@@ -1,6 +1,6 @@
-// utils/serviceable.js
-
 import ServiceableArea from "../models/ServiceableArea.js";
+import logger from "./logger.js";
+
 
 // Safe upper bound for $geoNear pre-filter.
 // Must be larger than any possible service_radius_km in the DB.
@@ -17,14 +17,14 @@ const GEO_NEAR_MAX_DISTANCE_M = 500 * 1000;
  *   { isServiceable: false, serviceAreaId: null, error: "INVALID_COORDS" | "DB_ERROR" }
  */
 export const checkServiceability = async (lat, lng) => {
-    // ── Validate coordinates before touching the DB ────────────────────
+    // Validate coordinates before touching the DB
     if (
         typeof lat !== "number" || typeof lng !== "number" ||
         isNaN(lat) || isNaN(lng) ||
-        lat < -90  || lat > 90  ||
+        lat < -90 || lat > 90 ||
         lng < -180 || lng > 180
     ) {
-        console.warn(`[Serviceability] Invalid coordinates: lat=${lat}, lng=${lng}`);
+        logger.warn(`[Serviceability] Invalid coordinates: lat=${lat}, lng=${lng}`);
         return { isServiceable: false, serviceAreaId: null, error: "INVALID_COORDS" };
     }
 
@@ -33,15 +33,15 @@ export const checkServiceability = async (lat, lng) => {
             {
                 $geoNear: {
                     near: {
-                        type:        "Point",
+                        type: "Point",
                         coordinates: [lng, lat],    // GeoJSON: [lng, lat]
                     },
                     distanceField: "distance",       // metres from the area's center
-                    spherical:     true,
-                    query:         { is_active: true },
+                    spherical: true,
+                    query: { is_active: true },
                     // Pre-filter: drop anything further than 500 km
                     // Real radius check happens in $match below
-                    maxDistance:   GEO_NEAR_MAX_DISTANCE_M,
+                    maxDistance: GEO_NEAR_MAX_DISTANCE_M,
                 },
             },
             {
@@ -60,26 +60,26 @@ export const checkServiceability = async (lat, lng) => {
             { $limit: 1 },
             {
                 $project: {
-                    _id:               1,
-                    name:              1,
+                    _id: 1,
+                    name: 1,
                     service_radius_km: 1,
-                    distance:          1,
+                    distance: 1,
                 },
             },
         ]);
 
         if (results.length > 0) {
             return {
-                isServiceable:   true,
-                serviceAreaId:   results[0]._id,
+                isServiceable: true,
+                serviceAreaId: results[0]._id,
                 serviceAreaName: results[0].name,
-                distanceM:       Math.round(results[0].distance),
+                distanceM: Math.round(results[0].distance),
             };
         }
 
         return { isServiceable: false, serviceAreaId: null };
     } catch (err) {
-        console.error("[Serviceability] DB error:", err.message);
+        logger.error("[Serviceability] DB error:", err.message);
         // Return a distinct error type so the caller can differentiate
         // a real DB failure from a simple "not in service area" response
         return { isServiceable: false, serviceAreaId: null, error: "DB_ERROR" };

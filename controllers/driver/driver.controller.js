@@ -1,6 +1,8 @@
 import redis from "../../services/redisService.js";
 import Driver from "../../models/Driver.js";
 import { addDriverToRedis, removeDriverFromRedis } from "../../services/driverGeoService.js";
+import logger from "../../utils/logger.js";
+
 
 
 // Get Driver Profile
@@ -20,7 +22,7 @@ export const getDriverProfile = async (req, res) => {
       data: { driver },
     });
   } catch (err) {
-    console.error("Get Driver Profile Error:", err);
+    logger.error("Get Driver Profile Error:", err);
     return res.status(500).json({ message: "Failed to fetch profile" });
   }
 };
@@ -78,7 +80,7 @@ export const updateDriverInfo = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Update Driver Details Error:", err);
+    logger.error("Update Driver Details Error:", err);
     return res.status(500).json({ message: "Failed to update profile" });
   }
 };
@@ -104,7 +106,7 @@ export const updateDriverStatus = async (req, res) => {
     await driver.save();
     return res.json({ message: "Driver status updated", is_online });
   } catch (error) {
-    console.error("updateDriverStatus error:", error);
+    logger.error("updateDriverStatus error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -147,7 +149,7 @@ export const updateDriverLocation = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("updateDriverLocation error:", error);
+    logger.error("updateDriverLocation error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };

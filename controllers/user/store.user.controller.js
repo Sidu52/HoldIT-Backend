@@ -17,6 +17,7 @@ import {
     findStoreById,
     buildPagination,
 } from "../../helpers/user/storeHelper.js";
+import logger from "../../utils/logger.js";
 
 
 // Search Stores
@@ -73,7 +74,7 @@ export const searchStores = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Search Stores Error:", err);
+        logger.error("Search Stores Error:", err);
         return sendError(res, STORE_MESSAGES.SEARCH_FAILED);
     }
 };
@@ -130,7 +131,7 @@ export const getNearbyStores = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("Get Nearby Stores Error:", err);
+        logger.error("Get Nearby Stores Error:", err);
         return sendError(res, STORE_MESSAGES.NEARBY_FAILED);
     }
 };
@@ -168,7 +169,7 @@ export const getStoreById = async (req, res) => {
             data: store,
         });
     } catch (err) {
-        console.error("Get Store By ID Error:", err);
+        logger.error("Get Store By ID Error:", err);
         return sendError(res, STORE_MESSAGES.DETAIL_FAILED);
     }
 };
@@ -207,7 +208,7 @@ export const getStoreAvailability = async (req, res) => {
             data: availability,
         });
     } catch (err) {
-        console.error("Get Store Availability Error:", err);
+        logger.error("Get Store Availability Error:", err);
         return sendError(res, STORE_MESSAGES.AVAILABILITY_FAILED);
     }
 };

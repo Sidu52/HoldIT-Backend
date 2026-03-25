@@ -1,3 +1,4 @@
+import logger from "./logger.js";
 export const getDateRange = (range) => {
   const now = new Date();
   const end = new Date(now);
@@ -115,8 +116,20 @@ export const safeAbortSession = async (session) => {
             await session.abortTransaction();
         }
     } catch (err) {
-        console.warn("[safeAbortSession] Failed to abort transaction:", err.message);
+        logger.warn("[safeAbortSession] Failed to abort transaction:", err.message);
     } finally {
         session.endSession();
     }
 };
+
+export const buildPagination = (page, limit, total) => {
+    const totalPages = Math.ceil(total / limit);
+    return {
+        currentPage: page,
+        totalPages,
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+    };
+};

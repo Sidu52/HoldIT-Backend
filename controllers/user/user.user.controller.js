@@ -20,6 +20,7 @@ import {
     buildAddressObject,
     findAddressById,
 } from "../../helpers/user/addressHelper.js";
+import logger from "../../utils/logger.js";
 
 // CONSTANTS
 const PROFILE_CACHE_TTL = 300; // 5 minutes
@@ -72,7 +73,7 @@ export const getProfile = async (req, res) => {
             data: user,
         });
     } catch (err) {
-        console.error("Get Profile Error:", err);
+        logger.error("Get Profile Error:", err);
         return sendError(res, "Failed to fetch profile");
     }
 };
@@ -149,7 +150,7 @@ export const updateProfile = async (req, res) => {
             );
         }
 
-        console.error("Update Profile Error:", err);
+        logger.error("Update Profile Error:", err);
         return sendError(res, "Failed to update profile");
     }
 };
@@ -207,7 +208,7 @@ export const getAddresses = async (req, res) => {
             data: responseData
         });
     } catch (error) {
-        console.error("Get addresses error:", error);
+        logger.error("Get addresses error:", error);
         return sendError(
             res,
             ADDRESS_MESSAGES.FETCH_FAILED,
@@ -264,7 +265,7 @@ export const getAddressById = async (req, res) => {
             data: address
         });
     } catch (error) {
-        console.error("Get address by id error:", error);
+        logger.error("Get address by id error:", error);
         return sendError(res, error);
     }
 };
@@ -328,7 +329,7 @@ export const addAddress = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("Add address error:", error);
+        logger.error("Add address error:", error);
         return sendError(
             res,
             ADDRESS_MESSAGES.ADD_FAILED,
@@ -431,7 +432,7 @@ export const updateAddress = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Update address error:", error);
+        logger.error("Update address error:", error);
 
         return sendError(
             res,
@@ -505,7 +506,7 @@ export const deleteAddress = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Delete address error:", error);
+        logger.error("Delete address error:", error);
 
         return sendError(
             res,
@@ -627,7 +628,7 @@ export const getNearestStore = async (req, res) => {
             "EX",
             600
         ).catch((err) =>
-            console.warn("[getNearestStore] Cache write failed:", err.message)
+            logger.warn("[getNearestStore] Cache write failed:", err.message)
         );
 
         return sendResponse({
@@ -636,7 +637,7 @@ export const getNearestStore = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        console.error("[getNearestStore] Error:", err.message);
+        logger.error("[getNearestStore] Error:", err.message);
         return sendError(res, "Failed to find nearest stores");
     }
 };
@@ -645,7 +646,7 @@ export const getNearestStore = async (req, res) => {
 export const getStoreById = async (req, res) => {
     try {
         const { store_id } = req.params;
-        console.log("store Id", store_id)
+        logger.info("store Id", store_id)
 
         const cacheKey = `store:public:${store_id}`;
 
@@ -689,7 +690,7 @@ export const getStoreById = async (req, res) => {
             data: store,
         });
     } catch (err) {
-        console.error("Get Store By ID Error:", err);
+        logger.error("Get Store By ID Error:", err);
         return sendError(res, "Failed to fetch store");
     }
 };
@@ -755,7 +756,7 @@ export const updateLocation = async (req, res) => {
             data: address
         });
     } catch (error) {
-        console.error("Update location error:", error);
+        logger.error("Update location error:", error);
         return sendError(
             res,
             "Failed to update location",

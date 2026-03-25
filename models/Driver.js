@@ -1,6 +1,5 @@
-// models/Driver.js
-
 import mongoose from "mongoose";
+import logger from "../utils/logger.js";
 import {
     ACCOUNT_STATUS,
     VEHICLE_TYPES,
@@ -204,7 +203,7 @@ const syncDriverToRedis = async (doc) => {
             await removeDriverFromRedis(doc._id, doc.service_area_id);
         }
     } catch (err) {
-        console.error(`[Driver Hook] Redis sync failed for ${doc._id}:`, err.message);
+        logger.error(`[Driver Hook] Redis sync failed for ${doc._id}:`, err.message);
     }
 };
 

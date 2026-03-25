@@ -23,8 +23,10 @@ import {
     checkOTPRateLimit,
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
+import logger from "../../utils/logger.js";
+import { verifyStore } from "../../helpers/store/store.helper.js";
 
-// ── LOGIN / REGISTER ──────────────────────────────────────────────
+// LOGIN / REGISTER
 export const authStore = async (req, res) => {
     try {
         const { phone } = req.body;
@@ -34,15 +36,12 @@ export const authStore = async (req, res) => {
             .lean();
 
         if (store) {
-            if (store.status === ACCOUNT_STATUS.BLOCKED) {
-                return sendError(
-                    res,
-                    "This store account has been suspended. Please contact support.",
-                    STATUS_CODES.FORBIDDEN
-                );
+            const storeCheck = verifyStore(store);
+            if (!storeCheck.valid) {
+                return sendError(res, storeCheck.message, storeCheck.code);
             }
         } else {
-            store = await Store.create({
+            await Store.create({
                 phone,
                 store_name: "Pending Setup",
                 location: { type: "Point", coordinates: [0, 0] },
@@ -54,19 +53,22 @@ export const authStore = async (req, res) => {
 
         const isRateLimited = await checkOTPRateLimit(phone);
         if (isRateLimited) {
-            return sendError(
-                res,
-                "Too many OTP requests. Please try again later.",
-                STATUS_CODES.TOO_MANY_REQUESTS
-            );
+            return sendError(res, "Too many OTP requests. Please try again later.", STATUS_CODES.TOO_MANY_REQUESTS);
+        }
+
+        const cooldownKey = `otp_cooldown:${phone}`;
+        const cooldownExists = await get(cooldownKey);
+        if (cooldownExists) {
+            return sendError(res, "Please wait before requesting another OTP.", STATUS_CODES.TOO_MANY_REQUESTS);
         }
 
         const otp = await generateAndStoreOTP(phone);
+        await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
-        await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, `delete-store-${phone}`);
+        await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_STORE, `delete-store-${phone}`);
         await addJobToQueue(
-            JOB_QUEUES.DELETE_UNVERIFIED_DRIVER,
-            { name: JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, data: { phone, entity: "store" } },
+            JOB_QUEUES.DELETE_UNVERIFIED_STORE,
+            { name: JOB_QUEUES.DELETE_UNVERIFIED_STORE, data: { phone, entity: "store" } },
             {
                 delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
                 jobId: `delete-store-${phone}`,
@@ -76,21 +78,17 @@ export const authStore = async (req, res) => {
         );
 
         if (process.env.NODE_ENV === "development") {
-            console.log(`[DEV] Store OTP for ${phone}: ${otp}`);
+            logger.info(`[DEV] Store OTP for ${phone}: ${otp}`);
         }
 
-        return sendResponse({
-            res,
-            message: "OTP sent successfully",
-            data: { otp },
-        });
+        return sendResponse({ res, message: "OTP sent successfully", data: { otp } });
     } catch (err) {
-        console.error("Store Auth Error:", err);
+        logger.error("Store Auth Error:", err);
         return sendError(res, "Something went wrong. Please try again.");
     }
 };
 
-// ── RESEND OTP ────────────────────────────────────────────────────
+// RESEND OTP
 export const sendOTP = async (req, res) => {
     try {
         const { phone } = req.body;
@@ -99,60 +97,36 @@ export const sendOTP = async (req, res) => {
             .select("status is_verified")
             .lean();
 
-        if (!store) {
-            return sendError(
-                res,
-                "Store not found. Please register first.",
-                STATUS_CODES.NOT_FOUND
-            );
-        }
-
-        if (store.status === ACCOUNT_STATUS.BLOCKED) {
-            return sendError(
-                res,
-                "This store account has been suspended.",
-                STATUS_CODES.FORBIDDEN
-            );
+        const storeCheck = verifyStore(store);
+        if (!storeCheck.valid) {
+            return sendError(res, storeCheck.message, storeCheck.code);
         }
 
         const isRateLimited = await checkOTPRateLimit(phone);
         if (isRateLimited) {
-            return sendError(
-                res,
-                "Too many OTP requests. Please try again later.",
-                STATUS_CODES.TOO_MANY_REQUESTS
-            );
+            return sendError(res, "Too many OTP requests. Please try again later.", STATUS_CODES.TOO_MANY_REQUESTS);
         }
 
         const cooldownKey = `otp_cooldown:${phone}`;
         const cooldownExists = await get(cooldownKey);
         if (cooldownExists) {
-            return sendError(
-                res,
-                "Please wait before requesting another OTP.",
-                STATUS_CODES.TOO_MANY_REQUESTS
-            );
+            return sendError(res, "Please wait before requesting another OTP.", STATUS_CODES.TOO_MANY_REQUESTS);
         }
 
         const otp = await generateAndStoreOTP(phone);
         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
         if (process.env.NODE_ENV === "development") {
-            console.log(`[DEV] Store OTP for ${phone}: ${otp}`);
+            logger.info(`[DEV] Store OTP for ${phone}: ${otp}`);
         }
 
-        return sendResponse({
-            res,
-            message: "OTP sent successfully",
-            data: { otp },
-        });
+        return sendResponse({ res, message: "OTP sent successfully", data: { otp } });
     } catch (err) {
-        console.error("Store Resend OTP Error:", err);
+        logger.error("Store Resend OTP Error:", err);
         return sendError(res, "Failed to send OTP");
     }
 };
-
-// ── VERIFY OTP ────────────────────────────────────────────────────
+// VERIFY OTP
 export const verifyOTP = async (req, res) => {
     try {
         const { phone, otp } = req.body;
@@ -185,7 +159,6 @@ export const verifyOTP = async (req, res) => {
             );
         }
 
-        // ✅ Fixed: was "isVeris_verifiedified" — broken typo
         const store = await Store.findOne({ phone: sanitizedPhone })
             .select("_id status is_verified")
             .lean();
@@ -194,8 +167,9 @@ export const verifyOTP = async (req, res) => {
             return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
         }
 
-        if (store.status === ACCOUNT_STATUS.BLOCKED) {
-            return sendError(res, "This store account has been suspended.", STATUS_CODES.FORBIDDEN);
+        const storeCheck = verifyStore(store);
+        if (!storeCheck.valid) {
+            return sendError(res, storeCheck.message, storeCheck.code);
         }
 
         const savedOTP = await get(`otp:${sanitizedPhone}`);
@@ -246,12 +220,12 @@ export const verifyOTP = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Store OTP Verification Error:", err);
+        logger.error("Store OTP Verification Error:", err);
         return sendError(res, "OTP verification failed");
     }
 };
 
-// ── REFRESH TOKEN ─────────────────────────────────────────────────
+// REFRESH TOKEN
 export const refreshToken = async (req, res) => {
     try {
         const { token } = extractRefreshToken(req);
@@ -310,7 +284,7 @@ export const refreshToken = async (req, res) => {
 
         Store.findByIdAndUpdate(decoded.auth_id, {
             last_active_at: new Date(),
-        }).catch((err) => console.error("Failed to update store last_active_at:", err));
+        }).catch((err) => logger.error("Failed to update store last_active_at:", err));
 
         return sendResponse({
             res,
@@ -321,13 +295,13 @@ export const refreshToken = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Store Refresh Token Error:", err);
+        logger.error("Store Refresh Token Error:", err);
         clearAuthCookies(res);
         return sendError(res, "Session expired. Please log in again.", STATUS_CODES.UNAUTHORIZED);
     }
 };
 
-// ── LOGOUT ────────────────────────────────────────────────────────
+// LOGOUT
 export const logout = async (req, res) => {
     try {
         const token = req.cookies?.refreshToken;
@@ -336,14 +310,14 @@ export const logout = async (req, res) => {
             const decoded = jwt.decode(token);
             if (decoded?.auth_id && decoded?.token_id) {
                 await del(`refresh:${decoded.auth_id}:${decoded.token_id}`);
+                await del(`access:${decoded.auth_id}:${decoded.token_id}`);
             }
         }
-
         clearAuthCookies(res);
         return sendResponse({ res, message: "Logged out successfully" });
     } catch (err) {
         clearAuthCookies(res);
-        console.error("Store Logout Error:", err);
+        logger.error("Store Logout Error:", err);
         return sendResponse({ res, message: "Logged out successfully" });
     }
 };

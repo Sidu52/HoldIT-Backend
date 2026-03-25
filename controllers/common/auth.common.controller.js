@@ -8,6 +8,8 @@ import { generateAccessToken, generateRefreshToken } from "../../utils/token.js"
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import Admin from "../../models/Admin.js";
+import logger from "../../utils/logger.js";
+
 
 // Refresh Token
 export const refresh = async (req, res, role) => {
@@ -84,7 +86,7 @@ export const refresh = async (req, res, role) => {
         });
         sendResponse({ res, message: "Token refreshed" });
     } catch (err) {
-        console.error("Refresh Error:", err);
+        logger.error("Refresh Error:", err);
         sendError(res, "Session expired", STATUS_CODES.UNAUTHORIZED);
     }
 };

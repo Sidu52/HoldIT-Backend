@@ -22,6 +22,8 @@ import {
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
+import logger from "../../utils/logger.js";
+
 
 
 // LOGIN / REGISTER
@@ -80,7 +82,7 @@ export const authDriver = async (req, res) => {
             data: { otp },
         });
     } catch (err) {
-        console.error("Auth User Error:", err);
+        logger.error("Auth User Error:", err);
         return sendError(res, "Something went wrong. Please try again.");
     }
 };
@@ -136,7 +138,7 @@ export const sendOTP = async (req, res) => {
         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
         if (process.env.NODE_ENV === "development") {
-            console.log(`[DEV] OTP for ${phone}: ${otp}`);
+            logger.info(`[DEV] OTP for ${phone}: ${otp}`);
         }
 
         return sendResponse({
@@ -145,7 +147,7 @@ export const sendOTP = async (req, res) => {
                 data: { otp },
         });
     } catch (err) {
-        console.error("Resend OTP Error:", err);
+        logger.error("Resend OTP Error:", err);
         return sendError(res, "Failed to send OTP");
     }
 };
@@ -283,9 +285,9 @@ export const verifyOTP = async (req, res) => {
         });
     } catch (err) {
         if (process.env.NODE_ENV === "development") {
-            console.error("OTP Verification Error:", err);
+            logger.error("OTP Verification Error:", err);
         } else {
-            console.error("OTP Verification Error:", err.message);
+            logger.error("OTP Verification Error:", err.message);
         }
         return sendError(res, "OTP verification failed");
     }
@@ -377,7 +379,7 @@ export const refreshToken = async (req, res) => {
         Driver.findByIdAndUpdate(decoded.auth_id, {
             last_active_at: new Date(),
         }).catch((err) =>
-            console.error("Failed to update last_active_at:", err)
+            logger.error("Failed to update last_active_at:", err)
         );
 
         return sendResponse({
@@ -389,7 +391,7 @@ export const refreshToken = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Refresh Token Error:", err);
+        logger.error("Refresh Token Error:", err);
         clearAuthCookies(res);
         return sendError(
             res,
@@ -490,7 +492,7 @@ export const updateDriverDetails = async (req, res) => {
         });             
         
     } catch (err) {
-        console.error("Update Driver Details Error:", err);
+        logger.error("Update Driver Details Error:", err);
         return sendError(res, "Failed to update profile");
     }
 };
@@ -517,7 +519,7 @@ export const logout = async (req, res) => {
         });
     } catch (err) {
         clearAuthCookies(res);
-        console.error("Logout Error:", err);
+        logger.error("Logout Error:", err);
         return sendResponse({
             res,
             message: "Logged out successfully",

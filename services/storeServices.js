@@ -1,10 +1,12 @@
 import redis from "./redisService.js";
+import logger from "../utils/logger.js";
+
 
 // ─── ADD ──────────────────────────────────────────────────────────────────────
 
 export const addStoreToRedis = async (store) => {
     if (!store?._id) {
-        console.warn("[StoreGeo] addStoreToRedis: missing store or _id");
+        logger.warn("[StoreGeo] addStoreToRedis: missing store or _id");
         return false;
     }
 
@@ -14,7 +16,7 @@ export const addStoreToRedis = async (store) => {
         !Array.isArray(store.location.coordinates) ||
         store.location.coordinates.length < 2
     ) {
-        console.warn(`[StoreGeo] Store ${store._id} has no valid coordinates`);
+        logger.warn(`[StoreGeo] Store ${store._id} has no valid coordinates`);
         return false;
     }
 
@@ -25,7 +27,7 @@ export const addStoreToRedis = async (store) => {
         lng < -180 || lng > 180 ||
         lat < -90  || lat > 90
     ) {
-        console.warn(
+        logger.warn(
             `[StoreGeo] Store ${store._id} has invalid coordinates [${lng}, ${lat}]`
         );
         return false;
@@ -60,10 +62,10 @@ export const addStoreToRedis = async (store) => {
 
         await pipeline.exec();
 
-        console.log(`[StoreGeo] Store ${storeId} added at [${lng}, ${lat}]`);
+        logger.info(`[StoreGeo] Store ${storeId} added at [${lng}, ${lat}]`);
         return true;
     } catch (err) {
-        console.error(`[StoreGeo] addStoreToRedis failed for ${storeId}:`, err.message);
+        logger.error(`[StoreGeo] addStoreToRedis failed for ${storeId}:`, err.message);
         return false;
     }
 };
@@ -72,7 +74,7 @@ export const addStoreToRedis = async (store) => {
 
 export const removeStoreFromRedis = async (storeId, serviceAreaId = null) => {
     if (!storeId) {
-        console.warn("[StoreGeo] removeStoreFromRedis: missing storeId");
+        logger.warn("[StoreGeo] removeStoreFromRedis: missing storeId");
         return false;
     }
 
@@ -99,10 +101,10 @@ export const removeStoreFromRedis = async (storeId, serviceAreaId = null) => {
 
         await pipeline.exec();
 
-        console.log(`[StoreGeo] Store ${storeIdStr} removed from Redis`);
+        logger.info(`[StoreGeo] Store ${storeIdStr} removed from Redis`);
         return true;
     } catch (err) {
-        console.error(`[StoreGeo] removeStoreFromRedis failed for ${storeIdStr}:`, err.message);
+        logger.error(`[StoreGeo] removeStoreFromRedis failed for ${storeIdStr}:`, err.message);
         return false;
     }
 };
@@ -121,7 +123,7 @@ export const updateStoreCapacityInRedis = async (storeId, newCount) => {
         });
         return true;
     } catch (err) {
-        console.error(`[StoreGeo] updateStoreCapacity failed for ${storeId}:`, err.message);
+        logger.error(`[StoreGeo] updateStoreCapacity failed for ${storeId}:`, err.message);
         return false;
     }
 };

@@ -4,6 +4,8 @@ import {
     processAcceptanceTimeout,
 } from "./driverSearchJob.js";
 import { BOOKING_JOB_NAMES } from "../../constants/booking.js";
+import logger from "../../utils/logger.js";
+
 
 export const initializeJobProcessors = () => {
     // Handles both search rounds AND acceptance timeouts
@@ -20,7 +22,7 @@ export const initializeJobProcessors = () => {
                 break;
 
             default:
-                console.warn(`[Jobs] Unknown driver-search job: ${jobName}`);
+                logger.warn(`[Jobs] Unknown driver-search job: ${jobName}`);
         }
     });
 
@@ -33,7 +35,7 @@ export const initializeJobProcessors = () => {
             expiresInSeconds,
         } = job.data.data;
 
-        console.log(
+        logger.info(
             `[Notification] Sending to driver ${driverId} ` +
             `for booking ${bookingId} (${distanceKm}km away, ` +
             `expires in ${expiresInSeconds}s)`
@@ -55,7 +57,7 @@ export const initializeJobProcessors = () => {
     registerWorker("booking-cancelled", async (job) => {
         const { bookingId, userId, reason, cancelledBy, type } = job.data.data;
 
-        console.log(
+        logger.info(
             `[Cancelled] Booking ${bookingId} cancelled by ${cancelledBy}: ${reason}`
         );
 
@@ -71,7 +73,7 @@ export const initializeJobProcessors = () => {
     registerWorker("refund-process", async (job) => {
         const { bookingId, userId, amount, transactionId, reason } = job.data.data;
 
-        console.log(
+        logger.info(
             `[Refund] Processing refund of ${amount} for booking ${bookingId}`
         );
 
@@ -86,5 +88,5 @@ export const initializeJobProcessors = () => {
         // });
     });
 
-    console.log("[Jobs] All job processors initialized");
+    logger.info("[Jobs] All job processors initialized");
 };
