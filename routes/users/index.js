@@ -5,7 +5,7 @@ import storesRoute from "./store.user.routes.js";
 import supportRoute from "./support.user.routes.js";
 
 const userRoutes = (app) => {
-     app.use("/api/v1/user/auth", userAuthRoute);
+    app.use("/api/v1/user/auth", userAuthRoute);
     app.use("/api/v1/user", userRoute);
     app.use("/api/v1/user/booking", bookingRoute);
     app.use("/api/v1/user/stores", storesRoute);

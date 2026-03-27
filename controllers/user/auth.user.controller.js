@@ -460,10 +460,11 @@ export const updateUserDetails = async (req, res) => {
                     email: email.trim().toLowerCase(),
                     gender: gender.toLowerCase(),
                     dob: new Date(dob),
-                    addresses: address.trim(),
                     location: {
                         type: "Point",
                         coordinates: [lng, lat],
+                        address: address,
+
                     },
                     is_signup: true,
                     is_serviceable: isServiceable,
