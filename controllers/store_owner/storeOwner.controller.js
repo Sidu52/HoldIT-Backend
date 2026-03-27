@@ -9,7 +9,7 @@ import {
     ON_BOARDING_STATUS,
     VERIFICATION_STATUS,
 } from "../../utils/constants.js";
-import { checkServiceability } from "../../helpers/store/store.helper.js";
+import { checkServiceability } from "../../utils/serviceable.js";;
 import logger from "../../utils/logger.js";
 import Booking from "../../models/Booking.js";
 
@@ -73,6 +73,8 @@ export const updateProfile = async (req, res) => {
         )
             .select("-__v")
             .lean();
+
+        console.log("owener id", ownerId)
 
         if (!owner) {
             return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
@@ -197,6 +199,7 @@ export const getStore = async (req, res) => {
 export const createStore = async (req, res) => {
     try {
         const ownerId = req.user.auth_id;
+
         const {
             phone,
             store_name,
@@ -204,10 +207,19 @@ export const createStore = async (req, res) => {
             store_contact_number,
             store_open_time,
             store_close_time,
-            location: { latitude, longitude, address },
+            location
         } = req.body;
 
-        // Verify owner is onboarded before allowing store creation
+        // Extract location safely
+        const { coordinates, address } = location || {};
+        const [longitude, latitude] = coordinates || [];
+
+        // Validate coordinates presence (extra safety)
+        if (!longitude || !latitude) {
+            return sendError(res, "Invalid location coordinates.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        // 🔹 Fix: Use correct query (auth_id vs _id)
         const owner = await StoreOwner.findById(ownerId)
             .select("onboarding_status status")
             .lean();
@@ -224,7 +236,9 @@ export const createStore = async (req, res) => {
             );
         }
 
+        // 🔹 Check serviceability
         const { isServiceable, serviceAreaId } = await checkServiceability(latitude, longitude);
+
         if (!isServiceable) {
             return sendError(
                 res,
@@ -233,14 +247,19 @@ export const createStore = async (req, res) => {
             );
         }
 
-        // Prevent duplicate phone across stores
+        // 🔹 Prevent duplicate phone
         const phoneExists = await Store.exists({ phone });
         if (phoneExists) {
-            return sendError(res, "A store with this phone number already exists.", STATUS_CODES.CONFLICT);
+            return sendError(
+                res,
+                "A store with this phone number already exists.",
+                STATUS_CODES.CONFLICT
+            );
         }
 
+        // 🔹 Create store
         const store = await Store.create({
-            store_owner_id: ownerId,
+            store_owner_id: owner._id, // important fix
             phone,
             store_name: store_name.trim(),
             store_description: store_description?.trim(),
@@ -250,7 +269,7 @@ export const createStore = async (req, res) => {
             location: {
                 type: "Point",
                 coordinates: [longitude, latitude],
-                address: address.trim(),
+                address: address?.trim(),
             },
             service_area_id: serviceAreaId,
             is_verified: false,
@@ -259,7 +278,8 @@ export const createStore = async (req, res) => {
             verification_status: VERIFICATION_STATUS.PENDING,
         });
 
-        await del(`owner_stores:${ownerId}`);
+        // 🔹 Clear cache
+        await del(`owner_stores:${owner._id}`);
 
         return sendResponse({
             res,
@@ -267,8 +287,19 @@ export const createStore = async (req, res) => {
             message: "Store created successfully. Pending admin verification.",
             data: { store },
         });
+
     } catch (err) {
         logger.error("StoreOwner createStore Error:", err);
+
+        // 🔴 Handle duplicate key error (safety fallback)
+        if (err.code === 11000) {
+            return sendError(
+                res,
+                "Duplicate field value detected.",
+                STATUS_CODES.CONFLICT
+            );
+        }
+
         return sendError(res, "Failed to create store.");
     }
 };
@@ -428,10 +459,12 @@ export const getDashboard = async (req, res) => {
 
         const BookingStats = await Booking.aggregate([
             { $match: { storeId: { $in: storeIds } } },
-            { $group: {
-                _id: "$status",
-                count: { $sum: 1 },
-            }}
+            {
+                $group: {
+                    _id: "$status",
+                    count: { $sum: 1 },
+                }
+            }
         ]);
 
         const avgRating =
@@ -462,17 +495,29 @@ export const getDashboard = async (req, res) => {
     }
 };
 
-// GO ONLINE
 export const goOnline = async (req, res) => {
     try {
-        const ownerId = req.user.auth_id;
-        const { store_id, is_online } = req.body;
+        const owner_id = req.user.auth_id;
+        const { store_id } = req.params;
+        const { is_online } = req.body;
 
+        console.log("authId", owner_id)
         if (!mongoose.isValidObjectId(store_id)) {
             return sendError(res, "Invalid store ID.", STATUS_CODES.BAD_REQUEST);
         }
 
-        const store = await Store.findOne({ _id: store_id, store_owner_id: ownerId })
+        const owner = await StoreOwner.findById(owner_id)
+            .select("_id")
+            .lean();
+
+        if (!owner) {
+            return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        const store = await Store.findOne({
+            _id: store_id,
+            store_owner_id: owner._id,
+        })
             .select("status verification_status is_active is_online")
             .lean();
 
@@ -480,7 +525,6 @@ export const goOnline = async (req, res) => {
             return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
         }
 
-        // Only verified, active stores can go online
         if (
             store.status !== ACCOUNT_STATUS.ACTIVE ||
             store.verification_status !== VERIFICATION_STATUS.VERIFIED
@@ -512,14 +556,15 @@ export const goOnline = async (req, res) => {
             .select("store_name is_online status")
             .lean();
 
-        await del(`owner_stores:${ownerId}`);
-        await del(`owner_dashboard:${ownerId}`);
+        await del(`owner_stores:${owner._id}`);
+        await del(`owner_dashboard:${owner._id}`);
 
         return sendResponse({
             res,
             message: `Store is now ${is_online ? "online" : "offline"}.`,
             data: { store: updatedStore },
         });
+
     } catch (err) {
         logger.error("StoreOwner goOnline Error:", err);
         return sendError(res, "Failed to update store status.");

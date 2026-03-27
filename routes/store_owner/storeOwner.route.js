@@ -11,7 +11,7 @@ import {
     deleteStore,
     getDashboard,
     goOnline,
-} from "../../controllers/storeOwner/storeOwner.controller.js";
+} from "../../controllers/store_owner/storeOwner.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -43,6 +43,6 @@ router.put("/stores/:id", apiLimiter, validate(updateStoreSchema), updateStore);
 router.delete("/stores/:id", apiLimiter, deleteStore);
 
 // Online status
-router.put("/go-online", apiLimiter, validate(goOnlineSchema), goOnline);
+router.put("/stores/:store_id/go-online", apiLimiter, validate(goOnlineSchema), goOnline);
 
 export default router;

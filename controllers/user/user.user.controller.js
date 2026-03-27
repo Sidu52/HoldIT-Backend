@@ -574,7 +574,7 @@ export const getNearestStore = async (req, res) => {
                         is_active: true,
                         is_online: true,
                         verification_status: "verified",
-                        status:  ACCOUNT_STATUS.ACTIVE,
+                        status: ACCOUNT_STATUS.ACTIVE,
                     },
                 },
             },
@@ -738,8 +738,8 @@ export const updateLocation = async (req, res) => {
         if (!address) {
             return sendError(
                 res,
-                STATUS_CODES.NOT_FOUND,
-                "Address not found"
+                "Address not found",
+                STATUS_CODES.NOT_FOUND
             );
         }
 
@@ -759,7 +759,6 @@ export const updateLocation = async (req, res) => {
         logger.error("Update location error:", error);
         return sendError(
             res,
-            "Failed to update location",
             error.message
         );
     }

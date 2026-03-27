@@ -14,6 +14,7 @@ import {
     TOKEN_TYPES,
     OTP_FAIL_WINDOW_SECONDS,
     UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
+    ON_BOARDING_STATUS,
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import {
@@ -24,7 +25,7 @@ import {
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
-import { verifyStoreOwner } from "../../helpers/storeOwner/storeOwner.helper.js";
+import { verifyStoreOwner } from "../../helpers/store_owner/storeOwner.helper.js";
 
 // LOGIN / REGISTER
 export const authStoreOwner = async (req, res) => {
@@ -63,17 +64,17 @@ export const authStoreOwner = async (req, res) => {
         const otp = await generateAndStoreOTP(phone);
         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
-        await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_OWNER, `delete-owner-${phone}`);
-        await addJobToQueue(
-            JOB_QUEUES.DELETE_UNVERIFIED_OWNER,
-            { name: JOB_QUEUES.DELETE_UNVERIFIED_OWNER, data: { phone, entity: "store_owner" } },
-            {
-                delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
-                jobId: `delete-owner-${phone}`,
-                removeOnComplete: true,
-                removeOnFail: true,
-            }
-        );
+        // await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_OWNER, `delete-owner-${phone}`);
+        // await addJobToQueue(
+        //     JOB_QUEUES.DELETE_UNVERIFIED_OWNER,
+        //     { name: JOB_QUEUES.DELETE_UNVERIFIED_OWNER, data: { phone, entity: "store_owner" } },
+        //     {
+        //         delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
+        //         jobId: `delete-owner-${phone}`,
+        //         removeOnComplete: true,
+        //         removeOnFail: true,
+        //     }
+        // );
 
         if (process.env.NODE_ENV === "development") {
             logger.info(`[DEV] StoreOwner OTP for ${phone}: ${otp}`);

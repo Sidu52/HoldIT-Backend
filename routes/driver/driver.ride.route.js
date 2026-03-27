@@ -23,20 +23,20 @@ const router = express.Router();
 router.use(authMiddleware);
 
 router.get("/rides/offer/pending", apiLimiter, getPendingOfferController);
-router.get("/rides/assigned",      apiLimiter, getAssignedRidesController);
-router.get("/rides/active",        apiLimiter, getActiveRideController);
+router.get("/rides/assigned", apiLimiter, getAssignedRidesController);
+router.get("/rides/active", apiLimiter, getActiveRideController);
 
-router.get("/rides/history",       apiLimiter, getRideHistoryController);
-router.get("/rides/:booking_id",   apiLimiter, getRideDetailsController);
+router.get("/rides/history", apiLimiter, getRideHistoryController);
+router.get("/rides/:booking_id", apiLimiter, getRideDetailsController);
 
 // OFFER
 router.post("/rides/:booking_id/accept", apiLimiter, acceptRideController);
 router.post("/rides/:booking_id/reject", apiLimiter, rejectRideController);
 
 // PICKUP
-router.put("/rides/:booking_id/arrive-pickup",   apiLimiter, arriveAtPickupController);
+router.put("/rides/:booking_id/arrive-pickup", apiLimiter, arriveAtPickupController);
 router.put("/rides/:booking_id/complete-pickup", apiLimiter, completePickupController);
-router.put("/rides/:booking_id/arrive-store",    apiLimiter, arriveAtStoreController);
+router.put("/rides/:booking_id/arrive-store", apiLimiter, arriveAtStoreController);
 
 // CANCELLATION 
 router.post(
