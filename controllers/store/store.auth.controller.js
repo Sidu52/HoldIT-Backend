@@ -32,7 +32,7 @@ export const authStore = async (req, res) => {
         const { phone } = req.body;
 
         let store = await Store.findOne({ phone })
-            .select("status is_verified")
+            .select("status is_verified is_active")
             .lean();
 
         if (store) {

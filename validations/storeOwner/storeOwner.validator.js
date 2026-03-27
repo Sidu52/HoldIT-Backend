@@ -1,11 +1,6 @@
 import Joi from "joi";
 import { GENDER_OPTIONS } from "../../utils/constants.js";
 
-const locationSchema = Joi.object({
-    latitude: Joi.number().min(-90).max(90).required(),
-    longitude: Joi.number().min(-180).max(180).required(),
-    address: Joi.string().trim().max(500).required(),
-});
 
 export const completeProfileSchema = Joi.object({
     first_name: Joi.string().trim().max(100).required(),
@@ -32,7 +27,11 @@ export const createStoreSchema = Joi.object({
     store_contact_number: Joi.string().trim().max(15).optional(),
     store_open_time: Joi.string().optional(),
     store_close_time: Joi.string().optional(),
-    location: locationSchema.required(),
+    location: Joi.object({
+        type: Joi.string().valid("Point").required(),
+        coordinates: Joi.array().items(Joi.number()).length(2).required(),
+        address: Joi.string().trim().max(500).optional(),
+    }).required(),
 });
 
 export const updateStoreSchema = Joi.object({
@@ -41,10 +40,14 @@ export const updateStoreSchema = Joi.object({
     store_contact_number: Joi.string().trim().max(15).optional(),
     store_open_time: Joi.string().optional(),
     store_close_time: Joi.string().optional(),
-    location: locationSchema.optional(),
+    location: Joi.object({
+        type: Joi.string().valid("Point").required(),
+        coordinates: Joi.array().items(Joi.number()).length(2).required(),
+        address: Joi.string().trim().max(500).optional(),
+    }).optional(),
+    is_online: Joi.boolean().optional(),
 }).min(1);
 
 export const goOnlineSchema = Joi.object({
-    store_id: Joi.string().trim().required(),
     is_online: Joi.boolean().required(),
 });

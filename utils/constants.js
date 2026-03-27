@@ -32,7 +32,7 @@ const BOOKING_STATUS = {
   RETURN_DRIVER_ASSIGNED: "return_driver_assigned",
   DELIVERED: "delivered",
   CANCELLED: "cancelled",
-  DRIVER_CANCELLED_CRITICAL: "driver_cancelled_critical", 
+  DRIVER_CANCELLED_CRITICAL: "driver_cancelled_critical",
 };
 
 const JOB_QUEUES = {
@@ -43,6 +43,9 @@ const JOB_QUEUES = {
   DELETE_UNVERIFIED_DRIVER: "delete-unverified-driver",
   BOOKING_CANCELLED: "booking-cancelled",
   RETURN_PROCESS: "return-process",
+  // DELETE_UNVERIFIED_OWNER: "delete-unverified-owner",
+  // DELETE_UNVERIFIED_STORE: "delete-unverified-store",
+
 };
 
 // SUPPORT TICKET

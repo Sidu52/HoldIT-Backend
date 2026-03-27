@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
 import { markDriverAvailable } from "../../services/driverGeoService.js";
-import { BOOKING_STATUS } from "../../utils/constants.js";
+import { ACCOUNT_STATUS, BOOKING_STATUS, STATUS_CODES } from "../../utils/constants.js";
 
 // VERIFY STORE
 export const verifyStore = (store) => {
@@ -33,7 +33,7 @@ export const processMarkStored = async (bookingId, storeId, notes) => {
         {
             _id: bookingId,
             status: BOOKING_STATUS.AT_STORE,
-             storeId: new mongoose.Types.ObjectId(storeId),
+            storeId: new mongoose.Types.ObjectId(storeId),
         },
         {
             $set: {
@@ -45,9 +45,9 @@ export const processMarkStored = async (bookingId, storeId, notes) => {
                 timeline: {
                     status: BOOKING_STATUS.STORED,
                     note: notes
-                            ? `Luggage accepted by store: ${notes}`
-                            : "Luggage accepted and stored by store",
-                     updatedBy: new mongoose.Types.ObjectId(storeId),
+                        ? `Luggage accepted by store: ${notes}`
+                        : "Luggage accepted and stored by store",
+                    updatedBy: new mongoose.Types.ObjectId(storeId),
                     updatedByModel: "Store",
                     createdAt: now,
                 },

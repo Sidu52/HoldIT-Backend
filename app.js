@@ -25,6 +25,7 @@ import AdminRoutes from "./routes/admin/index.js";
 import UserRoutes from "./routes/users/index.js";
 import DriverRoutes from "./routes/driver/index.js";
 import StoreRoutes from "./routes/store/index.js";
+import StoreOwnerRoutes from "./routes/store_owner/index.js";
 
 const app = express();
 
@@ -46,7 +47,7 @@ app.use(
 
 app.use(
     cors({
-        origin: process.env.ALLOWED_ORIGINS?.split(",") || "*",
+        origin: process.env.ALLOWED_ORIGINS?.split(",") || 'http://localhost:4000' || "*",
         credentials: true,
         methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
@@ -67,8 +68,9 @@ AdminRoutes(app);
 DriverRoutes(app);
 StoreRoutes(app);
 UserRoutes(app);
+StoreOwnerRoutes(app);
 
- setupSwagger(app);
+setupSwagger(app);
 
 // ERROR HANDLER
 app.use((err, req, res, next) => {
