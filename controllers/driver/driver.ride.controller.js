@@ -1,5 +1,5 @@
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import { STATUS_CODES } from "../../utils/constants.js";
+import { STATUS_CODES, BOOKING_STATUS } from "../../utils/constants.js";
 import {
     DRIVER_RIDE_CACHE,
     DRIVER_RIDE_SELECT,
@@ -20,15 +20,36 @@ import {
     processArriveAtStore,
     buildPagination,
     processDriverCancelRide,
+    processArriveAtUserReturn,
     processCompleteDelivery,
 } from "../../helpers/driver/driverRideHelper.js";
+
 
 import { getOfferStatus } from "../../helpers/user/driverAssignHelper.js";
 import { invalidateBookingCache } from "../../helpers/user/bookingHelper.js";
 import { REDIS_KEYS } from "../../constants/user/booking.js";
 import redis from "../../services/redisService.js";
 import Booking from "../../models/Booking.js";
+import Driver from "../../models/Driver.js";
 import logger from "../../utils/logger.js";
+
+// Socket helpers
+import { getIO } from "../../src/socket/index.js";
+import {
+    emitBookingDriverAssigned,
+    emitBookingDriverArrived,
+    emitBookingPickedUp,
+    emitBookingArrivedAtStore,
+    emitBookingDelivered,
+    emitBookingReturnDriverAssigned,
+    emitBookingArrivedForDelivery,
+} from "../../src/socket/emitters/booking.emitter.js";
+
+
+/** Safely get Socket.IO instance; returns null if not initialized */
+const safeGetIO = () => {
+    try { return getIO(); } catch { return null; }
+};
 
 
 // GET PENDING OFFER
@@ -227,6 +248,24 @@ export const acceptRideController = async (req, res) => {
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
+        // Emit socket event: driver assigned
+        try {
+            const io = safeGetIO();
+            if (io) {
+                const driverData = await Driver.findById(driverId)
+                    .select("first_name last_name phone vehicle_details live_location")
+                    .lean();
+
+                if (booking.status === BOOKING_STATUS.DRIVER_ASSIGNED) {
+                    emitBookingDriverAssigned(io, booking_id, booking.userId.toString(), driverData);
+                } else if (booking.status === BOOKING_STATUS.RETURN_DRIVER_ASSIGNED) {
+                    emitBookingReturnDriverAssigned(io, booking_id, booking.userId.toString(), driverData);
+                }
+            }
+        } catch (socketErr) {
+            logger.debug(`[AcceptRide:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
         return sendResponse({
             res,
             message: DRIVER_RIDE_MESSAGES.RIDE_ACCEPTED,
@@ -266,7 +305,7 @@ export const rejectRideController = async (req, res) => {
     }
 };
 
-// ARRIVE AT PICKUP — FIX #9: driver signals they've reached the customer
+// ARRIVE AT PICKUP — driver signals they've reached the customer
 export const arriveAtPickupController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
@@ -282,6 +321,16 @@ export const arriveAtPickupController = async (req, res) => {
             invalidateDriverRideCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
+
+        // Emit socket event: driver arrived at pickup
+        try {
+            const io = safeGetIO();
+            if (io) {
+                emitBookingDriverArrived(io, booking_id, booking.userId.toString(), driverId, new Date());
+            }
+        } catch (socketErr) {
+            logger.debug(`[ArrivePickup:Socket] Emission skipped: ${socketErr.message}`);
+        }
 
         return sendResponse({
             res,
@@ -299,8 +348,13 @@ export const completePickupController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
+        const { otp } = req.body || {};
 
-        const booking = await processCompletePickup(booking_id, driverId);
+        if (!otp) {
+            return sendError(res, "Pickup OTP is required.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const booking = await processCompletePickup(booking_id, driverId, otp);
 
         if (!booking) {
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
@@ -311,18 +365,33 @@ export const completePickupController = async (req, res) => {
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
+        // Emit socket event: luggage picked up
+        try {
+            const io = safeGetIO();
+            if (io) {
+                const driver = await Driver.findById(driverId).select("first_name last_name").lean();
+                const driverName = driver ? `${driver.first_name} ${driver.last_name}`.trim() : "Driver";
+                emitBookingPickedUp(io, booking_id, booking.userId.toString(), booking.storeId?.toString(), new Date(), driverName);
+            }
+        } catch (socketErr) {
+            logger.debug(`[CompletePickup:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
         return sendResponse({
             res,
             message: DRIVER_RIDE_MESSAGES.PICKUP_COMPLETED,
             data: { bookingId: booking._id, status: booking.status },
         });
     } catch (err) {
+        if (err.message === "Invalid pickup OTP") {
+            return sendError(res, err.message, STATUS_CODES.BAD_REQUEST);
+        }
         logger.error("Complete Pickup Error:", err);
         return sendError(res, DRIVER_RIDE_MESSAGES.COMPLETE_PICKUP_FAILED);
     }
 };
 
-// ARRIVE AT STORE — FIX #8: driver reached the store with luggage
+// ARRIVE AT STORE — driver reached the store with luggage
 export const arriveAtStoreController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
@@ -339,6 +408,16 @@ export const arriveAtStoreController = async (req, res) => {
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
+        // Emit socket event: arrived at store
+        try {
+            const io = safeGetIO();
+            if (io) {
+                emitBookingArrivedAtStore(io, booking_id, booking.storeId?.toString(), driverId, new Date());
+            }
+        } catch (socketErr) {
+            logger.debug(`[ArriveStore:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
         return sendResponse({
             res,
             message: "Arrived at store with luggage.",
@@ -347,6 +426,44 @@ export const arriveAtStoreController = async (req, res) => {
     } catch (err) {
         logger.error("Arrive At Store Error:", err);
         return sendError(res, "Failed to update store arrival.");
+    }
+};
+
+// ARRIVE AT USER FOR RETURN Delivery — driver signals they've reached the user for return
+export const arriveAtUserReturnController = async (req, res) => {
+    try {
+        const driverId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        const booking = await processArriveAtUserReturn(booking_id, driverId);
+
+        if (!booking) {
+            return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        }
+
+        await Promise.all([
+            invalidateDriverRideCache(driverId, booking_id),
+            invalidateBookingCache(booking.userId.toString(), booking_id),
+        ]);
+
+        // Emit socket event: driver arrived for return delivery
+        try {
+            const io = safeGetIO();
+            if (io) {
+                emitBookingArrivedForDelivery(io, booking_id, booking.userId.toString(), driverId, new Date());
+            }
+        } catch (socketErr) {
+            logger.debug(`[ArriveUserReturn:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
+        return sendResponse({
+            res,
+            message: "Arrived at delivery location.",
+            data: { bookingId: booking._id, status: booking.status },
+        });
+    } catch (err) {
+        logger.error("Arrive At User Return Error:", err);
+        return sendError(res, "Failed to update arrival status.");
     }
 };
 
@@ -390,8 +507,13 @@ export const completeDeliveryController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
+        const { otp } = req.body || {};
 
-        const booking = await processCompleteDelivery(booking_id, driverId);
+        if (!otp) {
+            return sendError(res, "Delivery OTP is required.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const booking = await processCompleteDelivery(booking_id, driverId, otp);
 
         if (!booking) {
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
@@ -402,12 +524,27 @@ export const completeDeliveryController = async (req, res) => {
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
+        // Emit socket event: delivery completed
+        try {
+            const io = safeGetIO();
+            if (io) {
+                const driver = await Driver.findById(driverId).select("first_name last_name").lean();
+                const driverName = driver ? `${driver.first_name} ${driver.last_name}`.trim() : "Driver";
+                emitBookingDelivered(io, booking_id, booking.userId.toString(), booking.storeId?.toString(), new Date(), driverName);
+            }
+        } catch (socketErr) {
+            logger.debug(`[CompleteDelivery:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
         return sendResponse({
             res,
             message: "Delivery completed successfully.",
             data: { bookingId: booking._id, status: booking.status },
         });
     } catch (err) {
+        if (err.message === "Invalid delivery OTP") {
+            return sendError(res, err.message, STATUS_CODES.BAD_REQUEST);
+        }
         logger.error("Complete Delivery Error:", err);
         return sendError(res, "Failed to complete delivery.");
     }

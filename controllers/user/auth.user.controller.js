@@ -485,6 +485,9 @@ export const updateUserDetails = async (req, res) => {
             );
         }
 
+        // Invalidate cache
+        await del(`user:profile:${auth_id}`);
+
         return sendResponse({
             res,
             message: "Profile completed successfully",

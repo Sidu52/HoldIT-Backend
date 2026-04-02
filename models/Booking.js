@@ -16,9 +16,11 @@ const DriverAssignmentSchema = new mongoose.Schema(
         driverId: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" },
         returnOtp: {
             type: String,
-            required: true,
-            unique: true,
-            index: true,
+            sparse: true,
+        },
+        otp: {
+            type: String,
+            sparse: true,
         },
         assignedAt: Date,
         acceptedAt: Date,
@@ -246,7 +248,7 @@ const TERMINAL_STATUSES = [
 BookingSchema.pre(["updateOne", "findOneAndUpdate", "findByIdAndUpdate"], async function () {
     const update = this.getUpdate();
     const newStatus = update.$set?.status || update.status;
-    
+
     if (!newStatus) return;
 
     try {

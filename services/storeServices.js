@@ -1,5 +1,7 @@
+import Store from "../models/Store.js";
 import redis from "./redisService.js";
 import logger from "../utils/logger.js";
+
 
 
 // ─── ADD ──────────────────────────────────────────────────────────────────────
@@ -125,5 +127,55 @@ export const updateStoreCapacityInRedis = async (storeId, newCount) => {
     } catch (err) {
         logger.error(`[StoreGeo] updateStoreCapacity failed for ${storeId}:`, err.message);
         return false;
+    }
+};
+
+// ─── TRANSACTIONAL CAPACITY HELPERS ──────────────────────────────────────────
+
+/**
+ * Atomically increments the store's booking count in MongoDB and Redis.
+ * Should be called when luggage is successfully STORED.
+ */
+export const incrementStoreCapacity = async (storeId) => {
+    if (!storeId) return null;
+
+    try {
+        const store = await Store.findByIdAndUpdate(
+            storeId,
+            { $inc: { current_booking_count: 1 } },
+            { new: true, select: "current_booking_count" }
+        ).lean();
+
+        if (store) {
+            await updateStoreCapacityInRedis(storeId, store.current_booking_count);
+        }
+        return store?.current_booking_count;
+    } catch (err) {
+        logger.error(`[StoreGeo] incrementStoreCapacity failed: ${err.message}`);
+        return null;
+    }
+};
+
+/**
+ * Atomically decrements the store's booking count in MongoDB and Redis.
+ * Should be called when luggage is released (VERIFY RETURN OTP).
+ */
+export const decrementStoreCapacity = async (storeId) => {
+    if (!storeId) return null;
+
+    try {
+        const store = await Store.findByIdAndUpdate(
+            storeId,
+            { $inc: { current_booking_count: -1 } },
+            { new: true, select: "current_booking_count" }
+        ).lean();
+
+        if (store) {
+            await updateStoreCapacityInRedis(storeId, store.current_booking_count);
+        }
+        return store?.current_booking_count;
+    } catch (err) {
+        logger.error(`[StoreGeo] decrementStoreCapacity failed: ${err.message}`);
+        return null;
     }
 };

@@ -92,7 +92,7 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
                 $geoNear: {
                     near: {
                         type: "Point",
-                        coordinates: [lng, lat], 
+                        coordinates: [lng, lat],
                     },
                     distanceField: "distance",
                     spherical: true,
@@ -101,7 +101,7 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
                         is_active: true,
                         is_online: true,
                         verification_status: "verified",
-                        status:  ACCOUNT_STATUS.ACTIVE,
+                        status: ACCOUNT_STATUS.ACTIVE,
                     },
                 },
             },
@@ -142,6 +142,54 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
         logger.error("[bookingHelper] findNearestAvailableStore error:", err.message);
         return { store: null, error: "SEARCH_FAILED" };
     }
+};
+
+// DRIVER SEARCH
+export const findNearbyDrivers = async (lat, lng, session, radius = 5000) => {
+    const pipeline = [
+        {
+            $geoNear: {
+                near: {
+                    type: "Point",
+                    coordinates: [lng, lat],
+                },
+                distanceField: "distance",
+                spherical: true,
+                maxDistance: radius,
+                key: "currentLocation",  // ✅ explicitly point to the field
+                query: {
+                    is_active: true,
+                    is_online: true,
+                    verification_status: "verified",
+                    status: ACCOUNT_STATUS.ACTIVE,
+                },
+            },
+        },
+        {
+            $addFields: {
+                availableSlots: {
+                    $subtract: ["$max_booking_capacity", "$current_booking_count"],
+                },
+            },
+        },
+        { $sort: { distance: 1, availableSlots: -1 } },
+        { $limit: 10 },
+        {
+            $project: {
+                _id: 1,
+                driver_name: 1,
+                location: 1,
+                distance: 1,
+                availableSlots: 1,
+                max_booking_capacity: 1,
+                current_booking_count: 1,
+                service_area_id: 1,
+            },
+        },
+    ];
+
+    const results = await Driver.aggregate(pipeline, { session, lean: true });
+    return results;
 };
 
 /**
@@ -248,7 +296,7 @@ export const autoCancelBooking = async (bookingId, reason) => {
         try {
             // Lazy import to avoid circular dependency
             const { cleanupBookingRedisKeys } = await import("./driverAssignHelper.js");
-            
+
             await Promise.allSettled([
                 cleanupBookingRedisKeys(bookingId),
                 queueCancellationNotification(booking),
@@ -320,14 +368,21 @@ const queueCancellationNotification = async (booking) => {
 // ─── CACHE ────────────────────────────────────────────────────────────────────
 
 export const invalidateBookingCache = async (userId, bookingId = null) => {
+    if (!userId) return;
+
     try {
-        const ops = [delByPattern(REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN(userId))];
+        const ops = [
+            delByPattern(REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN(userId)),
+            del(REDIS_KEYS.BOOKING_ACTIVE(userId)),
+            delByPattern(REDIS_KEYS.BOOKING_HISTORY_PATTERN(userId)),
+        ];
 
         if (bookingId) {
             ops.push(del(REDIS_KEYS.BOOKING_CACHE_DETAIL(userId, bookingId)));
         }
 
         await Promise.allSettled(ops);
+        logger.debug(`[Cache] Invalidated booking caches for user ${userId}`);
     } catch (err) {
         logger.error("[bookingHelper] Cache invalidation error:", err.message);
     }

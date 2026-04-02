@@ -29,7 +29,7 @@ import { verifyStore } from "../../helpers/store/store.helper.js";
 // LOGIN / REGISTER
 export const authStore = async (req, res) => {
     try {
-        const { phone } = req.body;
+        const { phone } = req.body || {};
 
         let store = await Store.findOne({ phone })
             .select("status is_verified is_active")
@@ -91,10 +91,10 @@ export const authStore = async (req, res) => {
 // RESEND OTP
 export const sendOTP = async (req, res) => {
     try {
-        const { phone } = req.body;
+        const { phone } = req.body || {};
 
         const store = await Store.findOne({ phone })
-            .select("status is_verified")
+            .select("status is_verified is_active")
             .lean();
 
         const storeCheck = verifyStore(store);
@@ -129,7 +129,7 @@ export const sendOTP = async (req, res) => {
 // VERIFY OTP
 export const verifyOTP = async (req, res) => {
     try {
-        const { phone, otp } = req.body;
+        const { phone, otp } = req.body || {};
 
         if (!phone || typeof phone !== "string") {
             return sendError(res, "Phone number is required", STATUS_CODES.BAD_REQUEST);
@@ -160,9 +160,10 @@ export const verifyOTP = async (req, res) => {
         }
 
         const store = await Store.findOne({ phone: sanitizedPhone })
-            .select("_id status is_verified")
+            .select("_id status is_verified is_active")
             .lean();
 
+        console.log("store", store)
         if (!store) {
             return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
         }
@@ -193,7 +194,7 @@ export const verifyOTP = async (req, res) => {
             del(failKey),
             del(`otp_cooldown:${sanitizedPhone}`),
             del(`otp_rate:${sanitizedPhone}`),
-            cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, `delete-store-${sanitizedPhone}`),
+            cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_STORE, `delete-store-${sanitizedPhone}`),
         ]);
 
         const { accessToken, refreshToken } = await generateTokenPair(store._id);

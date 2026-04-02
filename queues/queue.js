@@ -38,12 +38,12 @@ export const driverAssignReturnQueue = new Queue("driver-assign-return", {
     defaultJobOptions,
 });
 
-export const deleteUnverifiedUserQueue = new Queue( JOB_QUEUES.DELETE_UNVERIFIED_USER, {
+export const deleteUnverifiedUserQueue = new Queue(JOB_QUEUES.DELETE_UNVERIFIED_USER, {
     connection: redisConnectionConfig,
     defaultJobOptions,
 });
 
-export const deleteUnverifiedDriverQueue = new Queue( JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, {
+export const deleteUnverifiedDriverQueue = new Queue(JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, {
     connection: redisConnectionConfig,
     defaultJobOptions,
 });

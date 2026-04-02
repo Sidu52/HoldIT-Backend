@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import redis from "../../../services/redisService.js";
 import Booking from "../../../models/Booking.js";
 import { BOOKING_STATUS } from "../../../utils/constants.js";
@@ -6,6 +7,15 @@ import { SOCKET_EVENTS } from "../socket.events.js";
 import { rooms } from "../socket.rooms.js";
 
 const TTL_5_MINS = 5 * 60; // 5 minutes in seconds
+
+// Statuses where a driver is actively in transit (location tracking makes sense)
+const TRACKING_STATUSES = [
+    BOOKING_STATUS.DRIVER_ASSIGNED,
+    BOOKING_STATUS.DRIVER_ARRIVED,
+    BOOKING_STATUS.PICKED_UP,
+    BOOKING_STATUS.AT_STORE,
+    BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+];
 
 export const locationService = {
     /**
@@ -22,20 +32,16 @@ export const locationService = {
             throw new Error("Invalid coordinates");
         }
 
-        // 2. Verify driver owns booking & active status (DB Hit for Auth only)
-        // Note: To optimize, could we cache active bookings per driver? 
-        // We will hit DB lightly to ensure authorization.
+        const driverObjectId = new mongoose.Types.ObjectId(driverId);
+
+        // 2. Verify driver owns booking & active status
         const booking = await Booking.findOne({
             _id: bookingId,
-            driverId,
-            status: { $in: [
-                BOOKING_STATUS.DRIVER_ASSIGNED,
-                BOOKING_STATUS.DRIVER_ARRIVED,
-                BOOKING_STATUS.PICKED_UP,
-                BOOKING_STATUS.ARRIVED_AT_STORE,
-                BOOKING_STATUS.OUT_FOR_RETURN,
-                BOOKING_STATUS.ARRIVED_FOR_RETURN
-            ]}
+            $or: [
+                { "pickup.assignment.driverId": driverObjectId },
+                { "delivery.assignment.driverId": driverObjectId },
+            ],
+            status: { $in: TRACKING_STATUSES },
         }).select("_id").lean();
 
         if (!booking) {
@@ -46,8 +52,6 @@ export const locationService = {
         const locationData = { lat, lng, heading, speed, updatedAt };
 
         // 3. Store in Redis
-        // driver:location maps driverId to location
-        // booking:driver maps bookingId to driverId (for reverse lookup without DB hit)
         await Promise.all([
             redis.setex(`driver:location:${driverId}`, TTL_5_MINS, JSON.stringify(locationData)),
             redis.setex(`booking:driver:${bookingId}`, 24 * 60 * 60, driverId)
@@ -97,28 +101,32 @@ export const locationService = {
 export const startLocationMonitor = (io) => {
     setInterval(async () => {
         try {
-            // Find active tracking bookings
+            // Find active tracking bookings using correct field paths
             const activeBookings = await Booking.find({
-                status: { $in: [
-                    BOOKING_STATUS.DRIVER_ASSIGNED, 
-                    BOOKING_STATUS.PICKED_UP, 
-                    BOOKING_STATUS.OUT_FOR_RETURN
-                ]}
-            }).select("_id driverId status").lean();
+                status: { $in: TRACKING_STATUSES },
+                isActive: true,
+            })
+                .select("_id pickup.assignment.driverId delivery.assignment.driverId status")
+                .lean();
 
             for (const b of activeBookings) {
-                if (!b.driverId) continue;
+                // Get the active driver for this booking
+                const driverId = (
+                    b.delivery?.assignment?.driverId ||
+                    b.pickup?.assignment?.driverId
+                );
+                if (!driverId) continue;
                 
-                const driverId = b.driverId.toString();
+                const driverIdStr = driverId.toString();
                 const bookingId = b._id.toString();
                 
                 // TTL check
-                const ttl = await redis.ttl(`driver:location:${driverId}`);
+                const ttl = await redis.ttl(`driver:location:${driverIdStr}`);
                 
-                // If key is expired (-2) or expiring very soon (< 0 means no TTL usually)
+                // If key is expired (-2) or doesn't exist
                 if (ttl < 0) {
                     io.to(rooms.adminDashboard()).emit(SOCKET_EVENTS.DRIVER_LOCATION_STALE, {
-                        driverId,
+                        driverId: driverIdStr,
                         bookingId,
                         lastSeen: "Expired",
                         status: b.status

@@ -1,6 +1,6 @@
 import express from "express";
 import {
-      searchStores,
+    searchStores,
     getNearbyStores,
     getStoreById,
     getStoreAvailability,
@@ -15,7 +15,7 @@ import {
 } from "../../validations/user/store.validator.js";
 
 const router = express.Router();
-router.use(authMiddleware);
+// router.use(authMiddleware);
 router.get(
     "/",
     apiLimiter,

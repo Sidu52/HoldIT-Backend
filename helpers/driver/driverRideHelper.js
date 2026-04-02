@@ -77,6 +77,8 @@ export const getDriverActiveRide = async (driverId, selectFields) => {
                 BOOKING_STATUS.PICKED_UP,
                 BOOKING_STATUS.AT_STORE,
                 BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                BOOKING_STATUS.OUT_FOR_RETURN,
+                BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
             ],
         },
         isActive: true,
@@ -130,6 +132,8 @@ export const processRideAccept = async (bookingId, driverId) => {
     const now = new Date();
     const objDriverId = new mongoose.Types.ObjectId(driverId);
 
+    const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+
     let booking = await Booking.findOneAndUpdate(
         {
             _id: bookingId,
@@ -144,6 +148,7 @@ export const processRideAccept = async (bookingId, driverId) => {
                     driverId: objDriverId,
                     assignedAt: now,
                     acceptedAt: now,
+                    otp: generateOtp(), // User -> Driver
                 },
             },
             $push: {
@@ -174,6 +179,8 @@ export const processRideAccept = async (bookingId, driverId) => {
                         driverId: objDriverId,
                         assignedAt: now,
                         acceptedAt: now,
+                        returnOtp: generateOtp(), // Store -> Driver
+                        otp: generateOtp(),       // User -> Driver (Final)
                     },
                 },
                 $push: {
@@ -214,7 +221,9 @@ export const processRideReject = async (bookingId, driverId) => {
     await markDriverTried(bookingId, driverId);
 
     // Schedule offer to next candidate using the real attempt counter
-    await scheduleOfferNextDriver(bookingId, "PICKUP", attemptNumber + 1);
+    const booking = await Booking.findById(bookingId).select("status").lean();
+    const type = booking?.status === BOOKING_STATUS.RETURN_REQUESTED ? "RETURN" : "PICKUP";
+    await scheduleOfferNextDriver(bookingId, type, attemptNumber + 1);
 };
 
 // ARRIVE AT PICKUP LOCATION
@@ -248,20 +257,30 @@ export const processArriveAtPickup = async (bookingId, driverId) => {
 };
 
 // COMPLETE PICKUP luggage collected, heading to store
-export const processCompletePickup = async (bookingId, driverId) => {
+export const processCompletePickup = async (bookingId, driverId, otp) => {
     const now = new Date();
 
-    return Booking.findOneAndUpdate(
-        {
-            _id: bookingId,
-            status: BOOKING_STATUS.DRIVER_ARRIVED,
-            "pickup.assignment.driverId": new mongoose.Types.ObjectId(driverId),
-        },
+    const booking = await Booking.findOne({
+        _id: bookingId,
+        status: BOOKING_STATUS.DRIVER_ARRIVED,
+        "pickup.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+    }).select("pickup.assignment.otp");
+
+    if (!booking) return null;
+    
+    // OTP Verification
+    if (booking.pickup.assignment.otp !== otp) {
+        throw new Error("Invalid pickup OTP");
+    }
+
+    return Booking.findByIdAndUpdate(
+        bookingId,
         {
             $set: {
                 status: BOOKING_STATUS.PICKED_UP,
                 lastStatusUpdatedAt: now,
                 "pickup.assignment.completedAt": now,
+                "pickup.assignment.otp": null, // Clear used OTP
             },
             $push: {
                 timeline: {
@@ -297,6 +316,36 @@ export const processArriveAtStore = async (bookingId, driverId) => {
                 timeline: {
                     status: BOOKING_STATUS.AT_STORE,
                     note: "Driver arrived at store with luggage",
+                    updatedBy: new mongoose.Types.ObjectId(driverId),
+                    updatedByModel: "Driver",
+                    createdAt: now,
+                },
+            },
+        },
+        { returnDocument: "after" }
+    );
+};
+
+// ARRIVE AT USER FOR RETURN Delivery
+export const processArriveAtUserReturn = async (bookingId, driverId) => {
+    const now = new Date();
+
+    return Booking.findOneAndUpdate(
+        {
+            _id: bookingId,
+            status: BOOKING_STATUS.OUT_FOR_RETURN,
+            "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+        },
+        {
+            $set: {
+                status: BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
+                lastStatusUpdatedAt: now,
+                "delivery.assignment.startedAt": now,
+            },
+            $push: {
+                timeline: {
+                    status: BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
+                    note: "Driver arrived at delivery location",
                     updatedBy: new mongoose.Types.ObjectId(driverId),
                     updatedByModel: "Driver",
                     createdAt: now,
@@ -368,6 +417,7 @@ export const processDriverCancelRide = async (bookingId, driverId, reason = "") 
                 "pickup.assignment.assignedAt": "",
                 "pickup.assignment.acceptedAt": "",
                 "pickup.assignment.startedAt": "",
+                "pickup.assignment.otp": "", // Clear OTP on cancellation
             },
             $push: {
                 timeline: {
@@ -386,35 +436,16 @@ export const processDriverCancelRide = async (bookingId, driverId, reason = "") 
         return { success: false, reason: "UPDATE_FAILED" };
     }
 
-    // ── Step 1: Free the driver in MongoDB + Redis meta SEQUENTIALLY ──────────
-    // RACE CONDITION FIX: Previously these ran concurrently in Promise.allSettled:
-    //   markDriverAvailable(driverId)          → hset is_on_trip:false
-    //   redis.del(DRIVER_META(driverId))        → del the same key
-    // If del won the race it wiped the meta that markDriverAvailable just wrote,
-    // leaving the driver with no meta. The next geo search's isDriverEligibleInRedis
-    // would see empty meta (passes through), but verifyDriversInDB would still
-    // see is_on_trip:true in MongoDB (DB update also ran concurrently and might
-    // not have committed yet) → driver rejected → 0 verified candidates →
-    // booking auto-cancelled before driver ever saw the new offer.
-    //
-    // Fix: await the MongoDB + Redis meta updates FIRST (sequentially), THEN
-    // clean up offer/cache keys, THEN schedule the new search.
-    // Never delete DRIVER_META during a cancel — only removeDriverFromRedis
-    // (called when driver goes offline) should delete it. During a cancel
-    // we just update the meta fields, we don't wipe the whole key.
+    // Free the driver
     await Promise.all([
-        // Update MongoDB first — verifyDriversInDB reads this
         Driver.findByIdAndUpdate(driverId, {
             $set: { is_on_trip: false, current_booking_id: null },
             $inc: { cancel_count: 1 },
         }),
-        // Update Redis meta — isDriverEligibleInRedis reads this
-        // DO NOT del DRIVER_META here: that would race with this hset
-        // and leave the driver invisible to eligibility checks
         markDriverAvailable(driverId),
     ]);
 
-    // ── Step 2: Clean up offer/lock/cache keys (non-fatal) ───────────────────
+    // Clean up keys
     await Promise.allSettled([
         redis.del(REDIS_KEYS.DRIVER_OFFERED(driverId)),
         redis.del(REDIS_KEYS.BOOKING_OFFER(bookingId)),
@@ -431,10 +462,7 @@ export const processDriverCancelRide = async (bookingId, driverId, reason = "") 
         };
     }
 
-    // ── Step 3: Schedule new search AFTER driver is fully freed ──────────────
-    // The search worker calls verifyDriversInDB immediately. If we scheduled
-    // before Step 1 committed, it would see is_on_trip:true and reject the
-    // driver, auto-cancelling the booking with 0 verified candidates.
+    // Schedule new search
     await scheduleDriverSearch(bookingId, "PICKUP");
 
     return {
@@ -459,20 +487,30 @@ async function flagCriticalCancellation(bookingId, driverId, status, reason) {
 }
 
 // COMPLETE DELIVERY driver reached the user and handed back the luggage
-export const processCompleteDelivery = async (bookingId, driverId) => {
+export const processCompleteDelivery = async (bookingId, driverId, otp) => {
     const now = new Date();
 
-    const booking = await Booking.findOneAndUpdate(
-        {
-            _id: bookingId,
-            status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
-            "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
-        },
+    const booking = await Booking.findOne({
+        _id: bookingId,
+        status: { $in: [BOOKING_STATUS.OUT_FOR_RETURN, BOOKING_STATUS.ARRIVED_FOR_DELIVERY] },
+        "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+    }).select("delivery.assignment.otp");
+
+    if (!booking) return null;
+
+    // OTP Verification
+    if (booking.delivery.assignment.otp !== otp) {
+        throw new Error("Invalid delivery OTP");
+    }
+
+    const updated = await Booking.findByIdAndUpdate(
+        bookingId,
         {
             $set: {
                 status: BOOKING_STATUS.DELIVERED,
                 lastStatusUpdatedAt: now,
                 "delivery.assignment.completedAt": now,
+                "delivery.assignment.otp": null, // Clear used OTP
                 "payment.status": "paid", // usually completed at this point
             },
             $push: {
@@ -488,7 +526,7 @@ export const processCompleteDelivery = async (bookingId, driverId) => {
         { returnDocument: "after" }
     );
 
-    if (booking) {
+    if (updated) {
         await Promise.all([
             markDriverAvailable(driverId),
             Driver.findByIdAndUpdate(driverId, {
@@ -497,7 +535,7 @@ export const processCompleteDelivery = async (bookingId, driverId) => {
         ]);
     }
 
-    return booking;
+    return updated;
 };
 
 // PAGINATION

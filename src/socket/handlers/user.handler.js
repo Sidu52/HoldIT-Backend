@@ -9,6 +9,10 @@ export const registerUserHandlers = (io, socket) => {
     const userId = socket.user.id;
     const role = socket.user.role;
 
+    // Join private user room for targeted notifications
+    socket.join(rooms.user(userId));
+    logger.debug(`[Socket:User] ${userId} joined room ${rooms.user(userId)}`);
+
     // Both User and Admin can request location
     socket.on(SOCKET_EVENTS.DRIVER_LOCATION_GET, async (payload, callback) => {
         try {

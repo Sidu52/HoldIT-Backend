@@ -26,15 +26,17 @@ const startStatsInterval = (io) => {
                 Driver.countDocuments({ is_online: true }),
                 Booking.countDocuments({ 
                     status: { $in: [
-                        BOOKING_STATUS.DRIVER_ASSIGNED, 
-                        BOOKING_STATUS.PICKED_UP, 
-                        BOOKING_STATUS.OUT_FOR_RETURN
+                        BOOKING_STATUS.DRIVER_ASSIGNED,
+                        BOOKING_STATUS.DRIVER_ARRIVED,
+                        BOOKING_STATUS.PICKED_UP,
+                        BOOKING_STATUS.AT_STORE,
+                        BOOKING_STATUS.RETURN_DRIVER_ASSIGNED
                     ]}
                 }),
-                Booking.countDocuments({ status: BOOKING_STATUS.PENDING }),
+                Booking.countDocuments({ status: BOOKING_STATUS.STORE_ASSIGNED }),
                 Booking.countDocuments({ 
                     status: BOOKING_STATUS.DELIVERED,
-                    "pickup.assignment.completedAt": { $gte: today } 
+                    "delivery.assignment.completedAt": { $gte: today } 
                 })
             ]);
 

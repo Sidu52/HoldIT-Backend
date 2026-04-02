@@ -1,15 +1,27 @@
 import logger from "../../../utils/logger.js";
-import { USER_ROLES } from "../../../utils/constants.js";
+import { rooms } from "../socket.rooms.js";
 
-// Stores are mostly passive receivers in this architecture.
-// Business logic goes through standard REST APIs.
+// Store role constant — stores authenticate as their own entity
+const STORE_ROLE = "store";
+
+/**
+ * Register store-specific socket handlers.
+ * Stores are mostly passive receivers in this architecture.
+ * Business logic goes through standard REST APIs.
+ */
 export const registerStoreHandlers = (io, socket) => {
-    if (socket.user.role !== USER_ROLES.STORE_OWNER) return;
+    // Accept both store and store_owner roles
+    const role = socket.user.role;
+    if (role !== STORE_ROLE && role !== "store_owner") return;
 
-    // Optional: Add basic store health check ping or heartbeat if required later.
-    // For now, connections auto-join room store:{storeId} gracefully.
-    
+    const storeId = socket.user.id;
+
+    // Join the store's private room so it receives targeted events
+    // (e.g., incoming bookings, return requests, driver arrivals)
+    socket.join(rooms.store(storeId));
+    logger.debug(`[Socket:Store] ${storeId} joined room ${rooms.store(storeId)}`);
+
     socket.on("error", (err) => {
-        logger.error(`[Socket:Store] error from ${socket.user.id}: ${err.message}`);
+        logger.error(`[Socket:Store] error from ${storeId}: ${err.message}`);
     });
 };

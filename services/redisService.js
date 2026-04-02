@@ -84,6 +84,25 @@ const createRedisClient = (config, label = "Redis") => {
 // Main Redis instance
 const redis = createRedisClient(redisConnectionConfig, "Redis");
 
+
+// Shared connection for ALL Queue instances (not workers)
+export const sharedQueueConnection = new Redis(
+    process.env.REDIS_URL || redisConnectionConfig,
+    {
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+    }
+);
+
+// Shared connection for ALL Workers
+export const sharedWorkerConnection = new Redis(
+    process.env.REDIS_URL || redisConnectionConfig,
+    {
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+    }
+);
+
 // BULLMQ CONNECTION FACTORY
 // Each BullMQ Queue/Worker needs its own connection
 export const createBullConnection = (label = "BullMQ") => {

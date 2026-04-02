@@ -36,8 +36,10 @@ import {
     queueBookingJob,
     releaseStoreCapacity,
     findNearestAvailableStore,
+    findNearbyDrivers,
     assignStoreToBooking,
     findStore,
+    findDriver,
 } from "../../helpers/user/bookingHelper.js";
 import { STORE_MESSAGES } from "../../constants/user/store.js";
 import { DRIVER_MESSAGES } from "../../constants/user/driver.js";
@@ -48,7 +50,7 @@ import logger from "../../utils/logger.js";
 // SCHEDULE 
 export const schedulePickup = async (req, res) => {
     const session = await mongoose.startSession();
-
+    console.log("1")
     try {
         session.startTransaction();
 
@@ -111,8 +113,6 @@ export const schedulePickup = async (req, res) => {
             session
         );
 
-        console.log("store", store);
-
         if (!store) {
             await safeAbortSession(session);
             return sendError(
@@ -138,6 +138,23 @@ export const schedulePickup = async (req, res) => {
                 res,
                 BOOKING_MESSAGES.STORE_AT_CAPACITY,
                 STATUS_CODES.CONFLICT
+            );
+        }
+
+        // Check driver availability before creating the booking
+        const nearbyDrivers = await findNearbyDrivers(
+            pickupLocation.lat,
+            pickupLocation.lng,
+            session,
+            5000 // 5km search radius
+        );
+
+        if (nearbyDrivers.length === 0) {
+            await safeAbortSession(session);
+            return sendError(
+                res,
+                BOOKING_MESSAGES.NO_DRIVER_AVAILABLE_AREA,
+                STATUS_CODES.NOT_FOUND
             );
         }
 
@@ -247,6 +264,7 @@ export const schedulePickup = async (req, res) => {
         return sendError(res, BOOKING_MESSAGES.SCHEDULE_FAILED);
     }
 };
+
 // GET MY BOOKINGS
 export const getMyBookings = async (req, res) => {
     try {
@@ -424,7 +442,7 @@ export const cancelBooking = async (req, res) => {
 export const getActiveBookings = async (req, res) => {
     try {
         const userId = req.user.auth_id;
-        const cacheKey = `user_active_bookings:${userId}`;
+        const cacheKey = BOOKING_CACHE.ACTIVE_KEY(userId);
         const cached = await getCachedData(cacheKey);
 
         if (cached) {
@@ -447,7 +465,7 @@ export const getActiveBookings = async (req, res) => {
             total: bookings.length,
         };
 
-        await setCacheData(cacheKey, responseData, BOOKING_CACHE.LIST_TTL);
+        await setCacheData(cacheKey, responseData, BOOKING_CACHE.ACTIVE_TTL);
 
         return sendResponse({
             res,
@@ -470,7 +488,7 @@ export const getBookingHistory = async (req, res) => {
         const limitNum = Number(limit);
         const skip = (pageNum - 1) * limitNum;
         const sortDir = sort_order === "asc" ? 1 : -1;
-        const cacheKey = `user_booking_history:${userId}:${pageNum}:${limitNum}:${sort_order}`;
+        const cacheKey = BOOKING_CACHE.HISTORY_KEY(userId, pageNum, limitNum, sort_order);
         const cached = await getCachedData(cacheKey);
 
         if (cached) {
@@ -501,7 +519,7 @@ export const getBookingHistory = async (req, res) => {
             pagination: buildPagination(pageNum, limitNum, total),
         };
 
-        await setCacheData(cacheKey, responseData, BOOKING_CACHE.LIST_TTL);
+        await setCacheData(cacheKey, responseData, BOOKING_CACHE.HISTORY_TTL);
 
         return sendResponse({
             res,
@@ -617,15 +635,20 @@ export const getAssignDriver = async (req, res) => {
             return sendError(res, BOOKING_MESSAGES.BOOKING_NOT_FOUND, STATUS_CODES.NOT_FOUND);
         }
 
-        if (!booking.driverId) {
+        // Determine which driver to show (pickup or delivery)
+        const pickupDriverId = booking.pickup?.assignment?.driverId;
+        const deliveryDriverId = booking.delivery?.assignment?.driverId;
+        const driverId = deliveryDriverId || pickupDriverId;
+
+        if (!driverId) {
             return sendError(
                 res,
-                DRIVER_MESSAGES.DRIVER_NOT_FOUND,
+                BOOKING_MESSAGES.DRIVER_NOT_ASSIGNED,
                 STATUS_CODES.NOT_FOUND
             );
         }
 
-        const driver = await findDriver(booking.driverId, BOOKING_SELECT.DETAIL);
+        const driver = await findDriver(driverId, "first_name last_name phone vehicle_type vehicle_details");
         if (!driver) {
             return sendError(
                 res,
@@ -634,18 +657,27 @@ export const getAssignDriver = async (req, res) => {
             );
         }
 
+        // Pick the correct assignment block
+        const assignment = deliveryDriverId
+            ? booking.delivery?.assignment
+            : booking.pickup?.assignment;
+
         return sendResponse({
             res,
             message: BOOKING_MESSAGES.ASSIGN_DRIVER,
             data: {
                 bookingId: booking._id,
                 status: booking.status,
-                store: {
+                driver: {
                     driverId: driver._id,
+                    name: `${driver.first_name || ""} ${driver.last_name || ""}`.trim(),
+                    phone: driver.phone,
+                    vehicleType: driver.vehicle_type,
+                    vehicleNumber: driver.vehicle_details?.registration_number,
                 },
-                assignedAt: booking.assignedAt,
-                acceptedAt: booking.acceptedAt,
-                completedAt: booking.completedAt,
+                assignedAt: assignment?.assignedAt,
+                acceptedAt: assignment?.acceptedAt,
+                completedAt: assignment?.completedAt,
             },
         });
     } catch (err) {
@@ -682,7 +714,7 @@ export const getAssignStore = async (req, res) => {
             );
         }
 
-        const store = await findStore(booking.storeId, userId, BOOKING_SELECT.DETAIL);
+        const store = await findStore(booking.storeId, "store_name store_contact_number location");
         if (!store) {
             return sendError(
                 res,
@@ -702,9 +734,6 @@ export const getAssignStore = async (req, res) => {
                     phone: store.store_contact_number,
                     address: store.location,
                 },
-                assignedAt: booking.assignedAt,
-                acceptedAt: booking.acceptedAt,
-                completedAt: booking.completedAt,
             },
         });
 

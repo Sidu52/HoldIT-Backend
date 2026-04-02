@@ -317,16 +317,115 @@ export const getBookingForDriverSearch = async (bookingId) => {
         .lean();
 };
 
-export const updateBookingStatus = async (bookingId, status, note) => {
+
+export const handleReturnDriverNotFound = async (bookingId, reason) => {
     const now = new Date();
-    return Booking.findByIdAndUpdate(
+    const booking = await Booking.findByIdAndUpdate(
+        bookingId,
+        {
+            $set: { 
+                status: BOOKING_STATUS.STORED, 
+                lastStatusUpdatedAt: now,
+                "delivery.returnOtp": null, // Clear transient OTP
+                "delivery.assignment": null, // Clear assignment attempt
+            },
+            $push: { 
+                timeline: { 
+                    status: BOOKING_STATUS.STORED, 
+                    note: `Return driver search failed: ${reason}. You can retry requesting a return.`, 
+                    createdAt: now 
+                } 
+            },
+        },
+        { new: true }
+    ).select("userId").lean();
+
+    if (booking?.userId) {
+        const userId = booking.userId.toString();
+        
+        // 1. Invalidate Cache
+        const { invalidateBookingCache } = await import("./bookingHelper.js");
+        await invalidateBookingCache(userId, bookingId).catch(() => {});
+
+        // 2. Emit Socket Event
+        try {
+            const { getIO } = await import("../../src/socket/index.js");
+            const { rooms } = await import("../../src/socket/socket.rooms.js");
+            const { SOCKET_EVENTS } = await import("../../src/socket/socket.events.js");
+            const io = getIO();
+            
+            io.to(rooms.user(userId)).emit(SOCKET_EVENTS.BOOKING_NO_DRIVER, {
+                bookingId,
+                status: BOOKING_STATUS.STORED,
+                message: "No driver found for your return request. Please try again."
+            });
+        } catch (socketErr) {
+            logger.debug(`[handleReturnDriverNotFound] Socket emission skipped: ${socketErr.message}`);
+        }
+    }
+
+    return booking;
+};
+
+export const updateBookingStatus = async (bookingId, status, note) => {
+
+    const now = new Date();
+    const booking = await Booking.findByIdAndUpdate(
         bookingId,
         {
             $set: { status, lastStatusUpdatedAt: now },
             $push: { timeline: { status, note, createdAt: now } },
         },
         { new: true }
-    );
+    ).select("userId").lean();
+
+    if (booking?.userId) {
+        const userId = booking.userId.toString();
+        
+        // 1. Invalidate Cache
+        const { invalidateBookingCache } = await import("./bookingHelper.js");
+        await invalidateBookingCache(userId, bookingId).catch((err) =>
+            logger.warn(`[updateBookingStatus] Cache invalidation failed for ${bookingId}:`, err.message)
+        );
+
+        // 2. Emit Socket Event
+        try {
+            const { getIO } = await import("../../src/socket/index.js");
+            const { rooms } = await import("../../src/socket/socket.rooms.js");
+            const { SOCKET_EVENTS } = await import("../../src/socket/socket.events.js");
+            const io = getIO();
+            
+            // Generic event (Legacy/Simpler)
+            const payload = { bookingId, status, note };
+            io.to(rooms.user(userId)).emit("booking:status_updated", payload);
+
+            // Specific event (Recommended)
+            const eventMap = {
+                "driver_assigned": SOCKET_EVENTS.BOOKING_DRIVER_ASSIGNED,
+                "driver_arrived": SOCKET_EVENTS.BOOKING_DRIVER_ARRIVED,
+                "picked_up": SOCKET_EVENTS.BOOKING_PICKED_UP,
+                "at_store": SOCKET_EVENTS.BOOKING_ARRIVED_AT_STORE,
+                "stored": SOCKET_EVENTS.BOOKING_STORED,
+                "return_requested": SOCKET_EVENTS.BOOKING_RETURN_REQUESTED,
+                "return_driver_assigned": SOCKET_EVENTS.BOOKING_RETURN_DRIVER_ASSIGNED,
+                "delivered": SOCKET_EVENTS.BOOKING_DELIVERED,
+                "cancelled": SOCKET_EVENTS.BOOKING_CANCELLED,
+                "driver_searching": SOCKET_EVENTS.BOOKING_DRIVER_SEARCHING,
+            };
+
+            const specificEvent = eventMap[status];
+            if (specificEvent) {
+                io.to(rooms.user(userId)).emit(specificEvent, payload);
+            }
+            
+            logger.debug(`[Socket] Emitted status_updated and ${specificEvent || "none"} to ${userId}`);
+        } catch (socketErr) {
+            // Socket might not be initialized in some contexts (e.g. CLI tools)
+            logger.debug(`[updateBookingStatus] Socket emission skipped: ${socketErr.message}`);
+        }
+    }
+
+    return booking;
 };
 
 export const scheduleDriverSearch = async (bookingId, type = "PICKUP") => {

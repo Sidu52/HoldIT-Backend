@@ -1,7 +1,8 @@
 import { Worker } from "bullmq";
-import { createBullConnection } from "../../services/redisService.js";
+import { createBullConnection, sharedWorkerConnection } from "../../services/redisService.js";
 import redis from "../../services/redisService.js";
 import Driver from "../../models/Driver.js";
+import Booking from "../../models/Booking.js";
 import {
     DRIVER_ASSIGNMENT,
     DRIVER_JOB_NAMES,
@@ -30,9 +31,21 @@ import {
     scheduleOfferNextDriver,
     scheduleOfferTimeoutCheck,
     getDriverName,
+    handleReturnDriverNotFound,
 } from "../../helpers/user/driverAssignHelper.js";
 import { autoCancelBooking } from "../../helpers/user/bookingHelper.js";
+import { getIO } from "../../src/socket/index.js";
+import {
+    emitBookingDriverSearching,
+    emitBookingNoDriverAvailable,
+} from "../../src/socket/emitters/booking.emitter.js";
+import { emitAdminAlertNoDriver } from "../../src/socket/emitters/driver.emitter.js";
 import logger from "../../utils/logger.js";
+
+/** Safely get the Socket.IO instance; returns null if not initialized. */
+const safeGetIO = () => {
+    try { return getIO(); } catch { return null; }
+};
 
 let worker;
 
@@ -59,7 +72,8 @@ export const createDriverAssignWorker = () => {
             return handler(job);
         },
         {
-            connection: createBullConnection("Driver Assign Worker"),
+            // connection: createBullConnection("Driver Assign Worker"),
+            connection: sharedWorkerConnection,
             concurrency: 10,
             settings: { lockDuration: 60000 },
         }
@@ -118,7 +132,12 @@ async function handleSearchDrivers(job) {
             : booking.deliveryLocation;
 
         if (!location?.lat || !location?.lng) {
-            await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.INVALID_LOCATION);
+            const failReason = AUTO_CANCEL_REASONS.INVALID_LOCATION;
+            if (type === "RETURN") {
+                await handleReturnDriverNotFound(bookingId, failReason);
+            } else {
+                await autoCancelBooking(bookingId, failReason);
+            }
             await clearSearchActive(bookingId);
             return { success: false, reason: "invalid_location" };
         }
@@ -133,7 +152,12 @@ async function handleSearchDrivers(job) {
         );
 
         if (nearbyDrivers.length === 0) {
-            await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.NO_DRIVER_FOUND);
+            const failReason = AUTO_CANCEL_REASONS.NO_DRIVER_FOUND;
+            if (type === "RETURN") {
+                await handleReturnDriverNotFound(bookingId, failReason);
+            } else {
+                await autoCancelBooking(bookingId, failReason);
+            }
             await clearSearchActive(bookingId);
             return { success: false, reason: "no_drivers_nearby" };
         }
@@ -153,7 +177,12 @@ async function handleSearchDrivers(job) {
             .slice(0, DRIVER_ASSIGNMENT.MAX_OFFER_ATTEMPTS);
 
         if (validCandidates.length === 0) {
-            await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.NO_DRIVER_FOUND);
+            const failReason = AUTO_CANCEL_REASONS.NO_DRIVER_FOUND;
+            if (type === "RETURN") {
+                await handleReturnDriverNotFound(bookingId, failReason);
+            } else {
+                await autoCancelBooking(bookingId, failReason);
+            }
             await clearSearchActive(bookingId);
             return { success: false, reason: "no_verified_drivers" };
         }
@@ -184,77 +213,77 @@ async function handleOfferNextDriver(job) {
             return { success: false, reason };
         }
 
-    // Pop next candidate
-    const nextDriverId = await popNextCandidate(bookingId);
+        // Pop next candidate
+        const nextDriverId = await popNextCandidate(bookingId);
 
-    if (!nextDriverId) {
-        // ALL CANDIDATES EXHAUSTED  AUTO CANCEL
-        await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED);
-        return { success: false, reason: "all_exhausted" };
-    }
+        if (!nextDriverId) {
+            // ALL CANDIDATES EXHAUSTED  AUTO CANCEL
+            await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED);
+            return { success: false, reason: "all_exhausted" };
+        }
 
-    // Quick Redis re-check
-    const metaKey = REDIS_KEYS.DRIVER_META(nextDriverId);
-    const meta = await redis.hgetall(metaKey);
+        // Quick Redis re-check
+        const metaKey = REDIS_KEYS.DRIVER_META(nextDriverId);
+        const meta = await redis.hgetall(metaKey);
 
-    const isUnavailable =
-        meta?.is_on_trip === "true" ||
-        meta?.is_online !== "true";
+        const isUnavailable =
+            meta?.is_on_trip === "true" ||
+            meta?.is_online !== "true";
 
-    if (isUnavailable) {
-        await markDriverTried(bookingId, nextDriverId);
-        return tryNextDriver(bookingId, type, attemptNumber);
-    }
+        if (isUnavailable) {
+            await markDriverTried(bookingId, nextDriverId);
+            return tryNextDriver(bookingId, type, attemptNumber);
+        }
 
-    // Check if driver has pending offer from another booking
-    const driverLockKey = REDIS_KEYS.DRIVER_OFFERED(nextDriverId);
-    const existingLock = await redis.get(driverLockKey);
+        // Check if driver has pending offer from another booking
+        const driverLockKey = REDIS_KEYS.DRIVER_OFFERED(nextDriverId);
+        const existingLock = await redis.get(driverLockKey);
 
-    if (existingLock && existingLock !== bookingId) {
-        await markDriverTried(bookingId, nextDriverId);
-        return tryNextDriver(bookingId, type, attemptNumber);
-    }
+        if (existingLock && existingLock !== bookingId) {
+            await markDriverTried(bookingId, nextDriverId);
+            return tryNextDriver(bookingId, type, attemptNumber);
+        }
 
-    // Create offer in Redis
-  const { created, reason: offerReason } = await createDriverOffer(
-    bookingId,
-    nextDriverId,
-    attemptNumber
-);
+        // Create offer in Redis
+        const { created, reason: offerReason } = await createDriverOffer(
+            bookingId,
+            nextDriverId,
+            attemptNumber
+        );
 
-    if (!created) {
-        await markDriverTried(bookingId, nextDriverId);
-        return tryNextDriver(bookingId, type, attemptNumber);
-    }
+        if (!created) {
+            await markDriverTried(bookingId, nextDriverId);
+            return tryNextDriver(bookingId, type, attemptNumber);
+        }
 
-    // Get driver details
-    const driver = await Driver.findById(nextDriverId)
-        .select("first_name last_name phone vehicle_type")
-        .lean();
+        // Get driver details
+        const driver = await Driver.findById(nextDriverId)
+            .select("first_name last_name phone vehicle_type")
+            .lean();
 
-    const driverName = getDriverName(driver);
+        const driverName = getDriverName(driver);
 
-    logger.info(
-        `[Offer] Offer sent to ${driverName} (${nextDriverId})`
-    );
-    logger.info(
-        `[Offer] Timeout in ${DRIVER_ASSIGNMENT.OFFER_TIMEOUT_SECONDS}s`
-    );
+        logger.info(
+            `[Offer] Offer sent to ${driverName} (${nextDriverId})`
+        );
+        logger.info(
+            `[Offer] Timeout in ${DRIVER_ASSIGNMENT.OFFER_TIMEOUT_SECONDS}s`
+        );
 
-    await scheduleOfferTimeoutCheck(
-        bookingId,
-        type,
-        nextDriverId,
-        attemptNumber
-    );
+        await scheduleOfferTimeoutCheck(
+            bookingId,
+            type,
+            nextDriverId,
+            attemptNumber
+        );
 
-    return {
-        success: true,
-        offeredTo: nextDriverId,
-        driverName,
-        attemptNumber,
-        bookingId,
-    };
+        return {
+            success: true,
+            offeredTo: nextDriverId,
+            driverName,
+            attemptNumber,
+            bookingId,
+        };
     } catch (error) {
         if (job.moveToFailed) await job.moveToFailed(error, job.token);
         throw error;
@@ -265,10 +294,12 @@ async function tryNextDriver(bookingId, type, currentAttempt) {
     const remaining = await getRemainingCandidateCount(bookingId);
 
     if (remaining === 0) {
-        await autoCancelBooking(
-            bookingId,
-            AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED
-        );
+        const failReason = AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED;
+        if (type === "RETURN") {
+            await handleReturnDriverNotFound(bookingId, failReason);
+        } else {
+            await autoCancelBooking(bookingId, failReason);
+        }
 
         try {
             const bookingForSocket = await Booking.findById(bookingId).select("userId pickupLocation").lean();
@@ -308,26 +339,26 @@ async function handleOfferTimeout(job) {
             return { success: true, reason: "already_resolved" };
         }
 
-    //  Check offer status in Redis
-    const { exists, offer } = await getOfferStatus(bookingId);
+        //  Check offer status in Redis
+        const { exists, offer } = await getOfferStatus(bookingId);
 
-    if (!exists) {
-        logger.info(`[Timeout] Offer expired for ${bookingId}`);
-        await handleDriverTimeout(bookingId, type, driverId, attemptNumber);
-        return { success: true, reason: "offer_expired" };
-    }
+        if (!exists) {
+            logger.info(`[Timeout] Offer expired for ${bookingId}`);
+            await handleDriverTimeout(bookingId, type, driverId, attemptNumber);
+            return { success: true, reason: "offer_expired" };
+        }
 
-    // Driver accepted between offer creation and timeout check
-    if (offer.status === "accepted") {
-        logger.info(`[Timeout] Driver accepted just before timeout for ${bookingId}`);
-        return { success: true, reason: "accepted_in_time" };
-    }
+        // Driver accepted between offer creation and timeout check
+        if (offer.status === "accepted") {
+            logger.info(`[Timeout] Driver accepted just before timeout for ${bookingId}`);
+            return { success: true, reason: "accepted_in_time" };
+        }
 
-    // Different driver in offer (shouldn't happen, but safety check)
-    if (offer.driverId !== driverId) {
-        logger.info(`[Timeout] Different driver in offer. Expected ${driverId}, got ${offer.driverId}`);
-        return { success: true, reason: "different_driver" };
-    }
+        // Different driver in offer (shouldn't happen, but safety check)
+        if (offer.driverId !== driverId) {
+            logger.info(`[Timeout] Different driver in offer. Expected ${driverId}, got ${offer.driverId}`);
+            return { success: true, reason: "different_driver" };
+        }
 
         // Offer still pending → driver timed out
         logger.info(`[Timeout] Driver ${driverId} timed out for ${bookingId}`);
@@ -347,14 +378,16 @@ async function handleDriverTimeout(bookingId, type, driverId, attemptNumber) {
     const remaining = await getRemainingCandidateCount(bookingId);
 
     if (remaining === 0) {
-        // ALL DRIVERS EXHAUSTED → AUTO CANCEL
+        // ALL DRIVERS EXHAUSTED
+        const failReason = AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED;
         logger.info(
-            `[Timeout] All candidates exhausted for ${bookingId}. Auto-cancelling.`
+            `[Timeout] All candidates exhausted for ${bookingId}. Handling failure (Type: ${type}).`
         );
-        await autoCancelBooking(
-            bookingId,
-            AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED
-        );
+        if (type === "RETURN") {
+            await handleReturnDriverNotFound(bookingId, failReason);
+        } else {
+            await autoCancelBooking(bookingId, failReason);
+        }
         return;
     }
     logger.info(

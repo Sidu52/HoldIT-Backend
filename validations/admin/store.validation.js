@@ -14,19 +14,19 @@ export const storeIdSchema = Joi.object({
 
 export const createStoreSchema = Joi.object({
     // Required
-    phone:        Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
-    store_name:   Joi.string().min(2).max(200).required(),
-    lat:          Joi.number().min(-90).max(90).required(),
-    lng:          Joi.number().min(-180).max(180).required(),
-    address:      Joi.string().min(5).max(500).required(),
+    phone: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
+    store_name: Joi.string().min(2).max(200).required(),
+    lat: Joi.number().min(-90).max(90).required(),
+    lng: Joi.number().min(-180).max(180).required(),
+    address: Joi.string().min(5).max(500).required(),
 
     // Optional
-    store_description:    Joi.string().max(1000).optional(),
-    store_open_time:      Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), // HH:mm
-    store_close_time:     Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    store_description: Joi.string().max(1000).optional(),
+    store_open_time: Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), // HH:mm
+    store_close_time: Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
     store_contact_number: Joi.string().max(15).optional(),
     max_booking_capacity: Joi.number().min(1).max(500).optional(),
-    store_owner_id:       Joi.string().hex().length(24).optional(), // MongoDB ObjectId
+    store_owner_id: Joi.string().hex().length(24).optional(), // MongoDB ObjectId
 });
 
 export const storeOwnerIdSchema = Joi.object({
