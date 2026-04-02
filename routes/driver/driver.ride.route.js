@@ -12,10 +12,15 @@ import {
     arriveAtStoreController,
     cancelRideController,
     getPendingOfferController,
+    arriveAtUserReturnController,
     completeDeliveryController,
 } from "../../controllers/driver/driver.ride.controller.js";
+
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
-import { cancelRideSchema } from "../../validations/driver/ride.driver.validation.js";
+import {
+    cancelRideSchema,
+    completeRideSchema
+} from "../../validations/driver/ride.driver.validation.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 
 const router = express.Router();
@@ -26,7 +31,8 @@ router.get("/rides/offer/pending", apiLimiter, getPendingOfferController);
 router.get("/rides/assigned", apiLimiter, getAssignedRidesController);
 router.get("/rides/active", apiLimiter, getActiveRideController);
 
-router.get("/rides/history", apiLimiter, getRideHistoryController);
+router.get("/history", apiLimiter, getRideHistoryController);
+router.get("/:booking_id", apiLimiter, getRideDetailsController);
 router.get("/rides/:booking_id", apiLimiter, getRideDetailsController);
 
 // OFFER
@@ -35,7 +41,12 @@ router.post("/rides/:booking_id/reject", apiLimiter, rejectRideController);
 
 // PICKUP
 router.put("/rides/:booking_id/arrive-pickup", apiLimiter, arriveAtPickupController);
-router.put("/rides/:booking_id/complete-pickup", apiLimiter, completePickupController);
+router.put(
+    "/rides/:booking_id/complete-pickup",
+    apiLimiter,
+    validate(completeRideSchema),
+    completePickupController
+);
 router.put("/rides/:booking_id/arrive-store", apiLimiter, arriveAtStoreController);
 
 // CANCELLATION 
@@ -47,6 +58,13 @@ router.post(
 );
 
 // DELIVERY
-router.put("/rides/:booking_id/complete-delivery", apiLimiter, completeDeliveryController);
+router.put("/rides/:booking_id/arrive-delivery", apiLimiter, arriveAtUserReturnController);
+router.put(
+    "/rides/:booking_id/complete-delivery",
+    apiLimiter,
+    validate(completeRideSchema),
+    completeDeliveryController
+);
+
 
 export default router;

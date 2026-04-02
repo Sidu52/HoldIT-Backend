@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { createBullConnection } from "./redisService.js";
+import { createBullConnection, sharedQueueConnection } from "./redisService.js";
 import { JOB_QUEUES } from "../utils/constants.js";
 import logger from "../utils/logger.js";
 
@@ -10,24 +10,31 @@ const queues = {};
 const queueConnections = {}; // Store connections separately
 
 const getOrCreateQueue = (name) => {
-    // If queue already exists and connection is alive, reuse it
     if (queues[name] && queueConnections[name]?.status === "ready") {
         logger.info(`[Queues] Reusing existing queue: ${name}`);
         return queues[name];
     }
 
-    // Close stale connection if it exists
-    if (queueConnections[name] && queueConnections[name].status !== "ready") {
+    // Safely tear down stale connection
+    if (queueConnections[name]) {
         logger.warn(`[Queues] Stale connection for ${name}, recreating...`);
-        queueConnections[name].disconnect().catch(() => { });
+        const stale = queueConnections[name];
+        // ✅ Guard: only call disconnect if it's actually a function
+        if (typeof stale.disconnect === "function") {
+            stale.disconnect().catch(() => { });
+        } else if (typeof stale.quit === "function") {
+            stale.quit().catch(() => { });
+        }
+        delete queueConnections[name];
+        delete queues[name];
     }
 
-    // Create new connection and queue
+    // ✅ Create one connection and use IT for the queue (not sharedQueueConnection)
     const connection = createBullConnection(`Queue:${name}`);
     queueConnections[name] = connection;
 
     queues[name] = new Queue(name, {
-        connection,
+        connection, // ✅ use the connection you just created
         defaultJobOptions: {
             removeOnComplete: { count: 100 },
             removeOnFail: { count: 200 },

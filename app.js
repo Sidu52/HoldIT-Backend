@@ -13,7 +13,7 @@ import logger from "./utils/logger.js";
 
 import { connectMongo, disconnectMongo } from "./services/mongoService.js";
 import { initRedis } from "./services/redisService.js";
-import { initSocket } from "./src/socket/index.js";
+import { initSocket, closeSocket } from "./src/socket/index.js";
 import { initializeWorkers, closeAllWorkers } from "./workers/initializeWorkers.js";
 import { syncStoresToRedis } from "./services/storeSync.js";
 import { syncDriversToRedis } from "./services/driverSync.js";

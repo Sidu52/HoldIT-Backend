@@ -98,16 +98,16 @@ export const goOnline = async (req, res) => {
             );
         }
 
-        if (store.is_online) {
+        if (store.is_online === is_online) {
             return sendResponse({
                 res,
-                message: "Store is already online.",
-                data: { is_online: true },
+                message: `Store is already ${is_online ? "online" : "offline"}.`,
+                data: { is_online },
             });
         }
 
         await Store.findByIdAndUpdate(storeId, {
-            $set: { is_online, last_active_at: new Date() },
+            $set: { is_online: !!is_online, last_active_at: new Date() },
         });
 
         return sendResponse({

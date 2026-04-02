@@ -1,7 +1,7 @@
 import User from "../../models/User.js";
 import Store from "../../models/Store.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import { STATUS_CODES } from "../../utils/constants.js";
+import { ACCOUNT_STATUS, STATUS_CODES } from "../../utils/constants.js";
 import { set, get, del } from "../../services/redisService.js";
 
 // Constants
@@ -32,7 +32,6 @@ const ALLOWED_UPDATE_FIELDS = [
     "last_name",
     "gender",
     "dob",
-    "address",
 ];
 
 // GET PROFILE
@@ -316,7 +315,15 @@ export const addAddress = async (req, res) => {
         }
 
         await invalidateAddressCache(userId);
-
+        await set(
+            CACHE_KEYS.USER_ADDRESSES(userId),
+            JSON.stringify({
+                addresses: user.addresses,
+                total: user.addresses.length,
+            }),
+            "EX",
+            CACHE_TTL.ADDRESSES
+        );
         const addedAddress = user.addresses[user.addresses.length - 1];
 
         return sendResponse({
@@ -417,6 +424,16 @@ export const updateAddress = async (req, res) => {
         }
 
         await user.save();
+        await invalidateAddressCache(userId);
+        await set(
+            CACHE_KEYS.USER_ADDRESSES(userId),
+            JSON.stringify({
+                addresses: user.addresses,
+                total: user.addresses.length,
+            }),
+            "EX",
+            CACHE_TTL.ADDRESSES
+        );
 
         if (address.is_default) {
             await syncUserLocationWithAddress(userId, address);
@@ -614,6 +631,7 @@ export const getNearestStore = async (req, res) => {
             );
         }
 
+        console.log("Nearest stores:", stores);
         // ── 4. Shape response ──────────────────────────────────────────
         const responseData = {
             nearest: stores[0],
@@ -626,9 +644,9 @@ export const getNearestStore = async (req, res) => {
             cacheKey,
             JSON.stringify(responseData),
             "EX",
-            600
+            120
         ).catch((err) =>
-            logger.warn("[getNearestStore] Cache write failed:", err.message)
+            logger.warn("[getNearestStore] Cache write failed:", errss)
         );
 
         return sendResponse({
@@ -637,7 +655,7 @@ export const getNearestStore = async (req, res) => {
             data: responseData,
         });
     } catch (err) {
-        logger.error("[getNearestStore] Error:", err.message);
+        logger.error("[getNearestStore] Error:", err);
         return sendError(res, "Failed to find nearest stores");
     }
 };

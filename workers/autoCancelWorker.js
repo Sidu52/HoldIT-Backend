@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { createBullConnection } from "../services/redisService.js";
+import { createBullConnection, sharedWorkerConnection } from "../services/redisService.js";
 import { del } from "../services/redisService.js";
 import { cancelJob } from "../services/jobService.js";
 import Booking from "../models/Booking.js";
@@ -44,7 +44,7 @@ export const createAutoCancelWorker = () => {
                 if (booking.status === BOOKING_STATUS.DRIVER_ASSIGNED) {
                     const acceptKeyPickup = `booking:accept:${bookingId}:pickup`;
                     const acceptKeyDelivery = `booking:accept:${bookingId}:delivery`;
-                    
+
                     const [pendingPickup, pendingDelivery] = await Promise.all([
                         import("../services/redisService.js").then(m => m.get(acceptKeyPickup)),
                         import("../services/redisService.js").then(m => m.get(acceptKeyDelivery))
@@ -80,7 +80,8 @@ export const createAutoCancelWorker = () => {
             }
         },
         {
-            connection: createBullConnection("AutoCancel Worker"),
+            // connection: createBullConnection("AutoCancel Worker"),
+            connection: sharedWorkerConnection,
             concurrency: 5,
         }
     );

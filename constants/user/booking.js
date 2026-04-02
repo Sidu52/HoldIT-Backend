@@ -18,6 +18,23 @@ export const REDIS_KEYS = {
         `user_bookings:${userId}:${page}:${limit}:${status || "all"}:${sort}`,
     BOOKING_CACHE_DETAIL: (userId, bookingId) => `booking:${userId}:${bookingId}`,
     BOOKING_CACHE_LIST_PATTERN: (userId) => `user_bookings:${userId}:*`,
+    BOOKING_ACTIVE: (userId) => `user_active_bookings:${userId}`,
+    BOOKING_HISTORY: (userId, page, limit, sort) => `user_booking_history:${userId}:${page}:${limit}:${sort}`,
+    BOOKING_HISTORY_PATTERN: (userId) => `user_booking_history:${userId}:*`,
+};
+
+// CACHE CONFIG
+export const BOOKING_CACHE = {
+    LIST_KEY: REDIS_KEYS.BOOKING_CACHE_LIST,
+    DETAIL_KEY: REDIS_KEYS.BOOKING_CACHE_DETAIL,
+    LIST_PATTERN: REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN,
+    ACTIVE_KEY: REDIS_KEYS.BOOKING_ACTIVE,
+    HISTORY_KEY: REDIS_KEYS.BOOKING_HISTORY,
+    HISTORY_PATTERN: REDIS_KEYS.BOOKING_HISTORY_PATTERN,
+    LIST_TTL: 60,
+    DETAIL_TTL: 120,
+    ACTIVE_TTL: 60,
+    HISTORY_TTL: 120,
 };
 
 // REDIS TTL
@@ -29,6 +46,8 @@ export const REDIS_TTL = {
     SEARCH_ACTIVE: 600,
     BOOKING_CACHE_LIST: 60,
     BOOKING_CACHE_DETAIL: 120,
+    BOOKING_ACTIVE: 60,
+    BOOKING_HISTORY: 120,
 };
 
 //  DRIVER ASSIGNMENT 
@@ -81,6 +100,7 @@ export const RETURN_REQUESTABLE_STATUSES = [
 
 export const DRIVER_SEARCH_STATUSES = [
     BOOKING_STATUS.STORE_ASSIGNED,
+    BOOKING_STATUS.RETURN_REQUESTED,
 ];
 
 export const ACTIVE_STATUSES = Object.values(BOOKING_STATUS).filter(
@@ -117,6 +137,8 @@ export const BOOKING_SELECT = {
     DETAIL: "-__v",
     CANCEL: "status cancelledAt cancelledBy cancelReason timeline",
     RETURN: "status delivery deliveryLocation timeline",
+    ASSIGN_DRIVER: "status pickup delivery storeId userId",
+    ASSIGN_STORE: "status storeId userId",
 };
 
 // API RESPONSE MESSAGES
@@ -132,7 +154,8 @@ export const BOOKING_MESSAGES = {
     NO_STORE_AVAILABLE: "No nearby store available at the moment. Please try again later.",
     STORE_AT_CAPACITY: "All nearby stores are at full capacity. Please try again later.",
     NO_DRIVER_AVAILABLE: "No driver available at the moment. Booking has been automatically cancelled.",
-    AUTO_CANCELLED_REFUND: "Your booking was automatically cancelled as no driver was available. Any payment will be refunded.",
+    NO_DRIVER_AVAILABLE_AREA: "No drivers available in your area at the moment. Please try again later.",
+    AUTO_CANCEL_RESERVE: "Your booking was automatically cancelled as no driver was available. Any payment will be refunded.",
 
     USER_NOT_FOUND: "User not found.",
     ACCOUNT_NOT_ACTIVE: "Your account is not active.",
@@ -153,15 +176,11 @@ export const BOOKING_MESSAGES = {
     ACTIVE_FETCH_FAILED: "Failed to fetch active bookings.",
     HISTORY_FETCH_FAILED: "Failed to fetch booking history.",
     STORE_NOT_ASSIGNED: "Store not assigned to this booking.",
-};
-
-export const BOOKING_CACHE = {
-    LIST_KEY: (userId, page, limit, status, sort) =>
-        `user_bookings:${userId}:${page}:${limit}:${status || "all"}:${sort}`,
-    DETAIL_KEY: (userId, bookingId) => `booking:${userId}:${bookingId}`,
-    LIST_PATTERN: (userId) => `user_bookings:${userId}:*`,
-    LIST_TTL: 60,
-    DETAIL_TTL: 120,
+    DRIVER_NOT_ASSIGNED: "No driver assigned to this booking yet.",
+    ASSIGN_DRIVER: "Assigned driver details fetched successfully.",
+    ASSIGN_DRIVER_FAILED: "Failed to fetch assigned driver details.",
+    ASSIGN_STORE_DETAILS: "Assigned store details fetched successfully.",
+    GET_ASSIGN_STORE_FAILED: "Failed to fetch assigned store details.",
 };
 
 export const BOOKING_JOB_NAMES = {

@@ -8,6 +8,7 @@ const userRoutes = (app) => {
     app.use("/api/v1/user/auth", userAuthRoute);
     app.use("/api/v1/user", userRoute);
     app.use("/api/v1/user/booking", bookingRoute);
+    app.use("/api/v1/user/bookings", bookingRoute);
     app.use("/api/v1/user/stores", storesRoute);
     app.use("/api/v1/user/support", supportRoute);
 }
