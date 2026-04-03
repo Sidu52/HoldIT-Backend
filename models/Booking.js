@@ -138,6 +138,10 @@ const BookingSchema = new mongoose.Schema(
             releasedAt: Date,
         },
 
+        // Tip
+        tipAmount: { type: Number, min: 0 },
+        coupenCode: { type: String, maxlength: 500 },
+
         // Delivery
         delivery: {
             requestedAt: Date,

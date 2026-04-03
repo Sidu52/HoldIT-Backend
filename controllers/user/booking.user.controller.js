@@ -50,12 +50,11 @@ import logger from "../../utils/logger.js";
 // SCHEDULE 
 export const schedulePickup = async (req, res) => {
     const session = await mongoose.startSession();
-    console.log("1")
     try {
         session.startTransaction();
 
         const userId = req.user.auth_id;
-        const { pickupLocation, pickupScheduledAt, luggage, notes } = req.body;
+        const { pickupLocation, luggage, notes, tipAmount, coupenCode } = req.body;
 
         // Verify user
         const { valid, errorType } = await verifyUserForBooking(userId, session);
@@ -102,9 +101,6 @@ export const schedulePickup = async (req, res) => {
                 STATUS_CODES.CONFLICT
             );
         }
-
-        // Scheduled time
-        const scheduledTime = new Date(pickupScheduledAt);
 
         // Find nearest available store
         const { store, error: storeError } = await findNearestAvailableStore(
@@ -168,6 +164,8 @@ export const schedulePickup = async (req, res) => {
                     storeId: store._id,
                     serviceAreaId: serviceAreaId ?? store.service_area_id,
                     status: BOOKING_STATUS.STORE_ASSIGNED,
+                    tipAmount,
+                    coupenCode,
                     pickupLocation: {
                         lat: pickupLocation.lat,
                         lng: pickupLocation.lng,
@@ -179,7 +177,7 @@ export const schedulePickup = async (req, res) => {
                     },
                     notes: notes ?? "",
                     pickup: {
-                        scheduledAt: scheduledTime,
+                        scheduledAt: Date.now(),
                     },
                     timeline: [
                         createTimelineEntry(

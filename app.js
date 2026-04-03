@@ -45,15 +45,35 @@ app.use(
     })
 );
 
+// app.use(
+//     cors({
+//         origin: process.env.ALLOWED_ORIGINS?.split(",") || 'http://localhost:4000' || "*",
+//         credentials: true,
+//         methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+//         allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+//         exposedHeaders: ["set-cookie"],
+//         maxAge: 86400,
+//     })
+// );
 app.use(
-    cors({
-        origin: process.env.ALLOWED_ORIGINS?.split(",") || 'http://localhost:4000' || "*",
-        credentials: true,
-        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-        exposedHeaders: ["set-cookie"],
-        maxAge: 86400,
-    })
+  cors({
+    origin: function (origin, callback) {
+      // Allow mobile apps (no origin)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        "http://localhost:4000",
+        "https://yourdomain.com"
+      ];
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+  })
 );
 
 app.use(express.json());
