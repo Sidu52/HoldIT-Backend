@@ -49,15 +49,8 @@ export const schedulePickupSchema = Joi.object({
     pickupLocation: locationSchema.required().messages({
         "any.required": "Pickup location is required",
     }),
-    pickupScheduledAt: Joi.date()
-        .iso()
-        .min("now")
-        .required()
-        .messages({
-            "date.base": "Invalid pickup date",
-            "date.min": "Pickup time must be in the future",
-            "any.required": "Pickup scheduled time is required",
-        }),
+    tipAmount: Joi.number().min(0).optional(),
+    coupenCode: Joi.string().trim().max(500).optional(),
     luggage: luggageSchema,
     notes: Joi.string().trim().max(500).allow("").optional(),
 });
