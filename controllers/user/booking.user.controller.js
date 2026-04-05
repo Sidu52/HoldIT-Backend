@@ -240,7 +240,7 @@ export const schedulePickup = async (req, res) => {
                 bookingId: booking._id,
                 bookingCode: booking.bookingCode,
                 status: booking.status,
-                scheduledAt: scheduledTime,
+                scheduledAt: booking.pickup.scheduledAt,
                 luggage: {
                     small: luggage.small ?? 0,
                     medium: luggage.medium ?? 0,
