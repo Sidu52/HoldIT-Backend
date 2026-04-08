@@ -54,7 +54,8 @@ export const schedulePickup = async (req, res) => {
         session.startTransaction();
 
         const userId = req.user.auth_id;
-        const { pickupLocation, luggage, notes, tipAmount, coupenCode } = req.body;
+        const { pickupLocation, luggage, notes, tipAmount, coupenCode, userInfo } = req.body;
+        const { firstName, lastName, phone } = userInfo || {};
 
         // Verify user
         const { valid, errorType } = await verifyUserForBooking(userId, session);
@@ -166,6 +167,11 @@ export const schedulePickup = async (req, res) => {
                     status: BOOKING_STATUS.STORE_ASSIGNED,
                     tipAmount,
                     coupenCode,
+                    userInfo: {
+                        firstName,
+                        lastName,
+                        phone,
+                    },
                     pickupLocation: {
                         lat: pickupLocation.lat,
                         lng: pickupLocation.lng,
