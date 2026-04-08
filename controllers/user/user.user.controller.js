@@ -425,6 +425,8 @@ export const updateAddress = async (req, res) => {
 
         await user.save();
         await invalidateAddressCache(userId);
+        await del(CACHE_KEYS.USER_ADDRESSES(userId));
+        await del(`user:profile:${userId}`);
         await set(
             CACHE_KEYS.USER_ADDRESSES(userId),
             JSON.stringify({

@@ -67,6 +67,11 @@ const BookingSchema = new mongoose.Schema(
             required: true,
             index: true,
         },
+        userInfo: {
+            firstName: { type: String, maxlength: 100 },
+            lastName: { type: String, maxlength: 100 },
+            phone: { type: String, maxlength: 20 },
+        },
         storeId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Store",
