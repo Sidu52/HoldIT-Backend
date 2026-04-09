@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { createBullConnection } from "./redisService.js";
+import { sharedQueueConnection } from "./redisService.js";
 import { JOB_QUEUES } from "../utils/constants.js";
 import logger from "../utils/logger.js";
 
@@ -7,34 +7,15 @@ import logger from "../utils/logger.js";
 // QUEUE REGISTRY
 const QUEUE_NAMES = Object.values(JOB_QUEUES);
 const queues = {};
-const queueConnections = {}; // Store connections separately
 
 const getOrCreateQueue = (name) => {
-    if (queues[name] && queueConnections[name]?.status === "ready") {
+    if (queues[name]) {
         logger.info(`[Queues] Reusing existing queue: ${name}`);
         return queues[name];
     }
 
-    // Safely tear down stale connection
-    if (queueConnections[name]) {
-        logger.warn(`[Queues] Stale connection for ${name}, recreating...`);
-        const stale = queueConnections[name];
-        // ✅ Guard: only call disconnect if it's actually a function
-        if (typeof stale.disconnect === "function") {
-            stale.disconnect().catch(() => { });
-        } else if (typeof stale.quit === "function") {
-            stale.quit().catch(() => { });
-        }
-        delete queueConnections[name];
-        delete queues[name];
-    }
-
-    // ✅ Create one connection and use IT for the queue (not sharedQueueConnection)
-    const connection = createBullConnection(`Queue:${name}`);
-    queueConnections[name] = connection;
-
     queues[name] = new Queue(name, {
-        connection, // ✅ use the connection you just created
+        connection: sharedQueueConnection,
         defaultJobOptions: {
             removeOnComplete: { count: 100 },
             removeOnFail: { count: 200 },
@@ -49,6 +30,7 @@ const getOrCreateQueue = (name) => {
     logger.info(`[Queues] Initialized new queue: ${name}`);
     return queues[name];
 };
+
 
 // Initialize all queues
 for (const name of QUEUE_NAMES) {
@@ -94,7 +76,7 @@ export const cancelJob = async (queueName, jobId) => {
 };
 
 /**
- * Gracefully close all queue connections.
+ * Gracefully close all queues.
  * Call this during process shutdown (SIGTERM/SIGINT handler).
  */
 export const closeQueues = async () => {
@@ -102,7 +84,6 @@ export const closeQueues = async () => {
         Object.entries(queues).map(async ([name, q]) => {
             try {
                 await q.close();
-                queueConnections[name]?.disconnect();
             } catch (err) {
                 logger.warn(`[JobService] Failed to close queue ${name}:`, err.message);
             }
