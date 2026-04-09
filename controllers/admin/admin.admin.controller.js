@@ -1,7 +1,10 @@
 import crypto from "crypto";
-import { set, get, del } from "../../services/redisService.js";
+import { set, get, del, scanKeys } from "../../services/redisService.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import Admin from "../../models/Admin.js";
+import User from "../../models/User.js";
+import Driver from "../../models/Driver.js";
+import Store from "../../models/Store.js";
 import sendEmail from "../../mailer/emailService.js";
 import {
     ACCOUNT_STATUS,
@@ -9,21 +12,12 @@ import {
     STATUS_CODES,
     INVITE_TOKEN_EXPIRY,
 } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
 
 // CONSTANTS
 const INVITE_TOKEN_EXPIRY_SECONDS = INVITE_TOKEN_EXPIRY * 60 * 60; // hours → seconds
 const PROFILE_CACHE_TTL = 300; // 5 minutes
 const LIST_CACHE_TTL = 120; // 2 minutes
-
-// Fields that can be updated via profile update
-const ALLOWED_PROFILE_FIELDS = [
-    "first_name",
-    "last_name",
-    "phone",
-    "gender",
-    "address",
-    "date_of_birth",
-];
 
 // Fields to exclude from responses
 const EXCLUDED_FIELDS = "-password_hash -invited_by -__v";
@@ -39,14 +33,6 @@ const invalidateTeamCache = async () => {
         logger.error("Failed to invalidate team cache:", err);
     }
 };
-
-// Import scanKeys from redis service
-import { scanKeys } from "../../services/redisService.js";
-import User from "../../models/User.js";
-import Driver from "../../models/Driver.js";
-import Store from "../../models/Store.js";
-import logger from "../../utils/logger.js";
-
 
 // Escape Regex Special Characters
 const escapeRegex = (str) => {

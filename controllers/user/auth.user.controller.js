@@ -75,13 +75,9 @@ export const authUser = async (req, res) => {
                 removeOnFail: true,
             }
         );
-
         return sendResponse({
             res,
             message: "OTP sent successfully",
-            // ...(process.env.NODE_ENV === "development" && {
-            data: { otp },
-            // }),
         });
     } catch (err) {
         logger.error("Auth User Error:", err);
@@ -123,7 +119,7 @@ export const sendOTP = async (req, res) => {
             );
         }
 
-        // Cooldown check — prevent rapid resends
+        // Cooldown check prevent rapid resends
         const cooldownKey = `otp_cooldown:${phone}`;
         const cooldownExists = await get(cooldownKey);
         if (cooldownExists) {
@@ -146,9 +142,6 @@ export const sendOTP = async (req, res) => {
         return sendResponse({
             res,
             message: "OTP sent successfully",
-            // ...(process.env.NODE_ENV === "development" && {
-            data: { otp },
-            // }),
         });
     } catch (err) {
         logger.error("Resend OTP Error:", err);

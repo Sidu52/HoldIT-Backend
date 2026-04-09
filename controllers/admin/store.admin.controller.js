@@ -31,7 +31,10 @@ const buildCacheKey = (prefix, params) => {
 const invalidateStoreCache = async (storeId = null) => {
     try {
         const promises = [delByPattern("stores:*")];
-        if (storeId) promises.push(del(`store:${storeId}`));
+        if (storeId) {
+            promises.push(del(`store:${storeId}`));
+            promises.push(del(`store:public:${storeId}`));
+        }
         await Promise.all(promises);
     } catch (err) {
         logger.error("Store cache invalidation error:", err);

@@ -199,7 +199,7 @@ export const getAddresses = async (req, res) => {
             total: sorted.length,
         };
 
-        await set(cacheKey, JSON.stringify(responseData), CACHE_TTL.ADDRESSES);
+        await set(cacheKey, JSON.stringify(responseData), "EX", CACHE_TTL.ADDRESSES);
 
         return sendResponse({
             res,
@@ -424,18 +424,7 @@ export const updateAddress = async (req, res) => {
         }
 
         await user.save();
-        await invalidateAddressCache(userId);
-        await del(CACHE_KEYS.USER_ADDRESSES(userId));
         await del(`user:profile:${userId}`);
-        await set(
-            CACHE_KEYS.USER_ADDRESSES(userId),
-            JSON.stringify({
-                addresses: user.addresses,
-                total: user.addresses.length,
-            }),
-            "EX",
-            CACHE_TTL.ADDRESSES
-        );
 
         if (address.is_default) {
             await syncUserLocationWithAddress(userId, address);
@@ -512,6 +501,7 @@ export const deleteAddress = async (req, res) => {
         }
 
         await invalidateAddressCache(userId);
+        await del(`user:profile:${userId}`);
 
         return sendResponse({
             res,
@@ -633,7 +623,7 @@ export const getNearestStore = async (req, res) => {
             );
         }
 
-        console.log("Nearest stores:", stores);
+
         // ── 4. Shape response ──────────────────────────────────────────
         const responseData = {
             nearest: stores[0],
@@ -648,7 +638,7 @@ export const getNearestStore = async (req, res) => {
             "EX",
             120
         ).catch((err) =>
-            logger.warn("[getNearestStore] Cache write failed:", errss)
+            logger.warn("[getNearestStore] Cache write failed:", err)
         );
 
         return sendResponse({
@@ -769,6 +759,9 @@ export const updateLocation = async (req, res) => {
 
         // Sync user location
         await syncUserLocationWithAddress(userId, address);
+
+        await invalidateAddressCache(userId);
+        await del(`user:profile:${userId}`);
 
         return sendResponse({
             res,

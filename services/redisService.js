@@ -4,9 +4,8 @@ import logger from "../utils/logger.js";
 
 dotenv.config();
 
-// CONFIGURATION & VALIDATION
+// CONFIGURATION
 const getRedisConfig = () => {
-    // Full URL
     if (process.env.REDIS_URL) {
         return {
             url: process.env.REDIS_URL,
@@ -86,21 +85,15 @@ const redis = createRedisClient(redisConnectionConfig, "Redis");
 
 
 // Shared connection for ALL Queue instances (not workers)
-export const sharedQueueConnection = new Redis(
-    process.env.REDIS_URL || redisConnectionConfig,
-    {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-    }
+export const sharedQueueConnection = createRedisClient(
+    { ...redisConnectionConfig, enableReadyCheck: false },
+    "Shared Queue"
 );
 
 // Shared connection for ALL Workers
-export const sharedWorkerConnection = new Redis(
-    process.env.REDIS_URL || redisConnectionConfig,
-    {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-    }
+export const sharedWorkerConnection = createRedisClient(
+    { ...redisConnectionConfig, enableReadyCheck: false },
+    "Shared Worker"
 );
 
 // BULLMQ CONNECTION FACTORY
@@ -179,9 +172,7 @@ export const scanKeys = async (pattern) => {
     return { keys };
 };
 
-/**
- * Delete all keys matching a pattern
- */
+// Delete all keys matching a pattern
 export const delByPattern = async (pattern) => {
     if (!pattern) throw new Error("Redis DEL_PATTERN: pattern is required");
 

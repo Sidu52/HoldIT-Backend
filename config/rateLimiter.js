@@ -12,10 +12,7 @@ const createLimiter = (keyPrefix, points, duration) =>
   });
 
 
-/**
- * Resolve the requester's role for use as a rate limit key segment.
- * Priority: decoded JWT role → route path prefix → null
- */
+// Resolve the requester's role for use as a rate limit key segment.
 const resolveRole = (req) => {
   if (req.user?.role) return req.user.role;
 
@@ -29,9 +26,7 @@ const resolveRole = (req) => {
   return null;
 };
 
-/**
- * Generic rate limiter middleware
- */
+// Generic rate limiter middleware
 const rateLimiterMiddleware = (limiter, options) => {
   return async (req, res, next) => {
     try {
@@ -40,11 +35,9 @@ const rateLimiterMiddleware = (limiter, options) => {
       const role = useRole ? resolveRole(req) : null;
 
       if (useRole && !role) {
-        // Don't block the request, just skip role-keying
         return next();
       }
 
-      // Identifier: phone/email/auth_id
       const identifier =
         req.body?.phone ||
         req.body?.email ||
@@ -52,7 +45,6 @@ const rateLimiterMiddleware = (limiter, options) => {
         req.query?.phone;
 
       if (useIdentifier && !identifier) {
-        // Fall back to IP so the limiter still works
         const fallbackKey = [role, req.ip].filter(Boolean).join(":");
         await limiter.consume(fallbackKey);
         return next();
@@ -100,10 +92,10 @@ export const loginLimiter = rateLimiterMiddleware(loginLimiterInstance, {
   useIP: true,
 });
 
-// Refresh → JWT present
+// Refresh JWT present
 export const refreshLimiter = rateLimiterMiddleware(refreshLimiterInstance, {
   useRole: true,
-  useIdentifier: true, // auth_id from JWT
+  useIdentifier: true,
   useIP: true,
 });
 

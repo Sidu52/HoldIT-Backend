@@ -22,6 +22,7 @@ const invalidateDriverCache = async (driverId = null) => {
         const promises = [delByPattern("drivers:*")];
         if (driverId) {
             promises.push(del(`driver:${driverId}`));
+            promises.push(del(`driver:profile:${driverId}`));
         }
         await Promise.all(promises);
     } catch (err) {

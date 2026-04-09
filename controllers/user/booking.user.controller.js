@@ -227,7 +227,7 @@ export const schedulePickup = async (req, res) => {
             );
         } catch (jobErr) {
             logger.error(
-                `[schedulePickup] ⚠️ Driver search job failed to queue for booking ` +
+                `[schedulePickup] Driver search job failed to queue for booking ` +
                 `${booking._id}. Booking created but driver search not started.`,
                 jobErr.message
             );
@@ -288,13 +288,13 @@ export const getMyBookings = async (req, res) => {
         const cacheKey = BOOKING_CACHE.LIST_KEY(userId, pageNum, limitNum, status, sort_order);
         const cached = await getCachedData(cacheKey);
 
-        // if (cached) {
-        //     return sendResponse({
-        //         res,
-        //         message: BOOKING_MESSAGES.BOOKINGS_FETCHED,
-        //         data: cached,
-        //     });
-        // }
+        if (cached) {
+            return sendResponse({
+                res,
+                message: BOOKING_MESSAGES.BOOKINGS_FETCHED,
+                data: cached,
+            });
+        }
 
         const filter = { userId };
         if (status) filter.status = status;

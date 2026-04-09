@@ -3,17 +3,15 @@ import StoreOwner from "../../models/StoreOwner.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { get, set, del, delByPattern } from "../../services/redisService.js";
 import redis from "../../services/redisService.js";
-import { addJobToQueue, cancelJob } from "../../services/jobService.js";
+
 import {
     STATUS_CODES,
     ACCOUNT_STATUS,
     OTP_LENGTH,
     OTP_MAX_ATTEMPTS,
     OTP_COOLDOWN,
-    JOB_QUEUES,
     TOKEN_TYPES,
     OTP_FAIL_WINDOW_SECONDS,
-    UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
     ON_BOARDING_STATUS,
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
@@ -64,17 +62,6 @@ export const authStoreOwner = async (req, res) => {
         const otp = await generateAndStoreOTP(phone);
         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
-        // await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_OWNER, `delete-owner-${phone}`);
-        // await addJobToQueue(
-        //     JOB_QUEUES.DELETE_UNVERIFIED_OWNER,
-        //     { name: JOB_QUEUES.DELETE_UNVERIFIED_OWNER, data: { phone, entity: "store_owner" } },
-        //     {
-        //         delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
-        //         jobId: `delete-owner-${phone}`,
-        //         removeOnComplete: true,
-        //         removeOnFail: true,
-        //     }
-        // );
 
         if (process.env.NODE_ENV === "development") {
             logger.info(`[DEV] StoreOwner OTP for ${phone}: ${otp}`);
@@ -174,7 +161,6 @@ export const verifyOTP = async (req, res) => {
             del(failKey),
             del(`otp_cooldown:${sanitizedPhone}`),
             del(`otp_rate:${sanitizedPhone}`),
-            cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_OWNER, `delete-owner-${sanitizedPhone}`),
         ]);
 
         const { accessToken, refreshToken } = await generateTokenPair(owner._id);
