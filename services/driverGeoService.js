@@ -2,7 +2,6 @@ import redis from "./redisService.js";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../utils/constants.js";
 import logger from "../utils/logger.js";
 
-
 // ADD
 export const addDriverToRedis = async (driver) => {
     if (!driver?._id) {

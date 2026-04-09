@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { createBullConnection, sharedWorkerConnection } from "../services/redisService.js";
+import { sharedWorkerConnection } from "../services/redisService.js";
 import { del } from "../services/redisService.js";
 import { cancelJob } from "../services/jobService.js";
 import Booking from "../models/Booking.js";
@@ -56,7 +56,7 @@ export const createAutoCancelWorker = () => {
                     }
                 }
 
-                // ─── EXECUTE UNIFIED CANCELLATION ───
+                // EXECUTE UNIFIED CANCELLATION
                 const { autoCancelBooking } = await import("../helpers/user/bookingHelper.js");
                 const result = await autoCancelBooking(bookingId, reason || "No driver available within time limit");
 
@@ -80,7 +80,6 @@ export const createAutoCancelWorker = () => {
             }
         },
         {
-            // connection: createBullConnection("AutoCancel Worker"),
             connection: sharedWorkerConnection,
             concurrency: 5,
         }

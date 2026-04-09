@@ -1,4 +1,4 @@
-import redis from "../../services/redisService.js";
+import redis, { del } from "../../services/redisService.js";
 import Driver from "../../models/Driver.js";
 import { addDriverToRedis, removeDriverFromRedis } from "../../services/driverGeoService.js";
 import logger from "../../utils/logger.js";

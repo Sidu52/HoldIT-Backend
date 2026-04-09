@@ -12,7 +12,7 @@ const MONGO_OPTIONS = {
     minPoolSize: 2,
     socketTimeoutMS: 45000,
     connectTimeoutMS: 10000,
-    family: 4,      // force IPv4, avoids slow DNS on some hosts
+    family: 4,
 };
 
 let isConnected = false;
@@ -22,7 +22,7 @@ export const connectMongo = async (retries = 5) => {
 
     const uri = process.env.MONGODB_URI;
     if (!uri) {
-        logger.error("❌ [MongoDB] MONGODB_URI is not defined in .env");
+        logger.error("[MongoDB] MONGODB_URI is not defined in .env");
         process.exit(1);
     }
 
@@ -30,12 +30,12 @@ export const connectMongo = async (retries = 5) => {
         try {
             await mongoose.connect(uri, MONGO_OPTIONS);
             isConnected = true;
-            logger.info("✅ [MongoDB] Connected");
+            logger.info("[MongoDB] Connected");
             registerMongoEvents();
             break;
         } catch (err) {
             retries -= 1;
-            logger.error(`❌ [MongoDB] Connection failed. Retries left: ${retries}. Err: ${err.message}`);
+            logger.error(`[MongoDB] Connection failed. Retries left: ${retries}. Err: ${err.message}`);
             if (retries === 0) process.exit(1);
             await new Promise(res => setTimeout(res, 5000));
         }
@@ -46,36 +46,34 @@ const registerMongoEvents = () => {
     const conn = mongoose.connection;
 
     conn.on("error", (err) => {
-        logger.error(`❌ [MongoDB] Connection error: ${err.message}`);
+        logger.error(`[MongoDB] Connection error: ${err.message}`);
     });
 
     conn.on("disconnected", () => {
         isConnected = false;
-        logger.warn("⚠️  [MongoDB] Disconnected — Mongoose will auto-reconnect");
+        logger.warn("[MongoDB] Disconnected — Mongoose will auto-reconnect");
     });
 
     conn.on("reconnected", () => {
         isConnected = true;
-        logger.info("✅ [MongoDB] Reconnected");
+        logger.info("[MongoDB] Reconnected");
     });
 
     conn.on("close", () => {
         isConnected = false;
-        logger.warn("⚠️  [MongoDB] Connection closed");
+        logger.warn("[MongoDB] Connection closed");
     });
 };
 
-/**
- * Gracefully disconnect — call during SIGTERM/SIGINT.
- */
+//Gracefully disconnect.
 export const disconnectMongo = async () => {
     if (!isConnected) return;
     try {
         await mongoose.disconnect();
         isConnected = false;
-        logger.info("✅ [MongoDB] Disconnected gracefully");
+        logger.info("[MongoDB] Disconnected gracefully");
     } catch (err) {
-        logger.error(`❌ [MongoDB] Disconnect error: ${err.message}`);
+        logger.error(`[MongoDB] Disconnect error: ${err.message}`);
     }
 };
 

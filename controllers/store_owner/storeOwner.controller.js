@@ -74,7 +74,7 @@ export const updateProfile = async (req, res) => {
             .select("-__v")
             .lean();
 
-        console.log("owener id", ownerId)
+
 
         if (!owner) {
             return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
@@ -369,6 +369,7 @@ export const updateStore = async (req, res) => {
             .lean();
 
         await del(`owner_stores:${ownerId}`);
+        await del(`store:public:${id}`);
 
         return sendResponse({ res, message: "Store updated.", data: { store: updatedStore } });
     } catch (err) {
@@ -424,6 +425,7 @@ export const deleteStore = async (req, res) => {
 
         await del(`owner_stores:${ownerId}`);
         await del(`owner_dashboard:${ownerId}`);
+        await del(`store:public:${id}`);
 
         return sendResponse({ res, message: "Store deactivated successfully." });
     } catch (err) {
@@ -501,7 +503,7 @@ export const goOnline = async (req, res) => {
         const { store_id } = req.params;
         const { is_online } = req.body;
 
-        console.log("authId", owner_id)
+
         if (!mongoose.isValidObjectId(store_id)) {
             return sendError(res, "Invalid store ID.", STATUS_CODES.BAD_REQUEST);
         }

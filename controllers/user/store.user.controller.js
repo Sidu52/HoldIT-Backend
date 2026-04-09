@@ -19,6 +19,58 @@ import {
 } from "../../helpers/user/storeHelper.js";
 import logger from "../../utils/logger.js";
 
+// Store Availability
+export const checkStoreAvailability = async (
+    storeId,
+    userLat,
+    userLng,
+    radiusKm = 5
+) => {
+    const store = await findVisibleStoreById(storeId, [
+        "openTime",
+        "closeTime",
+        "location",
+        "isActive",
+    ]);
+
+    if (!store) {
+        return { available: false, reason: "Store not found" };
+    }
+
+    const isOpen = checkStoreOpenStatus(store.openTime, store.closeTime);
+    if (!isOpen) {
+        return { available: false, reason: "Store is currently closed" };
+    }
+
+    if (userLat != null && userLng != null && store.location?.coordinates) {
+        const [storeLng, storeLat] = store.location.coordinates;
+        const distanceKm = haversineDistance(userLat, userLng, storeLat, storeLng);
+
+        if (distanceKm > radiusKm) {
+            return {
+                available: false,
+                reason: `Store is ${distanceKm.toFixed(1)} km away (limit: ${radiusKm} km)`,
+            };
+        }
+    }
+
+    return { available: true, store };
+};
+
+const haversineDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371;
+    const toRad = (deg) => (deg * Math.PI) / 180;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
 
 // Search Stores
 export const searchStores = async (req, res) => {

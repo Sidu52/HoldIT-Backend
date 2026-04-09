@@ -28,8 +28,7 @@ export const validateScheduledTime = (scheduledAt, minLeadMinutes) => {
     };
 };
 
-// ─── USER VERIFICATION ────────────────────────────────────────────────────────
-
+// USER VERIFICATION
 export const verifyUserForBooking = async (userId, session = null) => {
     const query = User.findById(userId)
         .select("status is_active")
@@ -50,21 +49,15 @@ export const verifyUserForBooking = async (userId, session = null) => {
     return { valid: true, user, errorType: null };
 };
 
-// ─── SERVICEABILITY ───────────────────────────────────────────────────────────
+// SERVICEABILITY
 
-/**
- * Check if a pickup location falls within a serviceable area.
- * Returns { isServiceable, serviceAreaId } from checkServiceability util.
- */
+// Check if a pickup location falls within a serviceable area.
+// Returns { isServiceable, serviceAreaId } from checkServiceability util.
 export const verifyServiceability = async (lat, lng) => {
     return checkServiceability(lat, lng);
 };
 
-// ─── ACTIVE BOOKING LIMIT ─────────────────────────────────────────────────────
-
-/**
- * Check if the user has already reached their max active booking count.
- */
+// Check if the user has already reached their max active booking count.
 export const checkActiveBookingLimit = async (userId, session = null) => {
     const query = Booking.countDocuments({
         userId,
@@ -365,8 +358,7 @@ const queueCancellationNotification = async (booking) => {
     }
 };
 
-// ─── CACHE ────────────────────────────────────────────────────────────────────
-
+// CACHE 
 export const invalidateBookingCache = async (userId, bookingId = null) => {
     if (!userId) return;
 
@@ -390,8 +382,7 @@ export const invalidateBookingCache = async (userId, bookingId = null) => {
 
 export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
 
-// ─── BOOKING QUERIES ──────────────────────────────────────────────────────────
-
+// BOOKING QUERIES
 export const findUserBooking = async (bookingId, userId, selectFields = "") => {
     return Booking.findOne({ _id: bookingId, userId })
         .select(selectFields)

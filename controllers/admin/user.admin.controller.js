@@ -37,7 +37,10 @@ const buildCacheKey = (prefix, params) => {
 const invalidateUserCache = async (userId = null) => {
     try {
         const promises = [delByPattern("users:*")];
-        if (userId) promises.push(del(`user:${userId}`));
+        if (userId) {
+            promises.push(del(`user:${userId}`));
+            promises.push(del(`user:profile:${userId}`));
+        }
         await Promise.all(promises);
     } catch (err) {
         logger.error("User cache invalidation error:", err);

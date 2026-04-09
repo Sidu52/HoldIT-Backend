@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { createBullConnection, sharedQueueConnection } from "./redisService.js";
+import { createBullConnection } from "./redisService.js";
 import { JOB_QUEUES } from "../utils/constants.js";
 import logger from "../utils/logger.js";
 

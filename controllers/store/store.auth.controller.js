@@ -163,7 +163,7 @@ export const verifyOTP = async (req, res) => {
             .select("_id status is_verified is_active")
             .lean();
 
-        console.log("store", store)
+
         if (!store) {
             return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
         }

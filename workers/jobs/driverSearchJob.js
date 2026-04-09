@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { createBullConnection, sharedWorkerConnection } from "../../services/redisService.js";
+import { sharedWorkerConnection } from "../../services/redisService.js";
 import redis from "../../services/redisService.js";
 import Driver from "../../models/Driver.js";
 import Booking from "../../models/Booking.js";
@@ -72,7 +72,6 @@ export const createDriverAssignWorker = () => {
             return handler(job);
         },
         {
-            // connection: createBullConnection("Driver Assign Worker"),
             connection: sharedWorkerConnection,
             concurrency: 10,
             settings: { lockDuration: 60000 },
@@ -308,7 +307,7 @@ async function tryNextDriver(bookingId, type, currentAttempt) {
                 emitAdminAlertNoDriver(safeGetIO(), bookingId, bookingForSocket.userId, bookingForSocket.pickupLocation, currentAttempt, "All drivers exhausted");
             }
         } catch (e) {
-            console.error("[SocketEmitter] Failed to fetch booking details for failure notification:", e.message);
+            logger.error("[SocketEmitter] Failed to fetch booking details for failure notification:", e.message);
         }
 
         return { success: false, reason: "all_exhausted" };

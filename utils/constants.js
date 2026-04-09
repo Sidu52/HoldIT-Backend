@@ -46,7 +46,6 @@ const JOB_QUEUES = {
   DELETE_UNVERIFIED_STORE: "delete-unverified-store", // Activated
   BOOKING_CANCELLED: "booking-cancelled",
   RETURN_PROCESS: "return-process",
-  STORE_UPDATE_CAPACITY: "store-update-capacity", // Added for task tracking if needed
 };
 
 // SUPPORT TICKET

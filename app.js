@@ -1,16 +1,19 @@
+// Dependencies
 import express from "express";
 import dotenv from "dotenv";
 dotenv.config();
 
+// Config
 import { validateEnv } from "./config/env.validation.js";
 validateEnv();
 
+// Middleware
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
-import swaggerUi from "swagger-ui-express";
 import logger from "./utils/logger.js";
 
+// Services
 import { connectMongo, disconnectMongo } from "./services/mongoService.js";
 import { initRedis } from "./services/redisService.js";
 import { initSocket, closeSocket } from "./src/socket/index.js";
@@ -21,6 +24,7 @@ import { closeQueues } from "./services/jobService.js";
 import { setupSwagger } from "./swagger.routes.js";
 import { validateObjectIdParams, enforcePaginationLimit } from "./middlewares/safety.middleware.js";
 
+// Routes
 import AdminRoutes from "./routes/admin/index.js";
 import UserRoutes from "./routes/users/index.js";
 import DriverRoutes from "./routes/driver/index.js";
@@ -31,6 +35,7 @@ const app = express();
 
 app.use(cookieParser());
 
+// Helmet
 app.use(
     helmet({
         contentSecurityPolicy: {
@@ -45,10 +50,10 @@ app.use(
     })
 );
 
+// CORS
 app.use(
     cors({
         origin: function (origin, callback) {
-            // Allow mobile apps (no origin)
             if (!origin) return callback(null, true);
 
             const allowedOrigins = [
@@ -64,7 +69,6 @@ app.use(
         credentials: true,
     })
 );
-
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -96,10 +100,10 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 
 const start = async () => {
-    await initRedis();  // connects Redis or checks eviction policy ONCE
+    await initRedis();
     await connectMongo();
-
-    // BullMQ workers (Redis is already connected above)
+    
+    // BullMQ workers
     initializeWorkers();
 
     // Sync warm caches
