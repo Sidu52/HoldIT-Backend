@@ -17,7 +17,8 @@ import {
     JOB_QUEUES,
     TOKEN_TYPES,
     OTP_FAIL_WINDOW_SECONDS,
-    UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS
+    UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
+    OTP_EXPIRY
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
@@ -72,7 +73,7 @@ export const authUser = async (req, res) => {
         ]);
 
         // Store new OTP with expiry using constant
-        await set(`otp:${phone}`, otp, "EX", OTP_EXPIRY);
+        await set(`otp:${phone}`, otp, "EX", OTP_EXPIRY * 60);
 
         if (process.env.NODE_ENV === "development") {
             logger.info(`[DEV] OTP for ${phone}: ${otp}`);
