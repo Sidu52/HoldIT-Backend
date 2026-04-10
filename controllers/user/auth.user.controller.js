@@ -99,7 +99,7 @@ export const authUser = async (req, res) => {
             template: "otp-verification-email.html",
             data: {
                 otp_code: otp,  // Matches template!
-                first_name: first_name  // Personalizes email
+                first_name: ""  // Personalizes email
             },
             rawFields: ["otp_code"],
         }).catch((err) =>
@@ -176,7 +176,7 @@ export const sendOTP = async (req, res) => {
             template: "otp-verification-email.html",
             data: {
                 otp_code: otp,  // Matches template!
-                first_name: first_name  // Personalizes email
+                first_name: ""  // Personalizes email
             },
             rawFields: ["otp_code"],
         }).catch((err) =>
