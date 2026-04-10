@@ -23,7 +23,7 @@ import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
-
+import { sendEmail } from "../../services/emailService.js";
 
 
 // LOGIN / REGISTER
@@ -62,6 +62,22 @@ export const authUser = async (req, res) => {
         }
 
         const otp = await generateAndStoreOTP(phone);
+        // manage otp with redies 
+        // DELETE any existing OTP and related keys for this phone number
+        await Promise.all([
+            del(`otp:${phone}`),
+            del(`otp_fail:${phone}`),
+            del(`otp_cooldown:${phone}`),
+            del(`otp_rate:${phone}`),
+        ]);
+
+        // Store new OTP with expiry using constant
+        await set(`otp:${phone}`, otp, "EX", OTP_EXPIRY);
+
+        if (process.env.NODE_ENV === "development") {
+            logger.info(`[DEV] OTP for ${phone}: ${otp}`);
+        }
+
 
         // Schedule cleanup of unverified users
         await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_USER, `delete-user-${phone}`);
@@ -74,6 +90,18 @@ export const authUser = async (req, res) => {
                 removeOnComplete: true,
                 removeOnFail: true,
             }
+        );
+        // Send email
+        sendEmail({
+            to: "hitechsidu992@gmail.com",
+            subject: "OTP Service",
+            template: "otp-verification-email.html",
+            data: {
+                otp
+            },
+            rawFields: [""],
+        }).catch((err) =>
+            logger.error("Failed to send reset email:", err.message)
         );
         return sendResponse({
             res,
@@ -138,6 +166,19 @@ export const sendOTP = async (req, res) => {
         if (process.env.NODE_ENV === "development") {
             logger.info(`[DEV] OTP for ${phone}: ${otp}`);
         }
+
+        // Send email
+        sendEmail({
+            to: admin.email,
+            subject: "OTP Service",
+            template: "otp-verification-email.html",
+            data: {
+                otp
+            },
+            rawFields: [""],
+        }).catch((err) =>
+            logger.error("Failed to send reset email:", err.message)
+        );
 
         return sendResponse({
             res,
