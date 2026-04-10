@@ -23,7 +23,7 @@ import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
-import { sendEmail } from "../../mailer/emailService.js";
+import sendEmail from "../../mailer/emailService.js";
 
 
 // LOGIN / REGISTER
