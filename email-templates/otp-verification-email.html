@@ -1,28 +1,196 @@
-<!-- /email-templates/otp-verification-email.html -->
-<div class="bg-[#f0f2f5] dark:bg-[#1a202c] rounded-xl border border-[#cfd7e7] dark:border-gray-700 p-8 md:p-12 overflow-x-auto">
-    <div class="mx-auto max-w-[500px] bg-white rounded-lg shadow-lg overflow-hidden font-display">
-        <div class="h-2 bg-primary w-full"></div>
-        <div class="p-8 md:p-10">
-            <div class="flex justify-center mb-8">
-                <div class="flex items-center gap-2">
-                    <span class="text-xl font-bold text-[#0d121b] tracking-tight">Holdit</span>
-                </div>
-            </div>
-            <h2 class="text-2xl font-bold text-[#0d121b] mb-4 text-center">Your OTP for Verification</h2>
-            <div class="space-y-4 text-base text-[#4c669a] leading-relaxed mb-8">
-                <p class="font-medium text-[#0d121b]">Hello {{ first_name }},</p>
-                <p>We received a request to verify your account with the OTP below. Please use this OTP to complete your registration or login.</p>
-                <p>Your One-Time Password (OTP) is:</p>
-                <div class="text-center my-4 font-semibold text-xl text-[#0d121b]">
-                    <span>{{ otp_code }}</span>
-                </div>
-            </div>
-            <p class="text-center text-xs text-[#9aa2b1] mb-8">This OTP is valid for 10 minutes.</p>
-            <div class="border-t border-gray-100 my-6"></div>
-            <div class="mt-8 text-sm text-[#0d121b]">
-                <p>Best regards,</p>
-                <p class="font-bold">The Holdit Team</p>
-            </div>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OTP Verification - Holdit</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+          "Ubuntu", sans-serif;
+        background-color: #f0f2f5;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .container {
+        max-width: 500px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+      .header {
+        height: 4px;
+        background: linear-gradient(90deg, #0066ff 0%, #0052cc 100%);
+      }
+      .content {
+        padding: 32px 24px;
+      }
+      .logo {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .logo-text {
+        font-size: 20px;
+        font-weight: 700;
+        color: #0d121b;
+        letter-spacing: 0.5px;
+      }
+      .title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #0d121b;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+      .message {
+        color: #4c669a;
+        font-size: 14px;
+        line-height: 1.6;
+        margin-bottom: 24px;
+      }
+      .greeting {
+        font-weight: 600;
+        color: #0d121b;
+        margin-bottom: 12px;
+      }
+      .paragraph {
+        margin-bottom: 12px;
+      }
+      .otp-section {
+        text-align: center;
+        margin: 32px 0;
+      }
+      .otp-label {
+        color: #4c669a;
+        font-size: 14px;
+        margin-bottom: 12px;
+        display: block;
+        font-weight: 500;
+      }
+      .otp-code {
+        font-size: 36px;
+        font-weight: 700;
+        color: #0066ff;
+        letter-spacing: 6px;
+        font-family: "Courier New", "Monaco", monospace;
+        background-color: #f0f2f5;
+        padding: 16px 24px;
+        border-radius: 6px;
+        display: inline-block;
+        border: 2px solid #e5e7eb;
+      }
+      .expiry {
+        text-align: center;
+        font-size: 12px;
+        color: #9aa2b1;
+        margin-top: 16px;
+        font-weight: 500;
+      }
+      .divider {
+        border: none;
+        border-top: 1px solid #e5e7eb;
+        margin: 24px 0;
+      }
+      .security-note {
+        background-color: #f0f2f5;
+        border-left: 4px solid #0066ff;
+        padding: 12px 16px;
+        margin-top: 24px;
+        font-size: 12px;
+        color: #4c669a;
+        border-radius: 4px;
+        line-height: 1.5;
+      }
+      .security-note strong {
+        color: #0d121b;
+        display: block;
+        margin-bottom: 4px;
+      }
+      .footer {
+        font-size: 13px;
+        color: #0d121b;
+        line-height: 1.6;
+      }
+      .footer-sign {
+        font-weight: 600;
+        margin-top: 8px;
+      }
+      /* Responsive design */
+      @media (max-width: 600px) {
+        .content {
+          padding: 24px 16px;
+        }
+        .title {
+          font-size: 20px;
+        }
+        .otp-code {
+          font-size: 28px;
+          letter-spacing: 4px;
+          padding: 12px 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header stripe -->
+      <div class="header"></div>
+
+      <!-- Main content -->
+      <div class="content">
+        <!-- Logo -->
+        <div class="logo">
+          <div class="logo-text">Holdit</div>
         </div>
+
+        <!-- Title -->
+        <h2 class="title">Your OTP for Verification</h2>
+
+        <!-- Message -->
+        <div class="message">
+          <p class="greeting">Hello {{ first_name }},</p>
+          <p class="paragraph">
+            We received a request to verify your account. Please use the OTP
+            below to complete your verification and secure your Holdit account.
+          </p>
+        </div>
+
+        <!-- OTP Section -->
+        <div class="otp-section">
+          <span class="otp-label">Your One-Time Password:</span>
+          <div class="otp-code">{{ otp_code }}</div>
+        </div>
+
+        <!-- Expiry warning -->
+        <div class="expiry">⏱️ This OTP is valid for 10 minutes only</div>
+
+        <!-- Security note -->
+        <div class="security-note">
+          <strong>🔒 Security Reminder</strong>
+          Never share your OTP with anyone. Holdit support will never ask for
+          your OTP via email, phone, or chat.
+        </div>
+
+        <!-- Divider -->
+        <hr class="divider" />
+
+        <!-- Footer -->
+        <div class="footer">
+          <p>Best regards,</p>
+          <p class="footer-sign">The Holdit Team</p>
+          <p style="margin-top: 16px; font-size: 11px; color: #9aa2b1">
+            © 2024 Holdit. All rights reserved.
+          </p>
+        </div>
+      </div>
     </div>
-</div>
+  </body>
+</html>
