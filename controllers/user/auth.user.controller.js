@@ -98,9 +98,10 @@ export const authUser = async (req, res) => {
             subject: "OTP Service",
             template: "otp-verification-email.html",
             data: {
-                otp
+                otp_code: otp,  // Matches template!
+                first_name: first_name  // Personalizes email
             },
-            rawFields: [""],
+            rawFields: ["otp_code"],
         }).catch((err) =>
             logger.error("Failed to send reset email:", err.message)
         );
@@ -170,13 +171,14 @@ export const sendOTP = async (req, res) => {
 
         // Send email
         sendEmail({
-            to: admin.email,
+            to: "hitechsidu992@gmail.com",
             subject: "OTP Service",
             template: "otp-verification-email.html",
             data: {
-                otp
+                otp_code: otp,  // Matches template!
+                first_name: first_name  // Personalizes email
             },
-            rawFields: [""],
+            rawFields: ["otp_code"],
         }).catch((err) =>
             logger.error("Failed to send reset email:", err.message)
         );
