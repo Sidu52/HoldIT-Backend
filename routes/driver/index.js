@@ -5,7 +5,7 @@ import driverRideRoute from "./driver.ride.route.js";
 const DriverRoutes = (app) => {
     app.use("/api/v1/driver/auth", driverAuthRoute);
     app.use("/api/v1/driver", driverRoute);
-    app.use("/api/v1/driver", driverRideRoute);
+    app.use("/api/v1/driver/rides", driverRideRoute);
     app.use("/api/v1/driver/bookings", driverRideRoute);
 }
 
