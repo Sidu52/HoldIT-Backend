@@ -82,8 +82,9 @@ export const authDriver = async (req, res) => {
             data: { otp },
         });
     } catch (err) {
-        logger.error("Auth User Error:", err);
-        return sendError(res, "Something went wrong. Please try again.");
+        console.log("=== AUTH DRIVER ERROR ===", err.message, err.stack);
+        logger.error(`Auth User Error: ${err.message}\n${err.stack}`);
+        return sendError(res, process.env.NODE_ENV === "development" ? err.message : "Something went wrong. Please try again.");
     }
 };
 

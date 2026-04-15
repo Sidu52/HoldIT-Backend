@@ -139,8 +139,7 @@ const DriverSchema = new mongoose.Schema(
         currentLocation: {
             type: {
                 type: String,
-                enum: ["Point"],
-                default: "Point",
+                enum: ["Point"]
             },
             coordinates: {
                 type: [Number],   // [lng, lat] — GeoJSON order
@@ -174,7 +173,14 @@ const DriverSchema = new mongoose.Schema(
 
 // ── Indexes ───────────────────────────────────────────────────────────────────
 
-DriverSchema.index({ currentLocation: "2dsphere" });
+DriverSchema.index(
+    { currentLocation: "2dsphere" },
+    {
+        partialFilterExpression: {
+            "currentLocation.coordinates": { $exists: true }
+        }
+    }
+);
 DriverSchema.index({ is_online: 1, is_active: 1, service_area_id: 1 });
 DriverSchema.index({ status: 1, verification_status: 1 });
 DriverSchema.index({ is_on_trip: 1, is_online: 1 });

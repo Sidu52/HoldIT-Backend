@@ -27,40 +27,40 @@ const router = express.Router();
 
 router.use(authMiddleware);
 
-router.get("/rides/offer/pending", apiLimiter, getPendingOfferController);
-router.get("/rides/assigned", apiLimiter, getAssignedRidesController);
-router.get("/rides/active", apiLimiter, getActiveRideController);
+router.get("/offer/pending", apiLimiter, getPendingOfferController);
+router.get("/assigned", apiLimiter, getAssignedRidesController);
+router.get("/active", apiLimiter, getActiveRideController);
 
 router.get("/history", apiLimiter, getRideHistoryController);
 router.get("/:booking_id", apiLimiter, getRideDetailsController);
-router.get("/rides/:booking_id", apiLimiter, getRideDetailsController);
+router.get("/:booking_id", apiLimiter, getRideDetailsController);
 
 // OFFER
-router.post("/rides/:booking_id/accept", apiLimiter, acceptRideController);
-router.post("/rides/:booking_id/reject", apiLimiter, rejectRideController);
+router.post("/:booking_id/accept", apiLimiter, acceptRideController);
+router.post("/:booking_id/reject", apiLimiter, rejectRideController);
 
 // PICKUP
-router.put("/rides/:booking_id/arrive-pickup", apiLimiter, arriveAtPickupController);
+router.put("/:booking_id/arrive-pickup", apiLimiter, arriveAtPickupController);
 router.put(
-    "/rides/:booking_id/complete-pickup",
+    "/:booking_id/complete-pickup",
     apiLimiter,
     validate(completeRideSchema),
     completePickupController
 );
-router.put("/rides/:booking_id/arrive-store", apiLimiter, arriveAtStoreController);
+router.put("/:booking_id/arrive-store", apiLimiter, arriveAtStoreController);
 
 // CANCELLATION 
 router.post(
-    "/rides/:booking_id/cancel",
+    "/:booking_id/cancel",
     apiLimiter,
     validate(cancelRideSchema),
     cancelRideController
 );
 
 // DELIVERY
-router.put("/rides/:booking_id/arrive-delivery", apiLimiter, arriveAtUserReturnController);
+router.put("/:booking_id/arrive-delivery", apiLimiter, arriveAtUserReturnController);
 router.put(
-    "/rides/:booking_id/complete-delivery",
+    "/:booking_id/complete-delivery",
     apiLimiter,
     validate(completeRideSchema),
     completeDeliveryController
