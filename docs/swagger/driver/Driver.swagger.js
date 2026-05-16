@@ -346,24 +346,29 @@
  * @swagger
  *   /api/v1/driver/rides/:booking_id/complete-pickup:
  *     put:
- *       summary: Complete Pickup
+ *       summary: Complete Pickup with OTP and Photos
  *       tags:
  *         - Driver API
+ *       security:
+ *         - bearerAuth: []
+ *       requestBody:
+ *         required: true
+ *         content:
+ *           multipart/form-data:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 otp:
+ *                   type: string
+ *                   example: "123456"
+ *                 photos:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                     format: binary
  *       responses:
  *         200:
  *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
  */
 
 /**
@@ -500,24 +505,29 @@
 
 /**
  * @swagger
- *   /api/v1/driver/bookings/:bookingId/resend-pickup-otp:
- *     post:
- *       summary: Resend Pickup OTP
+ *   /api/v1/driver/rides/:booking_id/complete-delivery:
+ *     put:
+ *       summary: Complete Delivery with OTP and Photos
  *       tags:
  *         - Driver API
+ *       security:
+ *         - bearerAuth: []
+ *       requestBody:
+ *         required: true
+ *         content:
+ *           multipart/form-data:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 otp:
+ *                   type: string
+ *                   example: "123456"
+ *                 photos:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                     format: binary
  *       responses:
  *         200:
  *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
  */

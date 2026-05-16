@@ -21,6 +21,7 @@ import {
     findAddressById,
 } from "../../helpers/user/addressHelper.js";
 import logger from "../../utils/logger.js";
+import asyncHandler from "../../utils/asyncHandler.js";
 
 // CONSTANTS
 const PROFILE_CACHE_TTL = 300; // 5 minutes
@@ -35,8 +36,7 @@ const ALLOWED_UPDATE_FIELDS = [
 ];
 
 // GET PROFILE
-export const getProfile = async (req, res) => {
-    try {
+export const getProfile = asyncHandler(async (req, res) => {
         const { auth_id } = req.user;
         const cacheKey = `user:profile:${auth_id}`;
 
@@ -71,15 +71,10 @@ export const getProfile = async (req, res) => {
             message: "Profile fetched successfully",
             data: user,
         });
-    } catch (err) {
-        logger.error("Get Profile Error:", err);
-        return sendError(res, "Failed to fetch profile");
-    }
-};
+});
 
 // UPDATE PROFILE
-export const updateProfile = async (req, res) => {
-    try {
+export const updateProfile = asyncHandler(async (req, res) => {
         const { auth_id } = req.user;
 
         // Build update from allowed fields
@@ -139,24 +134,10 @@ export const updateProfile = async (req, res) => {
             message: "Profile updated successfully",
             data: updatedUser,
         });
-    } catch (err) {
-        if (err.code === 11000) {
-            const field = Object.keys(err.keyPattern)[0];
-            return sendError(
-                res,
-                `${field} already in use`,
-                STATUS_CODES.CONFLICT
-            );
-        }
-
-        logger.error("Update Profile Error:", err);
-        return sendError(res, "Failed to update profile");
-    }
-};
+});
 
 // Addresses
-export const getAddresses = async (req, res) => {
-    try {
+export const getAddresses = asyncHandler(async (req, res) => {
         const userId = req.user.auth_id;
         const cacheKey = CACHE_KEYS.USER_ADDRESSES(userId);
 
@@ -206,18 +187,9 @@ export const getAddresses = async (req, res) => {
             message: ADDRESS_MESSAGES.FETCHED,
             data: responseData
         });
-    } catch (error) {
-        logger.error("Get addresses error:", error);
-        return sendError(
-            res,
-            ADDRESS_MESSAGES.FETCH_FAILED,
-            error.message
-        );
-    }
-};
+});
 
-export const getAddressById = async (req, res) => {
-    try {
+export const getAddressById = asyncHandler(async (req, res) => {
         const userId = req.user.auth_id;
         const { id } = req.params;
 
@@ -263,14 +235,9 @@ export const getAddressById = async (req, res) => {
             message: ADDRESS_MESSAGES.FETCHED,
             data: address
         });
-    } catch (error) {
-        logger.error("Get address by id error:", error);
-        return sendError(res, error);
-    }
-};
+});
 
-export const addAddress = async (req, res) => {
-    try {
+export const addAddress = asyncHandler(async (req, res) => {
         const userId = req.user.auth_id;
         const { is_default } = req.body;
 
@@ -335,18 +302,9 @@ export const addAddress = async (req, res) => {
                 total_addresses: user.addresses.length,
             }
         });
-    } catch (error) {
-        logger.error("Add address error:", error);
-        return sendError(
-            res,
-            ADDRESS_MESSAGES.ADD_FAILED,
-            error.message
-        );
-    }
-};
+});
 
-export const updateAddress = async (req, res) => {
-    try {
+export const updateAddress = asyncHandler(async (req, res) => {
         const userId = req.user.auth_id;
         const { id } = req.params;
 
@@ -438,20 +396,9 @@ export const updateAddress = async (req, res) => {
             message: ADDRESS_MESSAGES.UPDATED,
             data: { address }
         });
+});
 
-    } catch (error) {
-        logger.error("Update address error:", error);
-
-        return sendError(
-            res,
-            ADDRESS_MESSAGES.UPDATE_FAILED,
-            error.message
-        );
-    }
-};
-
-export const deleteAddress = async (req, res) => {
-    try {
+export const deleteAddress = asyncHandler(async (req, res) => {
         const userId = req.user.auth_id;
         const { id } = req.params;
 
@@ -513,21 +460,10 @@ export const deleteAddress = async (req, res) => {
                     wasDefault && user.addresses.length > 0 ? 0 : null
             }
         });
-
-    } catch (error) {
-        logger.error("Delete address error:", error);
-
-        return sendError(
-            res,
-            ADDRESS_MESSAGES.DELETE_FAILED,
-            error.message
-        );
-    }
-};
+});
 
 // GET NEAREST STORE
-export const getNearestStore = async (req, res) => {
-    try {
+export const getNearestStore = asyncHandler(async (req, res) => {
         const userId = req.user.auth_id;
 
         // ── 1. Get user's current location ────────────────────────────
@@ -646,15 +582,10 @@ export const getNearestStore = async (req, res) => {
             message: "Nearest stores fetched successfully",
             data: responseData,
         });
-    } catch (err) {
-        logger.error("[getNearestStore] Error:", err);
-        return sendError(res, "Failed to find nearest stores");
-    }
-};
+});
 
 // GET STORE BY ID
-export const getStoreById = async (req, res) => {
-    try {
+export const getStoreById = asyncHandler(async (req, res) => {
         const { store_id } = req.params;
         logger.info("store Id", store_id)
 
@@ -699,15 +630,10 @@ export const getStoreById = async (req, res) => {
             message: "Store fetched successfully",
             data: store,
         });
-    } catch (err) {
-        logger.error("Get Store By ID Error:", err);
-        return sendError(res, "Failed to fetch store");
-    }
-};
+});
 
 // UPDATE USER LOCATION
-export const updateLocation = async (req, res) => {
-    try {
+export const updateLocation = asyncHandler(async (req, res) => {
         const userId = req.user.auth_id;
         const { lat, lng } = req.body;
 
@@ -768,11 +694,4 @@ export const updateLocation = async (req, res) => {
             message: "Location updated",
             data: address
         });
-    } catch (error) {
-        logger.error("Update location error:", error);
-        return sendError(
-            res,
-            error.message
-        );
-    }
-};
+});

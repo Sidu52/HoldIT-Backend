@@ -123,6 +123,10 @@ const DriverSchema = new mongoose.Schema(
             default: false,
             index: true,
         },
+        is_signup: {
+            type: Boolean,
+            default: false,
+        },
         vehicle_type: {
             type: String,
             enum: Object.values(VEHICLE_TYPES),
@@ -164,6 +168,17 @@ const DriverSchema = new mongoose.Schema(
             ref: "Admin",
         },
         documents: [DocumentSchema],
+        
+        // ── Rating Denormalization ─────────────────────────────────────
+        rating_avg: {
+            type: Number,
+            default: 0,
+            index: true,
+        },
+        rating_count: {
+            type: Number,
+            default: 0,
+        },
     },
     {
         timestamps: true,

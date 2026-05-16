@@ -61,19 +61,20 @@ export const getUsers = async (req, res) => {
             sort_order = "desc",
         } = req.query;
 
+        // Convert query parameters to appropriate types
         const pageNum = Number(page);
         const limitNum = Number(limit);
         const skip = (pageNum - 1) * limitNum;
 
         const filter = {};
 
+        // Apply filters
         if (status) filter.status = status;
-
-        // ✅ Fixed: cast boolean strings from query
         if (is_active !== undefined) filter.is_active = is_active === "true";
         if (is_verified !== undefined) filter.is_verified = is_verified === "true";
         if (is_serviceable !== undefined) filter.is_serviceable = is_serviceable === "true";
 
+        // Apply search filter
         if (search) {
             const escaped = escapeRegex(search.trim());
             filter.$or = [
@@ -84,9 +85,11 @@ export const getUsers = async (req, res) => {
             ];
         }
 
+        // Apply sorting
         const sortDir = sort_order === "asc" ? 1 : -1;
         const sort = { [sort_by]: sortDir };
 
+        // Build cache key
         const cacheKey = buildCacheKey("users", {
             page: pageNum, limit: limitNum,
             status, is_active, is_verified, is_serviceable,
@@ -102,6 +105,7 @@ export const getUsers = async (req, res) => {
             });
         }
 
+        // Fetch users and count total
         const [users, total] = await Promise.all([
             User.find(filter)
                 .select(EXCLUDED_FIELDS)
@@ -260,7 +264,7 @@ export const updateUserStatus = async (req, res) => {
             return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
         }
 
-        // ✅ Check active bookings before deactivating
+        // Check active bookings before deactivating
         const isDeactivating = is_active === false || status === ACCOUNT_STATUS.BLOCKED;
         if (isDeactivating) {
             const activeBookingCount = await Booking.countDocuments({
@@ -294,8 +298,8 @@ export const updateUserStatus = async (req, res) => {
 
             updateData.status = status;
 
+            // Blocking
             if (status === ACCOUNT_STATUS.BLOCKED) {
-                // ✅ Fixed: blocking should also deactivate
                 updateData.is_active = false;
                 updateData.block_reason = reason ?? null;
                 updateData.blocked_at = new Date();
@@ -305,7 +309,7 @@ export const updateUserStatus = async (req, res) => {
                 updateData.deactivated_by = auth_id;
             }
 
-            // Unblocking — reactivate
+            // Unblocking
             if (status === ACCOUNT_STATUS.ACTIVE) {
                 updateData.is_active = true;
                 updateData.block_reason = null;

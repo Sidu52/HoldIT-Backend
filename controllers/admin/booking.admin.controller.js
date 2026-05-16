@@ -3,7 +3,7 @@ import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { get, set, del, delByPattern } from "../../services/redisService.js";
 import { STATUS_CODES, BOOKING_STATUS } from "../../utils/constants.js";
 import mongoose from "mongoose";
-import { safeAbortSession } from "../../utils/helper.js";
+import { safeAbortSession, isValidStatusTransition } from "../../utils/helper.js";
 import Driver from "../../models/Driver.js";
 import { assignStoreToBooking } from "../../helpers/user/bookingHelper.js";
 import Store from "../../models/Store.js";
@@ -348,7 +348,7 @@ export const assignDriver = async (req, res) => {
         const { auth_id } = req.user;
 
         const booking = await Booking.findById(id)
-            .select("status userId driverId")
+            .select("status userId pickup.assignment")
             .session(session)
             .lean();
 
@@ -382,7 +382,8 @@ export const assignDriver = async (req, res) => {
             {
                 $set: {
                     status: BOOKING_STATUS.DRIVER_ASSIGNED,
-                    driverId,
+                    "pickup.assignment.driverId": driverId,
+                    "pickup.assignment.assignedAt": new Date(),
                     updated_at: new Date(),
                     status_updated_by: auth_id,
                 },
@@ -430,7 +431,7 @@ export const reassignDriver = async (req, res) => {
         const { auth_id } = req.user;
 
         const booking = await Booking.findById(id)
-            .select("status userId driverId")
+            .select("status userId pickup.assignment")
             .session(session)
             .lean();
 
@@ -449,7 +450,7 @@ export const reassignDriver = async (req, res) => {
             );
         }
 
-        if (booking.driverId?.toString() === driverId) {
+        if (booking.pickup?.assignment?.driverId?.toString() === driverId) {
             await safeAbortSession(session);
             return sendError(res, "Driver is already assigned to this booking", STATUS_CODES.BAD_REQUEST);
         }
@@ -464,13 +465,14 @@ export const reassignDriver = async (req, res) => {
             return sendError(res, "Driver not available", STATUS_CODES.BAD_REQUEST);
         }
 
-        const previousDriverId = booking.driverId;
+        const previousDriverId = booking.pickup?.assignment?.driverId;
 
         const updatedBooking = await Booking.findByIdAndUpdate(
             id,
             {
                 $set: {
-                    driverId,
+                    "pickup.assignment.driverId": driverId,
+                    "pickup.assignment.assignedAt": new Date(),
                     updated_at: new Date(),
                     status_updated_by: auth_id,
                     // Status stays DRIVER_ASSIGNED — no transition needed
@@ -755,7 +757,8 @@ export const assignReturnDriver = async (req, res) => {
             {
                 $set: {
                     status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
-                    returnDriverId: driverId,
+                    "delivery.assignment.driverId": driverId,
+                    "delivery.assignment.assignedAt": new Date(),
                     updated_at: new Date(),
                     status_updated_by: auth_id,
                 },
@@ -866,45 +869,4 @@ export const updateBookingStatus = async (req, res) => {
         logger.error("Update Booking Status Error:", err);
         return sendError(res, "Failed to update booking status");
     }
-};
-
-// Validate Status Transitions
-const VALID_TRANSITIONS = {
-    [BOOKING_STATUS.CREATED]: [
-        BOOKING_STATUS.STORE_ASSIGNED,
-        BOOKING_STATUS.CANCELLED,
-    ],
-    [BOOKING_STATUS.STORE_ASSIGNED]: [
-       BOOKING_STATUS.DRIVER_ASSIGNED,,
-        BOOKING_STATUS.CANCELLED,
-    ],
-    [BOOKING_STATUS.DRIVER_ASSIGNED]: [
-        BOOKING_STATUS.DRIVER_ARRIVED,
-        BOOKING_STATUS.CANCELLED,
-    ],
-    [BOOKING_STATUS.DRIVER_ARRIVED]: [
-        BOOKING_STATUS.PICKED_UP,
-        BOOKING_STATUS.CANCELLED,
-    ],
-    [BOOKING_STATUS.PICKED_UP]: [
-        BOOKING_STATUS.STORED,
-    ],
-    [BOOKING_STATUS.STORED]: [
-        BOOKING_STATUS.RETURN_REQUESTED,
-    ],
-    [BOOKING_STATUS.RETURN_REQUESTED]: [
-        BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
-        BOOKING_STATUS.CANCELLED,
-    ],
-    [BOOKING_STATUS.RETURN_DRIVER_ASSIGNED]: [
-        BOOKING_STATUS.DELIVERED,
-    ],
-    [BOOKING_STATUS.DELIVERED]: [],    // Terminal state
-    [BOOKING_STATUS.CANCELLED]: [],    // Terminal state
-};
-
-const isValidStatusTransition = (currentStatus, newStatus) => {
-    const allowed = VALID_TRANSITIONS[currentStatus];
-    if (!allowed) return false;
-    return allowed.includes(newStatus);
 };

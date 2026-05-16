@@ -32,19 +32,31 @@ export const locationService = {
             throw new Error("Invalid coordinates");
         }
 
-        const driverObjectId = new mongoose.Types.ObjectId(driverId);
+        // 2. Verify driver owns booking & active status (Redis First)
+        let isValid = false;
+        const authCacheKey = `booking:active_driver:${bookingId}`;
+        const cachedDriverId = await redis.get(authCacheKey);
 
-        // 2. Verify driver owns booking & active status
-        const booking = await Booking.findOne({
-            _id: bookingId,
-            $or: [
-                { "pickup.assignment.driverId": driverObjectId },
-                { "delivery.assignment.driverId": driverObjectId },
-            ],
-            status: { $in: TRACKING_STATUSES },
-        }).select("_id").lean();
+        if (cachedDriverId === driverId) {
+            isValid = true;
+        } else {
+            const driverObjectId = new mongoose.Types.ObjectId(driverId);
+            const booking = await Booking.findOne({
+                _id: bookingId,
+                $or: [
+                    { "pickup.assignment.driverId": driverObjectId },
+                    { "delivery.assignment.driverId": driverObjectId },
+                ],
+                status: { $in: TRACKING_STATUSES },
+            }).select("_id").lean();
 
-        if (!booking) {
+            if (booking) {
+                isValid = true;
+                await redis.setex(authCacheKey, 6 * 60 * 60, driverId); // Cache for 6 hours
+            }
+        }
+
+        if (!isValid) {
             throw new Error("Location update rejected: Invalid or inactive booking for this driver.");
         }
 
@@ -101,6 +113,10 @@ export const locationService = {
 export const startLocationMonitor = (io) => {
     setInterval(async () => {
         try {
+            // Redis lock to prevent multiple node instances from running this concurrently
+            const lock = await redis.set("lock:location_monitor", "1", "EX", 55, "NX");
+            if (!lock) return;
+
             // Find active tracking bookings using correct field paths
             const activeBookings = await Booking.find({
                 status: { $in: TRACKING_STATUSES },

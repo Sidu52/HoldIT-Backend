@@ -177,7 +177,7 @@ logger.info("admin",admin)
             );
         }
         // Generate tokens
-        const { accessToken, refreshToken } = await generateTokenPair(admin);
+        const { accessToken, refreshToken } = await generateTokenPair(admin, admin.role);
 
         // Set cookies
         setAuthCookies(res, accessToken, refreshToken);

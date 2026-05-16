@@ -23,74 +23,154 @@ import {
     checkOTPRateLimit,
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
-import logger from "../../utils/logger.js";
-import { verifyStore } from "../../helpers/store/store.helper.js";
+import { setAuthCookies } from "../../utils/helper.js";
+import NotificationService from "../../services/NotificationService.js";
+import asyncHandler from "../../utils/asyncHandler.js";
 
-// LOGIN / REGISTER
-export const authStore = async (req, res) => {
-    try {
+// REGISTER
+// export const registerStore = async (req, res) => {
+//     try {
+//         const { phone } = req.body || {};
+
+//         const existingStore = await Store.findOne({ phone }).lean();
+
+//         if (existingStore) {
+//             return sendError(
+//                 res,
+//                 "Store already exists. Please login.",
+//                 STATUS_CODES.BAD_REQUEST
+//             );
+//         }
+
+//         // Create new store
+//         await Store.create({
+//             phone,
+//             store_name: "Pending Setup",
+//             location: { type: "Point", coordinates: [0, 0] },
+//             is_verified: false,
+//             is_active: true,
+//             status: ACCOUNT_STATUS.PENDING,
+//         });
+
+//         // OTP rate limit
+//         const isRateLimited = await checkOTPRateLimit(phone);
+//         if (isRateLimited) {
+//             return sendError(
+//                 res,
+//                 "Too many OTP requests. Please try again later.",
+//                 STATUS_CODES.TOO_MANY_REQUESTS
+//             );
+//         }
+
+//         // Cooldown
+//         const cooldownKey = `otp_cooldown:${phone}`;
+//         const cooldownExists = await get(cooldownKey);
+
+//         if (cooldownExists) {
+//             return sendError(
+//                 res,
+//                 "Please wait before requesting another OTP.",
+//                 STATUS_CODES.TOO_MANY_REQUESTS
+//             );
+//         }
+
+//         // Generate OTP
+//         const otp = await generateAndStoreOTP(phone);
+//         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
+
+//         // Schedule cleanup job (only for new users)
+//         await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_STORE, `delete-store-${phone}`);
+
+//         await addJobToQueue(
+//             JOB_QUEUES.DELETE_UNVERIFIED_STORE,
+//             {
+//                 name: JOB_QUEUES.DELETE_UNVERIFIED_STORE,
+//                 data: { phone, entity: "store" },
+//             },
+//             {
+//                 delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
+//                 jobId: `delete-store-${phone}`,
+//                 removeOnComplete: true,
+//                 removeOnFail: true,
+//             }
+//         );
+
+//         if (process.env.NODE_ENV === "development") {
+//             logger.info(`[DEV] Register Store OTP for ${phone}: ${otp}`);
+//         }
+
+//         return sendResponse({
+//             res,
+//             message: "Registration OTP sent successfully",
+//             data: { otp },
+//         });
+
+//     } catch (err) {
+//         logger.error("Register Store Error:", err);
+//         return sendError(res, "Something went wrong.");
+//     }
+// };
+
+// LOGIN
+export const loginStore = asyncHandler(async (req, res) => {
         const { phone } = req.body || {};
 
-        let store = await Store.findOne({ phone })
+        const store = await Store.findOne({ phone })
             .select("status is_verified is_active")
             .lean();
 
-        if (store) {
-            const storeCheck = verifyStore(store);
-            if (!storeCheck.valid) {
-                return sendError(res, storeCheck.message, storeCheck.code);
-            }
-        } else {
-            await Store.create({
-                phone,
-                store_name: "Pending Setup",
-                location: { type: "Point", coordinates: [0, 0] },
-                is_verified: false,
-                is_active: true,
-                status: ACCOUNT_STATUS.PENDING,
-            });
+        if (!store) {
+            return sendError(
+                res,
+                "Store not found. Please register.",
+                STATUS_CODES.NOT_FOUND
+            );
         }
 
+        // Validate store state
+        const storeCheck = verifyStore(store);
+        if (!storeCheck.valid) {
+            return sendError(res, storeCheck.message, storeCheck.code);
+        }
+
+        // OTP rate limit
         const isRateLimited = await checkOTPRateLimit(phone);
         if (isRateLimited) {
-            return sendError(res, "Too many OTP requests. Please try again later.", STATUS_CODES.TOO_MANY_REQUESTS);
+            return sendError(
+                res,
+                "Too many OTP requests. Please try again later.",
+                STATUS_CODES.TOO_MANY_REQUESTS
+            );
         }
 
+        // Cooldown
         const cooldownKey = `otp_cooldown:${phone}`;
         const cooldownExists = await get(cooldownKey);
+
         if (cooldownExists) {
-            return sendError(res, "Please wait before requesting another OTP.", STATUS_CODES.TOO_MANY_REQUESTS);
+            return sendError(
+                res,
+                "Please wait before requesting another OTP.",
+                STATUS_CODES.TOO_MANY_REQUESTS
+            );
         }
 
+        // Generate OTP
         const otp = await generateAndStoreOTP(phone);
         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
-        await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_STORE, `delete-store-${phone}`);
-        await addJobToQueue(
-            JOB_QUEUES.DELETE_UNVERIFIED_STORE,
-            { name: JOB_QUEUES.DELETE_UNVERIFIED_STORE, data: { phone, entity: "store" } },
-            {
-                delay: UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
-                jobId: `delete-store-${phone}`,
-                removeOnComplete: true,
-                removeOnFail: true,
-            }
-        );
+        // Send SMS/Email via abstract service
+        await NotificationService.sendOTP(phone, otp);
 
-        if (process.env.NODE_ENV === "development") {
-            logger.info(`[DEV] Store OTP for ${phone}: ${otp}`);
-        }
-
-        return sendResponse({ res, message: "OTP sent successfully", data: { otp } });
-    } catch (err) {
-        logger.error("Store Auth Error:", err);
-        return sendError(res, "Something went wrong. Please try again.");
-    }
-};
+        return sendResponse({
+            res,
+            message: "Login OTP sent successfully",
+            data: { otp },
+        });
+});
 
 // RESEND OTP
-export const sendOTP = async (req, res) => {
-    try {
+export const sendOTP = asyncHandler(async (req, res) => {
         const { phone } = req.body || {};
 
         const store = await Store.findOne({ phone })
@@ -116,19 +196,13 @@ export const sendOTP = async (req, res) => {
         const otp = await generateAndStoreOTP(phone);
         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
-        if (process.env.NODE_ENV === "development") {
-            logger.info(`[DEV] Store OTP for ${phone}: ${otp}`);
-        }
+        // Send SMS/Email via abstract service
+        await NotificationService.sendOTP(phone, otp);
 
         return sendResponse({ res, message: "OTP sent successfully", data: { otp } });
-    } catch (err) {
-        logger.error("Store Resend OTP Error:", err);
-        return sendError(res, "Failed to send OTP");
-    }
-};
+});
 // VERIFY OTP
-export const verifyOTP = async (req, res) => {
-    try {
+export const verifyOTP = asyncHandler(async (req, res) => {
         const { phone, otp } = req.body || {};
 
         if (!phone || typeof phone !== "string") {
@@ -197,7 +271,7 @@ export const verifyOTP = async (req, res) => {
             cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_STORE, `delete-store-${sanitizedPhone}`),
         ]);
 
-        const { accessToken, refreshToken } = await generateTokenPair(store._id);
+        const { accessToken, refreshToken } = await generateTokenPair(store._id, "store");
 
         const now = new Date();
         const isFirstLogin = !store.is_verified;
@@ -210,6 +284,8 @@ export const verifyOTP = async (req, res) => {
             },
         });
 
+        setAuthCookies(res, accessToken, refreshToken);
+
         return sendResponse({
             res,
             message: "Login successful",
@@ -220,15 +296,10 @@ export const verifyOTP = async (req, res) => {
                 needsOnboarding: isFirstLogin,
             },
         });
-    } catch (err) {
-        logger.error("Store OTP Verification Error:", err);
-        return sendError(res, "OTP verification failed");
-    }
-};
+});
 
 // REFRESH TOKEN
-export const refreshToken = async (req, res) => {
-    try {
+export const refreshToken = asyncHandler(async (req, res) => {
         const { token } = extractRefreshToken(req);
         if (!token) {
             return sendError(res, "Refresh token required.", STATUS_CODES.UNAUTHORIZED);
@@ -281,11 +352,14 @@ export const refreshToken = async (req, res) => {
         await del(redisKey);
 
         const { accessToken, refreshToken: newRefreshToken } =
-            await generateTokenPair(decoded.auth_id);
+            await generateTokenPair(decoded.auth_id, "store");
 
         Store.findByIdAndUpdate(decoded.auth_id, {
             last_active_at: new Date(),
         }).catch((err) => logger.error("Failed to update store last_active_at:", err));
+
+        // Set cookies
+        setAuthCookies(res, accessToken, refreshToken);
 
         return sendResponse({
             res,
@@ -295,16 +369,10 @@ export const refreshToken = async (req, res) => {
                 refreshToken: newRefreshToken,
             },
         });
-    } catch (err) {
-        logger.error("Store Refresh Token Error:", err);
-        clearAuthCookies(res);
-        return sendError(res, "Session expired. Please log in again.", STATUS_CODES.UNAUTHORIZED);
-    }
-};
+});
 
 // LOGOUT
-export const logout = async (req, res) => {
-    try {
+export const logout = asyncHandler(async (req, res) => {
         const token = req.cookies?.refreshToken;
 
         if (token) {
@@ -316,9 +384,4 @@ export const logout = async (req, res) => {
         }
         clearAuthCookies(res);
         return sendResponse({ res, message: "Logged out successfully" });
-    } catch (err) {
-        clearAuthCookies(res);
-        logger.error("Store Logout Error:", err);
-        return sendResponse({ res, message: "Logged out successfully" });
-    }
-};
+});

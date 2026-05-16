@@ -349,12 +349,13 @@ export const completePickupController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
         const { otp } = req.body || {};
+        const photos = req.files ? req.files.map(f => `/uploads/pickup/${f.filename}`) : [];
 
         if (!otp) {
             return sendError(res, "Pickup OTP is required.", STATUS_CODES.BAD_REQUEST);
         }
 
-        const booking = await processCompletePickup(booking_id, driverId, otp);
+        const booking = await processCompletePickup(booking_id, driverId, otp, photos);
 
         if (!booking) {
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
@@ -508,12 +509,13 @@ export const completeDeliveryController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
         const { otp } = req.body || {};
+        const photos = req.files ? req.files.map(f => `/uploads/delivery/${f.filename}`) : [];
 
         if (!otp) {
             return sendError(res, "Delivery OTP is required.", STATUS_CODES.BAD_REQUEST);
         }
 
-        const booking = await processCompleteDelivery(booking_id, driverId, otp);
+        const booking = await processCompleteDelivery(booking_id, driverId, otp, photos);
 
         if (!booking) {
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);

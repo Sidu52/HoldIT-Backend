@@ -16,19 +16,20 @@ import {
     OTP_COOLDOWN,
     JOB_QUEUES,
     TOKEN_TYPES,
-     OTP_FAIL_WINDOW_SECONDS,
-      UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS
+    OTP_FAIL_WINDOW_SECONDS,
+    UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
+import NotificationService from "../../services/NotificationService.js";
+import asyncHandler from "../../utils/asyncHandler.js";
 
 
 
 // LOGIN / REGISTER
-export const authDriver = async (req, res) => {
-    try {
+export const authDriver = asyncHandler(async (req, res) => {
         const { phone } = req.body;
 
         let driver = await Driver.findOne({ phone })
@@ -75,22 +76,19 @@ export const authDriver = async (req, res) => {
                 removeOnFail: true,
             }
         );
+        // Send SMS/Email via abstract service
+        await NotificationService.sendOTP(phone, otp);
 
+        console.log("OTP sent successfully", otp);
         return sendResponse({
             res,
             message: "OTP sent successfully",
             data: { otp },
         });
-    } catch (err) {
-        console.log("=== AUTH DRIVER ERROR ===", err.message, err.stack);
-        logger.error(`Auth User Error: ${err.message}\n${err.stack}`);
-        return sendError(res, process.env.NODE_ENV === "development" ? err.message : "Something went wrong. Please try again.");
-    }
-};
+});
 
 // RESEND OTP
-export const sendOTP = async (req, res) => {
-    try {
+export const sendOTP = asyncHandler(async (req, res) => {
         const { phone } = req.body;
 
         const driver = await Driver.findOne({ phone })
@@ -138,24 +136,18 @@ export const sendOTP = async (req, res) => {
         // Set cooldown using constant
         await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
 
-        if (process.env.NODE_ENV === "development") {
-            logger.info(`[DEV] OTP for ${phone}: ${otp}`);
-        }
+        // Send SMS/Email via abstract service
+        await NotificationService.sendOTP(phone, otp);
 
         return sendResponse({
             res,
             message: "OTP sent successfully",
-                data: { otp },
+            data: { otp },
         });
-    } catch (err) {
-        logger.error("Resend OTP Error:", err);
-        return sendError(res, "Failed to send OTP");
-    }
-};
+});
 
 // VERIFY OTP
-export const verifyOTP = async (req, res) => {
-    try {
+export const verifyOTP = asyncHandler(async (req, res) => {
         const { phone, otp } = req.body;
 
         if (!phone || typeof phone !== "string") {
@@ -257,14 +249,12 @@ export const verifyOTP = async (req, res) => {
                 `delete-driver-${sanitizedPhone}`
             ),
         ]);
-        const { accessToken, refreshToken } = await generateTokenPair(
-            driver._id
-        );
+        const { accessToken, refreshToken } = await generateTokenPair(driver._id, "driver");
 
         const now = new Date();
         const isFirstLogin = !driver.is_verified;
 
-        await Driver.findByIdAndUpdate(driver._id, {
+        const updatedDriver = await Driver.findByIdAndUpdate(driver._id, {
             $set: {
                 is_verified: true,
                 status: ACCOUNT_STATUS.ACTIVE,
@@ -272,7 +262,7 @@ export const verifyOTP = async (req, res) => {
                 last_login_at: now,
                 last_active_at: now,
             },
-        });
+        }, { new: true }).lean();
 
         return sendResponse({
             res,
@@ -280,23 +270,21 @@ export const verifyOTP = async (req, res) => {
             data: {
                 accessToken,
                 refreshToken,
+                driver: {
+                    _id: updatedDriver._id,
+                    phone: updatedDriver.phone,
+                    is_signup: updatedDriver.is_signup,
+                    firstName: updatedDriver.first_name,
+                    lastName: updatedDriver.last_name,
+                },
                 isFirstLogin,
-                needsOnboarding: isFirstLogin,
+                needsOnboarding: !updatedDriver.is_signup,
             },
         });
-    } catch (err) {
-        if (process.env.NODE_ENV === "development") {
-            logger.error("OTP Verification Error:", err);
-        } else {
-            logger.error("OTP Verification Error:", err.message);
-        }
-        return sendError(res, "OTP verification failed");
-    }
-};
+});
 
 //  REFRESH TOKEN
-export const refreshToken = async (req, res) => {
-    try {
+export const refreshToken = asyncHandler(async (req, res) => {
         const { token, source } = extractRefreshToken(req);
 
         if (!token) {
@@ -375,7 +363,7 @@ export const refreshToken = async (req, res) => {
         await del(redisKey);
 
         const { accessToken, refreshToken: newRefreshToken } =
-            await generateTokenPair(decoded.auth_id);
+            await generateTokenPair(decoded.auth_id, "driver");
 
         Driver.findByIdAndUpdate(decoded.auth_id, {
             last_active_at: new Date(),
@@ -391,23 +379,23 @@ export const refreshToken = async (req, res) => {
                 refreshToken: newRefreshToken,
             },
         });
-    } catch (err) {
-        logger.error("Refresh Token Error:", err);
-        clearAuthCookies(res);
-        return sendError(
-            res,
-            "Session expired. Please log in again.",
-            STATUS_CODES.UNAUTHORIZED
-        );
-    }
-};
+});
 
 //  COMPLETE PROFILE
-export const updateDriverDetails = async (req, res) => {
-    try {
+export const updateDriverDetails = asyncHandler(async (req, res) => {
         const { auth_id } = req.user;
-        const { first_name, last_name, email, gender, dob, address, lat, lng } =
-            req.body;
+        const { 
+            first_name, 
+            last_name, 
+            email, 
+            gender, 
+            date_of_birth, 
+            address, 
+            vehicle_type,
+            license_number,
+            lat, 
+            lng 
+        } = req.body;
 
         const driver = await Driver.findById(auth_id)
             .select("is_signup status")
@@ -430,7 +418,7 @@ export const updateDriverDetails = async (req, res) => {
         }
 
         const emailExists = await Driver.findOne({
-            email: email.toLowerCase(),
+            email: email.trim().toLowerCase(),
             _id: { $ne: auth_id },
         })
             .select("_id")
@@ -451,18 +439,22 @@ export const updateDriverDetails = async (req, res) => {
             auth_id,
             {
                 $set: {
-                    first_name: first_name.trim(),
-                    last_name: last_name.trim(),
-                    email: email.trim().toLowerCase(),
-                    gender: gender.toLowerCase(),
-                    dob: new Date(dob),
-                    address: address.trim(),
-                    location: {
+                    first_name: first_name?.trim(),
+                    last_name: last_name?.trim(),
+                    email: email?.trim().toLowerCase(),
+                    gender: gender?.toLowerCase(),
+                    date_of_birth: date_of_birth ? new Date(date_of_birth) : undefined,
+                    address: address?.trim(),
+                    vehicle_type,
+                    license_number,
+                    currentLocation: {
                         type: "Point",
                         coordinates: [lng, lat],
+                        address: address?.trim(),
                     },
                     is_signup: true,
                     is_serviceable: isServiceable,
+                    service_area_id: serviceAreaId,
                     service_area_id: serviceAreaId,
                 },
             },
@@ -490,17 +482,11 @@ export const updateDriverDetails = async (req, res) => {
                         "Your location is not currently in our service area. You'll be notified when we expand.",
                 }),
             },
-        });             
-        
-    } catch (err) {
-        logger.error("Update Driver Details Error:", err);
-        return sendError(res, "Failed to update profile");
-    }
-};
+        });
+});
 
 // LOGOUT
-export const logout = async (req, res) => {
-    try {
+export const logout = asyncHandler(async (req, res) => {
         const token = req.cookies?.refreshToken;
 
         if (token) {
@@ -518,12 +504,4 @@ export const logout = async (req, res) => {
             res,
             message: "Logged out successfully",
         });
-    } catch (err) {
-        clearAuthCookies(res);
-        logger.error("Logout Error:", err);
-        return sendResponse({
-            res,
-            message: "Logged out successfully",
-        });
-    }
-};
+});

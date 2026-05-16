@@ -3,6 +3,8 @@ import userRoute from "./user.user.js";
 import bookingRoute from "./booking.user.js";
 import storesRoute from "./store.user.routes.js";
 import supportRoute from "./support.user.routes.js";
+import paymentRoute from "./payment.user.js";
+import reviewRoute from "./review.user.js";
 
 const userRoutes = (app) => {
     app.use("/api/v1/user/auth", userAuthRoute);
@@ -11,6 +13,8 @@ const userRoutes = (app) => {
     app.use("/api/v1/user/bookings", bookingRoute);
     app.use("/api/v1/user/stores", storesRoute);
     app.use("/api/v1/user/support", supportRoute);
+    app.use("/api/v1/user/payment", paymentRoute);
+    app.use("/api/v1/user/reviews", reviewRoute);
 }
 
 export default userRoutes;

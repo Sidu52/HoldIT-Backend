@@ -17,6 +17,10 @@ const USER_ROLES = {
   SUPER_ADMIN: "super_admin",
   OPERATION_MANAGER: "operation_manager",
   CUSTOMER_SUPPORT: "customer_support",
+  DRIVER: "driver",
+  STORE: "store",
+  STORE_OWNER: "store_owner",
+  USER: "user",
 };
 
 // BOOKING STATUS
@@ -43,7 +47,7 @@ const JOB_QUEUES = {
   BOOKING_AUTO_CANCEL: "booking-auto-cancel",
   DELETE_UNVERIFIED_USER: "delete-unverified-user",
   DELETE_UNVERIFIED_DRIVER: "delete-unverified-driver",
-  DELETE_UNVERIFIED_STORE: "delete-unverified-store", // Activated
+  DELETE_UNVERIFIED_STORE: "delete-unverified-store",
   BOOKING_CANCELLED: "booking-cancelled",
   RETURN_PROCESS: "return-process",
 };
@@ -150,9 +154,6 @@ const VEHICLE_TYPES = {
 };
 
 // WORKER CONFIGURATION
-// BUG FIX #14: WORKER_CONFIG was declared but never exported — everything
-// that imported it (booking.js constants) got undefined, silently breaking
-// all timeout/radius values.
 const WORKER_CONFIG = {
   STORE_SEARCH_RADIUS_KM: 50,
   STORE_MAX_RETRY: 3,

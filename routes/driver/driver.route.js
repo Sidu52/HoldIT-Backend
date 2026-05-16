@@ -6,6 +6,7 @@ import {
     updateDriverStatus,
     getDriverProfile,
 } from "../../controllers/driver/driver.controller.js";
+import { getDriverStats } from "../../controllers/driver/driver.stats.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { acceptBooking, getActiveBooking, rejectBooking } from "../../controllers/driver/bookingController.js";
 import { acceptBookingSchema,rejectBookingSchema } from "../../validations/driver/bookingValidator.js";
@@ -18,6 +19,7 @@ router.use(authMiddleware);
 
 // get profile 
 router.get("/", apiLimiter, getDriverProfile);
+router.get("/stats", apiLimiter, getDriverStats);
 
 
 router.put("/update-driver-info", apiLimiter, updateDriverInfo);

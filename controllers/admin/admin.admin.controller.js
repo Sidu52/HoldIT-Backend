@@ -263,6 +263,7 @@ export const getTeamsMember = async (req, res) => {
             page = 1,
             limit = 10,
             status,
+            role,
             search,
             sort_by = "createdAt",
             sort_order = "desc",
@@ -276,6 +277,10 @@ export const getTeamsMember = async (req, res) => {
 
         if (status) {
             filter.status = status;
+        }
+
+        if (role) {
+            filter.role = role;
         }
 
         if (search) {
@@ -292,7 +297,7 @@ export const getTeamsMember = async (req, res) => {
         const sort = { [sort_by]: sortDirection };
 
         // Cache key includes all query params
-        const cacheKey = `team:${pageNum}:${limitNum}:${status || "all"}:${search || "none"}:${sort_by}:${sort_order}`;
+        const cacheKey = `team:${pageNum}:${limitNum}:${status || "all"}:${role || "all"}:${search || "none"}:${sort_by}:${sort_order}`;
 
         const cached = await get(cacheKey);
         if (cached) {
@@ -337,6 +342,46 @@ export const getTeamsMember = async (req, res) => {
     } catch (err) {
         logger.error("Get Team Members Error:", err);
         return sendError(res, "Failed to fetch team members");
+    }
+};
+
+// GET TEAM MEMBER BY ID
+export const getTeamMemberById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const cacheKey = `team:${id}`;
+
+        const cached = await get(cacheKey);
+        if (cached) {
+            return sendResponse({
+                res,
+                message: "Team member fetched successfully",
+                data: JSON.parse(cached),
+            });
+        }
+
+        const team = await Admin.findById(id)
+            .select(EXCLUDED_FIELDS)
+            .lean();
+
+        if (!team) {
+            return sendError(
+                res,
+                "Team member not found",
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        await set(cacheKey, JSON.stringify(team), "EX", PROFILE_CACHE_TTL);
+
+        return sendResponse({
+            res,
+            message: "Team member fetched successfully",
+            data: team,
+        });
+    } catch (err) {
+        logger.error("Get Team Member By ID Error:", err);
+        return sendError(res, "Failed to fetch team member");
     }
 };
 

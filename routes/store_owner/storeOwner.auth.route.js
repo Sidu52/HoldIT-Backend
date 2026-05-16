@@ -1,7 +1,8 @@
 import express from "express";
 import { apiLimiter, loginLimiter, otpLimiter, refreshLimiter } from "../../config/rateLimiter.js";
 import {
-    authStoreOwner,
+    loginStoreOwner,
+    registerStoreOwner,
     sendOTP,
     verifyOTP,
     refreshToken,
@@ -10,7 +11,8 @@ import {
 
 const router = express.Router();
 
-router.post("/login", loginLimiter, authStoreOwner);
+router.post("/login", loginLimiter, loginStoreOwner);
+router.post("/register", loginLimiter, registerStoreOwner);
 router.post("/resend", otpLimiter, sendOTP);
 router.post("/verify", otpLimiter, verifyOTP);
 router.post("/refresh", refreshLimiter, refreshToken);

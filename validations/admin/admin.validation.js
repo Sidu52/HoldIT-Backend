@@ -30,6 +30,13 @@ export const listQuerySchema = Joi.object({
   sort_order: Joi.string().valid("asc", "desc").default("desc"),
 });
 
+// userIdSchema
+export const userIdSchema = Joi.object({
+  id: Joi.string().required().messages({
+    "any.required": "User ID is required",
+  }),
+});
+
 // Update account status
 export const updateAccountSchema = Joi.object({
   auth_id: Joi.string().required().messages({

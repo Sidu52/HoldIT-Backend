@@ -72,11 +72,12 @@ const StoreSchema = new mongoose.Schema(
             type: Number,
             default: 50,
         },
-        rating: {
+        rating_avg: {
             type: Number,
             default: 0,
             min: 0,
             max: 5,
+            index: true,
         },
         rating_count: {
             type: Number,

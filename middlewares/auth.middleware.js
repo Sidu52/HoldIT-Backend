@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { sendResponse } from "../utils/apiResponse.js";
-import { STATUS_CODES, TOKEN_TYPES } from "../utils/constants.js";
+import { STATUS_CODES, TOKEN_TYPES, USER_ROLES } from "../utils/constants.js";
 
 export const authMiddleware = (req, res, next) => {
   try {
@@ -38,6 +38,38 @@ export const authMiddleware = (req, res, next) => {
     });
   }
 };
+
+/**
+ * Higher-order middleware to restrict access by role
+ */
+export const authorize = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return sendResponse({
+        res,
+        message: "Authentication required",
+        statusCode: STATUS_CODES.UNAUTHORIZED,
+      });
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return sendResponse({
+        res,
+        message: "You do not have permission to perform this action",
+        statusCode: STATUS_CODES.FORBIDDEN,
+      });
+    }
+
+    next();
+  };
+};
+
+// Specialized Protectors
+export const protectAdmin = authorize(USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN);
+export const protectUser = authorize(USER_ROLES.USER);
+export const protectDriver = authorize(USER_ROLES.DRIVER);
+export const protectStore = authorize(USER_ROLES.STORE);
+export const protectStoreOwner = authorize(USER_ROLES.STORE_OWNER);
 
 
 const extractToken = (req) => {

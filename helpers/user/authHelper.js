@@ -39,16 +39,18 @@ export const clearAuthCookies = (res) => {
 };
 
 // TOKEN PAIR GENERATION
-export const generateTokenPair = async (userId) => {
+export const generateTokenPair = async (userId, role) => {
     const tokenId = uuidv4();
 
     const accessToken = generateAccessToken({
         auth_id: userId,
+        role: role,
         type: TOKEN_TYPES.ACCESS,
     });
 
     const refreshToken = generateRefreshToken({
         auth_id: userId,
+        role: role,
         token_id: tokenId,
         type: TOKEN_TYPES.REFRESH,
     });

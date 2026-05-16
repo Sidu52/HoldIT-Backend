@@ -24,12 +24,12 @@ import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../utils/serviceable.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
-import sendEmail from "../../mailer/emailService.js";
+import NotificationService from "../../services/NotificationService.js";
+import asyncHandler from "../../utils/asyncHandler.js";
 
 
 // LOGIN / REGISTER
-export const authUser = async (req, res) => {
-    try {
+export const authUser = asyncHandler(async (req, res) => {
         const { phone } = req.body;
 
         let user = await User.findOne({ phone })
@@ -92,32 +92,18 @@ export const authUser = async (req, res) => {
                 removeOnFail: true,
             }
         );
-        // Send email
-        sendEmail({
-            to: "hitechsidu992@gmail.com",
-            subject: "OTP Service",
-            template: "otp-verification-email.html",
-            data: {
-                otp_code: otp,  // Matches template!
-                first_name: ""  // Personalizes email
-            },
-            rawFields: ["otp_code"],
-        }).catch((err) =>
-            logger.error("Failed to send reset email:", err.message)
-        );
+        // Send SMS/Email via abstract service
+        await NotificationService.sendOTP(phone, otp);
+
+        console.log("OTP sent successfully", otp);
         return sendResponse({
             res,
             message: "OTP sent successfully",
         });
-    } catch (err) {
-        logger.error("Auth User Error:", err);
-        return sendError(res, "Something went wrong. Please try again.");
-    }
-};
+});
 
 // RESEND OTP
-export const sendOTP = async (req, res) => {
-    try {
+export const sendOTP = asyncHandler(async (req, res) => {
         const { phone } = req.body;
 
         const user = await User.findOne({ phone })
@@ -169,33 +155,17 @@ export const sendOTP = async (req, res) => {
             logger.info(`[DEV] OTP for ${phone}: ${otp}`);
         }
 
-        // Send email
-        sendEmail({
-            to: "hitechsidu992@gmail.com",
-            subject: "OTP Service",
-            template: "otp-verification-email.html",
-            data: {
-                otp_code: otp,  // Matches template!
-                first_name: ""  // Personalizes email
-            },
-            rawFields: ["otp_code"],
-        }).catch((err) =>
-            logger.error("Failed to send reset email:", err.message)
-        );
+        // Send SMS/Email via abstract service
+        await NotificationService.sendOTP(phone, otp);
 
         return sendResponse({
             res,
             message: "OTP sent successfully",
         });
-    } catch (err) {
-        logger.error("Resend OTP Error:", err);
-        return sendError(res, "Failed to send OTP");
-    }
-};
+});
 
 // VERIFY OTP
-export const verifyOTP = async (req, res) => {
-    try {
+export const verifyOTP = asyncHandler(async (req, res) => {
         const { phone, otp } = req.body;
 
         if (!phone || typeof phone !== "string") {
@@ -299,7 +269,8 @@ export const verifyOTP = async (req, res) => {
         ]);
 
         const { accessToken, refreshToken } = await generateTokenPair(
-            user._id
+            user._id,
+            "user"
         );
 
         const now = new Date();
@@ -325,19 +296,10 @@ export const verifyOTP = async (req, res) => {
                 needsOnboarding: isFirstLogin,
             },
         });
-    } catch (err) {
-        if (process.env.NODE_ENV === "development") {
-            logger.error("OTP Verification Error:", err);
-        } else {
-            logger.error("OTP Verification Error:", err.message);
-        }
-        return sendError(res, "OTP verification failed");
-    }
-};
+});
 
 //  REFRESH TOKEN
-export const refreshToken = async (req, res) => {
-    try {
+export const refreshToken = asyncHandler(async (req, res) => {
         const { token, source } = extractRefreshToken(req);
 
         if (!token) {
@@ -416,7 +378,7 @@ export const refreshToken = async (req, res) => {
         await del(redisKey);
 
         const { accessToken, refreshToken: newRefreshToken } =
-            await generateTokenPair(decoded.auth_id);
+            await generateTokenPair(decoded.auth_id, "user");
 
         User.findByIdAndUpdate(decoded.auth_id, {
             last_active_at: new Date(),
@@ -432,20 +394,10 @@ export const refreshToken = async (req, res) => {
                 refreshToken: newRefreshToken,
             },
         });
-    } catch (err) {
-        logger.error("Refresh Token Error:", err);
-        clearAuthCookies(res);
-        return sendError(
-            res,
-            "Session expired. Please log in again.",
-            STATUS_CODES.UNAUTHORIZED
-        );
-    }
-};
+});
 
 //  COMPLETE PROFILE
-export const updateUserDetails = async (req, res) => {
-    try {
+export const updateUserDetails = asyncHandler(async (req, res) => {
         const { auth_id } = req.user;
         const { first_name, last_name, email, gender, dob, address, lat, lng } =
             req.body;
@@ -537,15 +489,10 @@ export const updateUserDetails = async (req, res) => {
                 }),
             },
         });
-    } catch (err) {
-        logger.error("Update User Details Error:", err);
-        return sendError(res, "Failed to update profile");
-    }
-};
+});
 
 // LOGOUT
-export const logout = async (req, res) => {
-    try {
+export const logout = asyncHandler(async (req, res) => {
         const token = req.cookies?.refreshToken;
 
         if (token) {
@@ -563,13 +510,5 @@ export const logout = async (req, res) => {
             res,
             message: "Logged out successfully",
         });
-    } catch (err) {
-        clearAuthCookies(res);
-        logger.error("Logout Error:", err);
-        return sendResponse({
-            res,
-            message: "Logged out successfully",
-        });
-    }
-};
+});
 

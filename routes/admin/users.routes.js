@@ -41,6 +41,7 @@ router.post("/bulk-deactivate",
     bulkDeactivateUsers
 );
 
+// Get all users
 router.get("/",
     apiLimiter,
     roleMiddleware(...VIEW_ROLES),
@@ -48,6 +49,7 @@ router.get("/",
     getUsers
 );
 
+// Get user by ID
 router.get("/:user_id",
     apiLimiter,
     roleMiddleware(...VIEW_ROLES),
@@ -55,6 +57,7 @@ router.get("/:user_id",
     getUserById
 );
 
+// Update user profile
 router.put("/:user_id",
     apiLimiter,
     roleMiddleware(...MODIFY_ROLES),
@@ -63,6 +66,7 @@ router.put("/:user_id",
     updateUserProfile
 );
 
+// Update user status
 router.patch("/:user_id/status",
     apiLimiter,
     roleMiddleware(...MODIFY_ROLES),
@@ -70,5 +74,6 @@ router.patch("/:user_id/status",
     validate(updateUserStatusSchema, "body"),
     updateUserStatus
 );
+
 
 export default router;

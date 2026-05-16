@@ -30,6 +30,7 @@ export const SOCKET_EVENTS = {
     DRIVER_GO_ONLINE: "driver:go_online",
     DRIVER_GO_OFFLINE: "driver:go_offline",
     DRIVER_STATUS_CHANGED: "driver:status:changed",
+    DRIVER_NEW_OFFER: "driver:new_offer",
 
     DRIVER_BOOKING_ACCEPT: "driver:booking:accept",
     DRIVER_BOOKING_ACCEPTED: "driver:booking:accepted",
@@ -43,6 +44,7 @@ export const SOCKET_EVENTS = {
 
     // Store Events
     STORE_INCOMING_BOOKING: "store:booking:incoming",
+    STORE_ACKNOWLEDGE_BOOKING: "store:booking:acknowledge",
     STORE_CAPACITY_WARNING: "store:capacity:warning",
 
     // Admin Events

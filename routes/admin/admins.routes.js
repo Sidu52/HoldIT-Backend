@@ -11,6 +11,7 @@ import {
   updateAccountStatus,
   updateProfile,
   getTeamsMember,
+  getTeamMemberById
 } from "../../controllers/admin/admin.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -18,6 +19,7 @@ import {
   updateAccountSchema,
   updateProfileSchema,
   listQuerySchema,
+  userIdSchema
 } from "../../validations/admin/admin.validation.js";
 
 const router = express.Router();
@@ -48,6 +50,15 @@ router.get(
   validate(listQuerySchema, "query"),
   getTeamsMember
 );
+
+// Get By ID
+router.get(
+  "/team/:id",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  validate(userIdSchema, "params"),
+  getTeamMemberById
+)
 
 // Get admins only
 router.get(

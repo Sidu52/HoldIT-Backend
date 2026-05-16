@@ -6,6 +6,7 @@ import adminStoresRoutes from "./stores.routes.js";
 import adminBookingsRoutes from "./bookings.routes.js";
 import adminAdminsRoutes from "./admins.routes.js";
 import storeOwnerRoutes from "./storeowner.routes.js";
+import adminServiceableRoutes from "./serviceableRoutes.js";
 
 const adminRoutes = (app) => {
     // Admin
@@ -17,6 +18,7 @@ const adminRoutes = (app) => {
     app.use("/api/v1/admin/booking", adminBookingsRoutes);
     app.use("/api/v1/admin", adminAdminsRoutes);
     app.use("/api/v1/admin/storeowner", storeOwnerRoutes);
+    app.use("/api/v1/admin/serviceable", adminServiceableRoutes)
 
 }
 
