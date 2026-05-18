@@ -26,7 +26,7 @@ export const socketAuthMiddleware = async (socket, next) => {
         // 2. Check authorization header
         // 3. Check cookies (for web clients with withCredentials: true)
         let tokenRaw = socket.handshake.auth?.token || socket.handshake.headers?.authorization;
-        
+
         if (!tokenRaw) {
             const cookies = parseCookies(socket.handshake.headers?.cookie);
             tokenRaw = cookies.accessToken;
@@ -44,7 +44,7 @@ export const socketAuthMiddleware = async (socket, next) => {
 
         // Verify token
         const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-        
+
         // Attach user info to socket
         socket.user = {
             id: decoded._id || decoded.auth_id,
@@ -52,7 +52,7 @@ export const socketAuthMiddleware = async (socket, next) => {
         };
 
         logger.info(`[Socket] Authorized connection | Role: ${socket.user.role} | ID: ${socket.user.id} | Socket: ${socket.id}`);
-        
+
         // --- Auto Room Join on Connect ---
         const { role, id } = socket.user;
 

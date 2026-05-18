@@ -13,10 +13,16 @@ const adminRoutes = (app) => {
     app.use("/api/v1/admin/auth", adminAuthRoutes);
     app.use("/api/v1/admin/dashboard", adminDashboardRoutes);
     app.use("/api/v1/admin/users", adminUsersRoutes);
+    app.use("/api/v1/admin/user", adminUsersRoutes);
+    app.use("/api/v1/admin/drivers", adminDriversRoutes);
     app.use("/api/v1/admin/driver", adminDriversRoutes);
     app.use("/api/v1/admin/stores", adminStoresRoutes);
+    app.use("/api/v1/admin/store", adminStoresRoutes);
+    app.use("/api/v1/admin/bookings", adminBookingsRoutes);
     app.use("/api/v1/admin/booking", adminBookingsRoutes);
+    app.use("/api/v1/admin/team", adminAdminsRoutes);
     app.use("/api/v1/admin", adminAdminsRoutes);
+    app.use("/api/v1/admin/storeowners", storeOwnerRoutes);
     app.use("/api/v1/admin/storeowner", storeOwnerRoutes);
     app.use("/api/v1/admin/serviceable", adminServiceableRoutes)
 

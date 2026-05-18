@@ -416,6 +416,7 @@ export const bulkDeactivateUsers = async (req, res) => {
             {
                 $set: {
                     is_active: false,
+                    status: ACCOUNT_STATUS.INACTIVE,
                     account_deactivated_reason: reason,
                     deactivated_at: new Date(),
                     deactivated_by: auth_id,

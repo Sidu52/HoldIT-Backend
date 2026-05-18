@@ -565,3 +565,93 @@ export const updateAccountStatus = async (req, res) => {
         return sendError(res, "Failed to update account status");
     }
 };
+
+// ============================================
+// BULK DEACTIVATE ADMINS / TEAM
+// ============================================
+export const bulkDeactivateAdmins = async (req, res) => {
+    try {
+        const { ids, reason } = req.body;
+        const { auth_id: currentUserId, role: currentRole } = req.user;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return sendError(res, "No admin IDs provided", STATUS_CODES.BAD_REQUEST);
+        }
+
+        // Prevent self-deactivation
+        if (ids.includes(currentUserId.toString())) {
+            return sendError(
+                res,
+                "You cannot deactivate your own account",
+                STATUS_CODES.FORBIDDEN
+            );
+        }
+
+        const filter = {
+            _id: { $in: ids },
+            is_active: { $ne: false }, // if we have is_active, otherwise just status != BLOCKED
+        };
+
+        const activeAdmins = await Admin.find(filter).select("_id role").lean();
+
+        if (activeAdmins.length === 0) {
+            return sendError(
+                res,
+                "No active admins found with the provided IDs",
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        // Prevent deactivating super_admin unless you are super_admin?
+        // Actually, no one should bulk deactivate super_admins probably, but let's check
+        if (currentRole !== USER_ROLES.SUPER_ADMIN) {
+            const hasSuperAdmin = activeAdmins.some(a => a.role === USER_ROLES.SUPER_ADMIN);
+            if (hasSuperAdmin) {
+                return sendError(
+                    res,
+                    "You cannot deactivate super admin accounts",
+                    STATUS_CODES.FORBIDDEN
+                );
+            }
+        }
+
+        const activeIds = activeAdmins.map(a => a._id);
+
+        const result = await Admin.updateMany(
+            { _id: { $in: activeIds } },
+            {
+                $set: {
+                    status: ACCOUNT_STATUS.BLOCKED,
+                    block_reason: reason ?? "Admin bulk deactivation",
+                    status_updated_by: currentUserId,
+                    status_updated_at: new Date(),
+                }
+            }
+        );
+
+        // Clear sessions and cache
+        const cachePromises = activeIds.map(id => del(`admin:profile:${id}`));
+        cachePromises.push(invalidateTeamCache());
+        
+        for (const id of activeIds) {
+            const { keys } = await scanKeys(`refresh:${id}:*`);
+            if (keys.length > 0) {
+                cachePromises.push(...keys.map(k => del(k)));
+            }
+        }
+
+        await Promise.all(cachePromises).catch(err => logger.error("Cache invalidation error:", err));
+
+        return sendResponse({
+            res,
+            message: `${result.modifiedCount} admin(s) deactivated successfully`,
+            data: {
+                requested: ids.length,
+                deactivated: result.modifiedCount,
+            },
+        });
+    } catch (err) {
+        logger.error("[bulkDeactivateAdmins] Error:", err);
+        return sendError(res, "Failed to deactivate admins");
+    }
+};

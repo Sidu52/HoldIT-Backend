@@ -46,6 +46,22 @@ router.post(
   bulkDeactivateDrivers
 );
 
+router.post(
+  "/bulk-delete",
+  apiLimiter,
+  roleMiddleware(...DRIVER_MODIFY_ROLES),
+  validate(bulkDeactivateSchema),
+  bulkDeactivateDrivers
+);
+
+router.delete(
+  "/bulk-delete",
+  apiLimiter,
+  roleMiddleware(...DRIVER_MODIFY_ROLES),
+  validate(bulkDeactivateSchema),
+  bulkDeactivateDrivers
+);
+
 // List drivers
 router.get(
   "/",
@@ -84,6 +100,15 @@ router.patch(
 
 router.patch(
     "/:driver_id/account",
+    apiLimiter,
+    roleMiddleware(...DRIVER_MODIFY_ROLES),
+    validate(driverIdSchema, "params"),
+    validate(updateDriverAccountSchema, "body"),
+    updateDriverAccount
+);
+
+router.patch(
+    "/:driver_id/status",
     apiLimiter,
     roleMiddleware(...DRIVER_MODIFY_ROLES),
     validate(driverIdSchema, "params"),

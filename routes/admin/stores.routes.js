@@ -12,6 +12,7 @@ import {
     updateStoreVerification,
     updateStoreOnline,
     createStore,
+    bulkDeactivateStores,
 } from "../../controllers/admin/store.admin.controller.js";
 import {
     storeIdSchema,
@@ -42,6 +43,18 @@ router.get("/",
     roleMiddleware(...VIEW_ROLES),
     validate(listStoresSchema, "query"),
     getStores
+);
+
+router.post("/bulk-delete",
+    apiLimiter,
+    roleMiddleware(...MODIFY_ROLES),
+    bulkDeactivateStores
+);
+
+router.delete("/bulk-delete",
+    apiLimiter,
+    roleMiddleware(...MODIFY_ROLES),
+    bulkDeactivateStores
 );
 
 router.get("/:store_id",

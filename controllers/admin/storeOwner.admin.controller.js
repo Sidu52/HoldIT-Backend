@@ -390,6 +390,7 @@ export const updateStoreOwnerStatus = async (req, res) => {
                     $set: {
                         is_active: false,
                         is_online: false,
+                        status: ACCOUNT_STATUS.INACTIVE,
                         // ✅ Fixed: schema field is store_deactivated_reason
                         store_deactivated_reason: "Owner account blocked",
                         deactivated_at: new Date(),
@@ -428,5 +429,83 @@ export const updateStoreOwnerStatus = async (req, res) => {
     } catch (err) {
         logger.error("[updateStoreOwnerStatus] Error:", err);
         return sendError(res, "Failed to update store owner status");
+    }
+};
+
+// ============================================
+// 6. BULK DEACTIVATE STORE OWNERS
+// ============================================
+export const bulkDeactivateStoreOwners = async (req, res) => {
+    try {
+        const { ids, reason } = req.body;
+        const { auth_id } = req.user;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return sendError(res, "No store owner IDs provided", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const activeOwners = await StoreOwner.find({
+            _id: { $in: ids },
+            is_active: true,
+        }).select("_id").lean();
+
+        if (activeOwners.length === 0) {
+            return sendError(
+                res,
+                "No active store owners found with the provided IDs",
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        const activeIds = activeOwners.map(o => o._id);
+
+        const result = await StoreOwner.updateMany(
+            { _id: { $in: activeIds } },
+            {
+                $set: {
+                    is_active: false,
+                    status: ACCOUNT_STATUS.INACTIVE,
+                    account_deactivated_reason: reason ?? "Admin bulk deactivation",
+                    deactivated_at: new Date(),
+                    deactivated_by: auth_id,
+                    updated_by: auth_id,
+                    updated_at: new Date(),
+                }
+            }
+        );
+        
+        // Also deactivate their stores
+        await Store.updateMany(
+            { store_owner_id: { $in: activeIds }, is_active: true },
+            {
+                $set: {
+                    is_active: false,
+                    is_online: false,
+                    status: ACCOUNT_STATUS.INACTIVE,
+                    store_deactivated_reason: "Owner bulk deactivated",
+                    deactivated_at: new Date(),
+                    deactivated_by: auth_id,
+                },
+            }
+        );
+
+        Promise.all([
+            ...activeIds.map((id) => del(`store_owner:${id}`)),
+            delByPattern("store_owners:*"),
+            delByPattern("stores:*"),
+        ]).catch((err) => logger.error("Cache invalidation error:", err));
+
+        return sendResponse({
+            res,
+            message: `${result.modifiedCount} store owner(s) deactivated successfully`,
+            data: {
+                requested: ids.length,
+                deactivated: result.modifiedCount,
+                alreadyInactive: ids.length - activeOwners.length,
+            },
+        });
+    } catch (err) {
+        logger.error("[bulkDeactivateStoreOwners] Error:", err);
+        return sendError(res, "Failed to deactivate store owners");
     }
 };

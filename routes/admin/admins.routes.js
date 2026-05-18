@@ -11,7 +11,8 @@ import {
   updateAccountStatus,
   updateProfile,
   getTeamsMember,
-  getTeamMemberById
+  getTeamMemberById,
+  bulkDeactivateAdmins
 } from "../../controllers/admin/admin.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -58,6 +59,21 @@ router.get(
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(userIdSchema, "params"),
   getTeamMemberById
+)
+
+// Bulk Deactivate
+router.post(
+  "/bulk-delete",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  bulkDeactivateAdmins
+)
+
+router.delete(
+  "/bulk-delete",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  bulkDeactivateAdmins
 )
 
 // Get admins only

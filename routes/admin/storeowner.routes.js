@@ -10,6 +10,7 @@ import {
     getStoreOwnerById,
     updateStoreOwner,
     updateStoreOwnerStatus,
+    bulkDeactivateStoreOwners,
 } from "../../controllers/admin/storeOwner.admin.controller.js";
 import {
     listStoreOwnersSchema,
@@ -38,6 +39,18 @@ router.get("/",
     roleMiddleware(...VIEW_ROLES),
     validate(listStoreOwnersSchema, "query"),
     getStoreOwners
+);
+
+router.post("/bulk-delete",
+    apiLimiter,
+    roleMiddleware(...MODIFY_ROLES),
+    bulkDeactivateStoreOwners
+);
+
+router.delete("/bulk-delete",
+    apiLimiter,
+    roleMiddleware(...MODIFY_ROLES),
+    bulkDeactivateStoreOwners
 );
 
 // GET  /admin/store-owners/:store_owner_id

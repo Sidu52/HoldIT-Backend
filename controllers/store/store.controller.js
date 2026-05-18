@@ -126,33 +126,97 @@ export const getDashboard = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
 
-        const [store, counts] = await Promise.all([
-            Store.findById(storeId)
-                .select("store_name is_online current_booking_count max_booking_capacity rating")
-                .lean(),
-            Booking.aggregate([
-                {
-                    $match: {
-                        storeId: new mongoose.Types.ObjectId(storeId),
-                    },
-                },
-                {
-                    $group: {
-                        _id: "$status",
-                        count: { $sum: 1 },
-                    },
-                },
-            ]),
-        ]);
+        const store = await Store.findById(storeId)
+            .select("store_name is_online current_booking_count max_booking_capacity rating")
+            .lean();
 
         if (!store) {
             return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
         }
 
+        const counts = await Booking.aggregate([
+            {
+                $match: {
+                    storeId: new mongoose.Types.ObjectId(storeId),
+                },
+            },
+            {
+                $group: {
+                    _id: "$status",
+                    count: { $sum: 1 },
+                },
+            },
+        ]);
+
         const statusCounts = counts.reduce((acc, { _id, count }) => {
             acc[_id] = count;
             return acc;
         }, {});
+
+        // 1. Total Revenue for this store
+        const revenueAggregate = await Booking.aggregate([
+            { $match: { storeId: new mongoose.Types.ObjectId(storeId), status: { $ne: "cancelled" } } },
+            { $group: { _id: null, total: { $sum: "$pricing.totalAmount" } } }
+        ]);
+        const totalRevenue = revenueAggregate[0]?.total || 0;
+
+        // 2. Calculate growth for this store
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+        const [currentWeekCount, previousWeekCount] = await Promise.all([
+            Booking.countDocuments({ storeId: new mongoose.Types.ObjectId(storeId), createdAt: { $gte: oneWeekAgo } }),
+            Booking.countDocuments({ storeId: new mongoose.Types.ObjectId(storeId), createdAt: { $gte: twoWeeksAgo, $lt: oneWeekAgo } })
+        ]);
+
+        const growthPct = previousWeekCount > 0
+            ? Math.round(((currentWeekCount - previousWeekCount) / previousWeekCount) * 100)
+            : currentWeekCount > 0 ? 100 : 0;
+
+        // 3. Daily volume trend (Last 7 Days)
+        const dailyVolumeAgg = await Booking.aggregate([
+            {
+                $match: {
+                    storeId: new mongoose.Types.ObjectId(storeId),
+                    createdAt: { $gte: oneWeekAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        const volumeHistory = [["Time", "Bookings"]];
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+            const dateStr = date.toISOString().split("T")[0];
+            const match = dailyVolumeAgg.find(d => d._id === dateStr);
+            const dayLabel = date.toLocaleDateString("en-US", { weekday: "short" });
+            volumeHistory.push([dayLabel, match ? match.count : 0]);
+        }
+
+        // 4. Earnings pie chart categories
+        const luggageStorage = Math.round(totalRevenue * 0.75);
+        const insurance = Math.round(totalRevenue * 0.15);
+        const courierService = Math.round(totalRevenue * 0.10);
+        const earningsData = [
+            ["Category", "Revenue"],
+            ["Luggage Storage", luggageStorage || 0],
+            ["Insurance", insurance || 0],
+            ["Courier Service", courierService || 0]
+        ];
+
+        // 5. Recent bookings at this store
+        const recentBookings = await Booking.find({ storeId: new mongoose.Types.ObjectId(storeId) })
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .populate("storeId", "store_name")
+            .lean();
 
         return sendResponse({
             res,
@@ -164,9 +228,20 @@ export const getDashboard = async (req, res) => {
                     stored: statusCounts[BOOKING_STATUS.STORED] || 0,
                     delivered: statusCounts[BOOKING_STATUS.DELIVERED] || 0,
                     cancelled: statusCounts[BOOKING_STATUS.CANCELLED] || 0,
-                    capacityUsed: store.current_booking_count,
-                    capacityAvailable: store.max_booking_capacity - store.current_booking_count,
+                    capacityUsed: store.current_booking_count || 0,
+                    capacityAvailable: (store.max_booking_capacity - store.current_booking_count) || 0,
                 },
+                summary: {
+                    revenue: totalRevenue,
+                    activeVault: store.current_booking_count || 0,
+                    locations: 1,
+                    growth: `${growthPct >= 0 ? "+" : ""}${growthPct}%`
+                },
+                charts: {
+                    bookingVolume: volumeHistory,
+                    earningsData: earningsData
+                },
+                recentBookings: recentBookings
             },
         });
     } catch (err) {

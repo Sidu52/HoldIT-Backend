@@ -87,12 +87,11 @@ export const updateStoreDutySchema = Joi.object({
 });
 
 export const updateStoreStatusSchema = Joi.object({
-    is_active: Joi.boolean().required(),
-    reason: Joi.when("is_active", {
-        is: false,
-        then: Joi.string().max(500).optional(),
-        otherwise: Joi.forbidden(),
-    }),
+    status: Joi.string().valid(...Object.values(ACCOUNT_STATUS)).optional(),
+    is_active: Joi.boolean().optional(),
+    reason: Joi.string().trim().max(500).optional(),
+}).or("status", "is_active").messages({
+    "object.missing": "At least one of status or is_active is required",
 });
 
 export const updateStoreVerificationSchema = Joi.object({

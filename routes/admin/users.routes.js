@@ -41,6 +41,20 @@ router.post("/bulk-deactivate",
     bulkDeactivateUsers
 );
 
+router.post("/bulk-delete",
+    apiLimiter,
+    roleMiddleware(...MODIFY_ROLES),
+    validate(bulkDeactivateSchema, "body"), 
+    bulkDeactivateUsers
+);
+
+router.delete("/bulk-delete",
+    apiLimiter,
+    roleMiddleware(...MODIFY_ROLES),
+    validate(bulkDeactivateSchema, "body"), 
+    bulkDeactivateUsers
+);
+
 // Get all users
 router.get("/",
     apiLimiter,

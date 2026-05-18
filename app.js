@@ -63,8 +63,10 @@ app.use(
             if (!origin) return callback(null, true);
 
             const allowedOrigins = [
-                "http://localhost:4000"
-            ];
+                "http://localhost:4000",
+                "http://localhost:4001",
+                process.env.CLIENT_URL
+            ].filter(Boolean);
 
             if (allowedOrigins.includes(origin)) {
                 callback(null, true);

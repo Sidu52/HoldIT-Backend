@@ -427,29 +427,40 @@ export const updateStoreOnline = async (req, res) => {
 export const toggleStoreStatus = async (req, res) => {
     try {
         const { store_id } = req.params;
-        const { is_active, reason } = req.body;
+        const { is_active, status, reason } = req.body;
         const { auth_id } = req.user;
 
         const store = await Store.findOne({
             _id: store_id,
             is_deleted: { $ne: true },
         })
-            .select("is_active is_online store_name")
+            .select("is_active is_online store_name status")
             .lean();
 
         if (!store) {
             return sendError(res, "Store not found", STATUS_CODES.NOT_FOUND);
         }
 
-        if (store.is_active === is_active) {
+        let isActiveToSet = is_active;
+        if (isActiveToSet === undefined) {
+            if (status) {
+                isActiveToSet = status === ACCOUNT_STATUS.ACTIVE;
+            } else {
+                isActiveToSet = store.is_active;
+            }
+        }
+
+        const statusToSet = status || (isActiveToSet ? ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE);
+
+        if (store.is_active === isActiveToSet && store.status === statusToSet) {
             return sendError(
                 res,
-                `Store is already ${is_active ? ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
+                `Store is already in the requested status`,
                 STATUS_CODES.CONFLICT
             );
         }
 
-        if (!is_active) {
+        if (!isActiveToSet) {
             const STORE_BLOCKING_STATUSES = [
                 BOOKING_STATUS.STORE_ASSIGNED,
                 BOOKING_STATUS.DRIVER_ASSIGNED,
@@ -476,19 +487,20 @@ export const toggleStoreStatus = async (req, res) => {
         }
 
         const updateData = {
-            is_active,
+            is_active: isActiveToSet,
+            status: statusToSet,
             status_updated_by: auth_id,
             status_updated_at: new Date(),
         };
 
-        if (!is_active) {
+        if (!isActiveToSet) {
             updateData.store_deactivated_reason = reason ?? null;
             updateData.deactivated_at = new Date();       // ✅ Added from fixed schema
             updateData.deactivated_by = auth_id;          // ✅ Added from fixed schema
             updateData.is_online = false;
         }
 
-        if (is_active) {
+        if (isActiveToSet) {
             updateData.store_deactivated_reason = null;
             updateData.deactivated_at = null;             // ✅ Clear on reactivation
             updateData.deactivated_by = null;             // ✅ Clear on reactivation
@@ -506,7 +518,7 @@ export const toggleStoreStatus = async (req, res) => {
 
         return sendResponse({
             res,
-            message: `Store ${is_active ? "activated" : "deactivated"} successfully`,
+            message: `Store ${isActiveToSet ? "activated" : "deactivated"} successfully`,
             data: updatedStore,
         });
     } catch (err) {
@@ -581,5 +593,92 @@ export const updateStoreVerification = async (req, res) => {
     } catch (err) {
         logger.error("[updateStoreVerification] Error:", err);
         return sendError(res, "Failed to update store verification");
+    }
+};
+
+// ── BULK DEACTIVATE STORES ─────────────────────────────────────────
+export const bulkDeactivateStores = async (req, res) => {
+    try {
+        const { ids, reason } = req.body;
+        const { auth_id } = req.user;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return sendError(res, "No store IDs provided", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const activeStores = await Store.find({
+            _id: { $in: ids },
+            is_active: true,
+            is_deleted: { $ne: true },
+        }).select("_id").lean();
+
+        if (activeStores.length === 0) {
+            return sendError(
+                res,
+                "No active stores found with the provided IDs",
+                STATUS_CODES.NOT_FOUND
+            );
+        }
+
+        const activeIds = activeStores.map(s => s._id);
+
+        const STORE_BLOCKING_STATUSES = [
+            BOOKING_STATUS.STORE_ASSIGNED,
+            BOOKING_STATUS.DRIVER_ASSIGNED,
+            BOOKING_STATUS.DRIVER_ARRIVED,
+            BOOKING_STATUS.PICKED_UP,
+            BOOKING_STATUS.STORED,
+            BOOKING_STATUS.RETURN_REQUESTED,
+            BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+        ];
+
+        const activeBookingCount = await Booking.countDocuments({
+            storeId: { $in: activeIds },
+            status: { $in: STORE_BLOCKING_STATUSES },
+            isActive: true,
+        });
+
+        if (activeBookingCount > 0) {
+            return sendError(
+                res,
+                `Cannot deactivate stores — ${activeBookingCount} active booking(s) in progress across selected stores.`,
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        const result = await Store.updateMany(
+            { _id: { $in: activeIds } },
+            {
+                $set: {
+                    is_active: false,
+                    is_online: false,
+                    status: ACCOUNT_STATUS.INACTIVE,
+                    store_deactivated_reason: reason ?? "Admin bulk deactivation",
+                    deactivated_at: new Date(),
+                    deactivated_by: auth_id,
+                    status_updated_by: auth_id,
+                    status_updated_at: new Date(),
+                }
+            }
+        );
+
+        Promise.all([
+            ...activeIds.map((id) => del(`store:${id}`)),
+            ...activeIds.map((id) => del(`store:public:${id}`)),
+            delByPattern("stores:*"),
+        ]).catch((err) => logger.error("Cache invalidation error:", err));
+
+        return sendResponse({
+            res,
+            message: `${result.modifiedCount} store(s) deactivated successfully`,
+            data: {
+                requested: ids.length,
+                deactivated: result.modifiedCount,
+                alreadyInactive: ids.length - activeStores.length,
+            },
+        });
+    } catch (err) {
+        logger.error("[bulkDeactivateStores] Error:", err);
+        return sendError(res, "Failed to deactivate stores");
     }
 };
