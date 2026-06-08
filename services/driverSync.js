@@ -9,28 +9,26 @@ const BATCH_SIZE = 50;
 export const syncDriversToRedis = async () => {
     try {
         const availableDrivers = await Driver.find({
-            is_active: true,
             is_online: true,
-            is_on_trip: { $ne: true },  
-            status: ACCOUNT_STATUS.ACTIVE,
+            is_on_trip: { $ne: true },
+            account_status: ACCOUNT_STATUS.ACTIVE,
             verification_status: VERIFICATION_STATUS.VERIFIED,
             "currentLocation.coordinates": { $exists: true, $ne: [] },
         })
             .select(
                 "_id first_name last_name phone " +
                 "currentLocation service_area_id " +
-                "is_active is_online is_on_trip " +
-                "status verification_status vehicle_type"
+                "is_online is_on_trip " +
+                "account_status verification_status vehicle_type"
             )
             .lean();
 
         // Drivers currently on a trip should NOT be in the geo set.
         // We count them separately so they never show up as "failed".
         const onTripCount = await Driver.countDocuments({
-            is_active: true,
             is_online: true,
             is_on_trip: true,
-            status: ACCOUNT_STATUS.ACTIVE,
+            account_status: ACCOUNT_STATUS.ACTIVE,
             verification_status: VERIFICATION_STATUS.VERIFIED,
         });
         if (!availableDrivers.length) {

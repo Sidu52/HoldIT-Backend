@@ -1,145 +1,70 @@
 import crypto from "crypto";
-import { set, get, del, scanKeys } from "../../services/redisService.js";
+import logger from "../../utils/logger.js";
+import {
+    isKeyExist,
+    buildCacheKey,
+    getCache,
+    setCache,
+    updateCache,
+    incrementCache,
+    deleteCache,
+    deleteManyCache,
+    deleteByPattern,
+} from "../../utils/cache.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import Admin from "../../models/Admin.js";
-import User from "../../models/User.js";
-import Driver from "../../models/Driver.js";
-import Store from "../../models/Store.js";
 import sendEmail from "../../mailer/emailService.js";
-import {
-    ACCOUNT_STATUS,
-    USER_ROLES,
-    STATUS_CODES,
-    INVITE_TOKEN_EXPIRY,
-} from "../../utils/constants.js";
-import logger from "../../utils/logger.js";
+import { CACHE_TTL, STATUS_CODES, USER_ROLES, VERIFICATION_STATUS } from "../../utils/constants.js";
 
-// CONSTANTS
-const INVITE_TOKEN_EXPIRY_SECONDS = INVITE_TOKEN_EXPIRY * 60 * 60; // hours → seconds
-const PROFILE_CACHE_TTL = 300; // 5 minutes
-const LIST_CACHE_TTL = 120; // 2 minutes
+const EXCLUDED_FIELDS = "-password_hash -__v";
 
-// Fields to exclude from responses
-const EXCLUDED_FIELDS = "-password_hash -invited_by -__v";
+const adminProfileKey = (id) => buildCacheKey("admin:profile", { id });
+const teamMemberKey = (id) => buildCacheKey("team:member", { id });
+const teamListPattern = "team:list:*";
+const adminsListPattern = "admins:list:*";
 
-
-const invalidateTeamCache = async () => {
-    try {
-        const { keys } = await scanKeys("team:*");
-        if (keys.length > 0) {
-            await Promise.all(keys.map((key) => del(key)));
-        }
-    } catch (err) {
-        logger.error("Failed to invalidate team cache:", err);
-    }
-};
-
-// Escape Regex Special Characters
-const escapeRegex = (str) => {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-};
-
-// CREATE ADMIN INVITE
+// CREATE INVITE
 export const createAdminInvite = async (req, res) => {
     try {
         const { email, role } = req.body;
         const { auth_id: inviterId } = req.user;
 
-        // Prevent inviting super_admin role
         if (role === USER_ROLES.SUPER_ADMIN) {
-            return sendError(
-                res,
-                "Cannot invite super admin role",
-                STATUS_CODES.FORBIDDEN
-            );
+            return sendError(res, "Cannot invite super admin role", STATUS_CODES.FORBIDDEN);
         }
 
-        // Prevent duplicate active invites
-        const existingInvite = await get(`admin-invite-email:${email}`);
-        if (existingInvite) {
-            return sendError(
-                res,
-                "An invite has already been sent to this email",
-                STATUS_CODES.CONFLICT
-            );
+        const existingAdmin = await Admin.findOne({ email }).select("_id verification_status").lean();
+
+        if (existingAdmin?.verification_status === VERIFICATION_STATUS.VERIFIED) {
+            return sendError(res, "An active account already exists with this email", STATUS_CODES.CONFLICT);
         }
 
-        // Check if admin already exists
-        let admin = await Admin.findOne({ email })
-            .select("_id is_verified")
-            .lean();
-
-        if (admin?.is_verified) {
-            return sendError(
-                res,
-                "An active account already exists with this email",
-                STATUS_CODES.CONFLICT
-            );
+        const cacheKey = buildCacheKey("admin:invite", { email });
+        if (await isKeyExist(cacheKey)) {
+            return sendError(res, "An invite has already been sent to this email", STATUS_CODES.CONFLICT);
         }
 
-        // Create admin record if doesn't exist
-        if (!admin) {
-            admin = await Admin.create({
-                email,
-                role,
-                is_verified: false,
-                invited_by: inviterId,
-                status: ACCOUNT_STATUS.PENDING,
-            });
-        }
-
-        // Generate secure token
         const token = crypto.randomBytes(32).toString("hex");
-
-        const invitePayload = {
-            email,
-            adminId: admin._id,
-            inviterId,
-        };
-
-        // Store in Redis with expiry
-        await Promise.all([
-            set(
-                `admin-invite:${token}`,
-                JSON.stringify(invitePayload),
-                "EX",
-                INVITE_TOKEN_EXPIRY_SECONDS
-            ),
-            set(
-                `admin-invite-email:${email}`,
-                token,
-                "EX",
-                INVITE_TOKEN_EXPIRY_SECONDS
-            ),
-        ]);
+        await setCache(cacheKey, { email, role, inviterId }, CACHE_TTL.DAY);
 
         const inviteLink = `${process.env.CLIENT_URL}/signup?token=${token}`;
 
-        // Send invite email (fire and forget)
         sendEmail({
             to: email,
             subject: "Invitation to Join Holdit",
             template: "invite-email.html",
-            data: {
-                first_name: "Team Member",
-                invitation_link: inviteLink,
-            },
+            data: { first_name: "Team Member", invitation_link: inviteLink },
             rawFields: ["invitation_link"],
-        }).catch((err) =>
-            logger.error("Failed to send invite email:", err.message)
-        );
+        }).catch((err) => logger.error("Failed to send invite email:", err.message));
 
         return sendResponse({
             res,
             statusCode: STATUS_CODES.CREATED,
             message: "Invite sent successfully",
-            // Don't expose inviteLink in production
-            ...(process.env.NODE_ENV === "development" && {
-                data: { inviteLink },
-            }),
+            ...(process.env.NODE_ENV === "development" && { data: { inviteLink } }),
         });
     } catch (err) {
-        logger.error("Create Admin Invite Error:", err);
+        logger.error("[createAdminInvite] Error:", err);
         return sendError(res, "Failed to send invite");
     }
 };
@@ -148,41 +73,18 @@ export const createAdminInvite = async (req, res) => {
 export const getProfile = async (req, res) => {
     try {
         const { auth_id } = req.user;
-        const cacheKey = `admin:profile:${auth_id}`;
+        const cacheKey = adminProfileKey(auth_id);
 
-        // Check Redis cache
-        const cached = await get(cacheKey);
-        if (cached) {
-            return sendResponse({
-                res,
-                message: "Profile fetched successfully",
-                data: JSON.parse(cached),
-            });
-        }
+        const cached = await getCache(cacheKey);
+        if (cached) return sendResponse({ res, message: "Profile fetched successfully", data: cached });
 
-        // Fetch from DB
-        const admin = await Admin.findById(auth_id)
-            .select(EXCLUDED_FIELDS)
-            .lean();
+        const admin = await Admin.findById(auth_id).select(EXCLUDED_FIELDS).lean();
+        if (!admin) return sendError(res, "Account not found", STATUS_CODES.NOT_FOUND);
 
-        if (!admin) {
-            return sendError(
-                res,
-                "Account not found",
-                STATUS_CODES.NOT_FOUND
-            );
-        }
-
-        // Cache the result
-        await set(cacheKey, JSON.stringify(admin), "EX", PROFILE_CACHE_TTL);
-
-        return sendResponse({
-            res,
-            message: "Profile fetched successfully",
-            data: admin,
-        });
+        await setCache(cacheKey, admin, CACHE_TTL.DETAIL);
+        return sendResponse({ res, message: "Profile fetched successfully", data: admin });
     } catch (err) {
-        logger.error("Get Profile Error:", err);
+        logger.error("[getProfile] Error:", err);
         return sendError(res, "Failed to fetch profile");
     }
 };
@@ -191,332 +93,340 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
     try {
         const { auth_id } = req.user;
-        const {
-            first_name,
-            last_name,
-            phone,
-            gender,
-            address,
-            date_of_birth,
-        } = req.body;
+        const { first_name, last_name, phone, gender, address, date_of_birth } = req.body;
 
-        const admin = await Admin.findById(auth_id)
-            .select("_id is_verified")
-            .lean();
+        const admin = await Admin.findById(auth_id).select("_id verification_status").lean();
+        if (!admin) return sendError(res, "Account not found", STATUS_CODES.NOT_FOUND);
+        if (admin.verification_status !== VERIFICATION_STATUS.VERIFIED) {
+            return sendError(res, "Account not verified. Please contact support.", STATUS_CODES.FORBIDDEN);
+        }
 
-        if (!admin) {
-            return sendError(
-                res,
-                "Account not found",
-                STATUS_CODES.NOT_FOUND
-            );
-        }
-        if (!admin.is_verified) {
-            return sendError(
-                res,
-                "Account not verified. Please complete profile first.",
-                STATUS_CODES.FORBIDDEN
-            );
-        }
-        const updateFields = {};
-        if (first_name) updateFields.first_name = first_name.trim();
-        if (last_name) updateFields.last_name = last_name.trim();
-        if (phone) updateFields.phone = phone.trim();
-        if (gender) updateFields.gender = gender.toLowerCase();
-        if (address) updateFields.address = address.trim();
-        if (date_of_birth) updateFields.date_of_birth = new Date(date_of_birth);
+        const updateFields = {
+            ...(first_name && { first_name: first_name.trim() }),
+            ...(last_name && { last_name: last_name.trim() }),
+            ...(phone && { phone: phone.trim() }),
+            ...(gender && { gender: gender.toLowerCase() }),
+            ...(address && { address: address.trim() }),
+            ...(date_of_birth && { date_of_birth: new Date(date_of_birth) }),
+        };
 
         const updatedAdmin = await Admin.findByIdAndUpdate(
             auth_id,
             { $set: updateFields },
             { new: true, runValidators: true }
-        )
-            .select("-password_hash -__v")
-            .lean();
-        if (!updatedAdmin) {
-            return sendError(
-                res,
-                "Failed to update profile",
-                STATUS_CODES.INTERNAL_SERVER_ERROR
-            );
-        }
+        ).select(EXCLUDED_FIELDS).lean();
 
+        if (!updatedAdmin) return sendError(res, "Failed to update profile", STATUS_CODES.INTERNAL_SERVER_ERROR);
 
-        // Invalidate profile cache
-        await del(`admin:profile:${auth_id}`);
-        return sendResponse({
-            res,
-            message: "Profile updated successfully",
-            data: admin,
-        });
-    }
-    catch (err) {
-        logger.error("Update Profile Error:", err);
+        await updateCache(adminProfileKey(auth_id), updatedAdmin, CACHE_TTL.DETAIL);
+        return sendResponse({ res, message: "Profile updated successfully", data: updatedAdmin });
+    } catch (err) {
+        logger.error("[updateProfile] Error:", err);
         return sendError(res, "Failed to update profile");
     }
-}
+};
 
 // GET TEAM MEMBERS
 export const getTeamsMember = async (req, res) => {
     try {
+        const { auth_id } = req.user;
         const {
-            page = 1,
-            limit = 10,
-            status,
-            search,
-            sort_by = "createdAt",
-            sort_order = "desc",
+            page = 1, limit = 10,
+            account_status, role, search,
+            sort_by = "createdAt", sort_order = "desc",
         } = req.query;
+
         const pageNum = Number(page);
         const limitNum = Number(limit);
-        const skip = (pageNum - 1) * limitNum;
 
-        // Build filter
-        const filter = {};
+        const cacheKey = buildCacheKey("team:list", {
+            account_status: account_status || "all",
+            limit: limitNum,
+            page: pageNum,
+            role: role || "all",
+            search: search || "none",
+            sort_by,
+            sort_order,
+        });
 
-        if (status) {
-            filter.status = status;
-        }
+        const cached = await getCache(cacheKey);
+        if (cached) return sendResponse({ res, message: "Team members fetched successfully", data: cached });
 
+        const filter = { _id: { $ne: auth_id } };
+        if (account_status) filter.account_status = account_status;
+        if (role) filter.role = role;
         if (search) {
-            const escapedSearch = escapeRegex(search.trim());
+            const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             filter.$or = [
-                { first_name: { $regex: escapedSearch, $options: "i" } },
-                { last_name: { $regex: escapedSearch, $options: "i" } },
-                { email: { $regex: escapedSearch, $options: "i" } },
+                { first_name: { $regex: escaped, $options: "i" } },
+                { last_name: { $regex: escaped, $options: "i" } },
+                { email: { $regex: escaped, $options: "i" } },
             ];
         }
 
-        // Build sort
-        const sortDirection = sort_order === "asc" ? 1 : -1;
-        const sort = { [sort_by]: sortDirection };
+        const sort = { [sort_by]: sort_order === "asc" ? 1 : -1 };
+        const skip = (pageNum - 1) * limitNum;
 
-        // Cache key includes all query params
-        const cacheKey = `team:${pageNum}:${limitNum}:${status || "all"}:${search || "none"}:${sort_by}:${sort_order}`;
-
-        const cached = await get(cacheKey);
-        if (cached) {
-            return sendResponse({
-                res,
-                message: "Team members fetched successfully",
-                data: JSON.parse(cached),
-            });
-        }
-
-        // Execute query and count in parallel
         const [teams, total] = await Promise.all([
-            Admin.find(filter)
-                .select(EXCLUDED_FIELDS)
-                .sort(sort)
-                .skip(skip)
-                .limit(limitNum)
-                .lean(),
+            Admin.find(filter).select(EXCLUDED_FIELDS).sort(sort).skip(skip).limit(limitNum).lean(),
             Admin.countDocuments(filter),
         ]);
 
+        const totalPages = Math.ceil(total / limitNum);
         const responseData = {
             teams,
             pagination: {
                 currentPage: pageNum,
-                totalPages: Math.ceil(total / limitNum),
+                totalPages,
                 totalItems: total,
                 itemsPerPage: limitNum,
-                hasNextPage: pageNum < Math.ceil(total / limitNum),
+                hasNextPage: pageNum < totalPages,
                 hasPrevPage: pageNum > 1,
             },
         };
 
-        // Cache result
-        await set(cacheKey, JSON.stringify(responseData), "EX", LIST_CACHE_TTL);
-
-        return sendResponse({
-            res,
-            message: "Team members fetched successfully",
-            data: responseData,
-        });
+        await setCache(cacheKey, responseData, CACHE_TTL.LIST);
+        return sendResponse({ res, message: "Team members fetched successfully", data: responseData });
     } catch (err) {
-        logger.error("Get Team Members Error:", err);
+        logger.error("[getTeamsMember] Error:", err);
         return sendError(res, "Failed to fetch team members");
     }
 };
 
-//  GET ADMINS BY ROLE
+// GET TEAM MEMBER BY ID
+export const getTeamMemberById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const cacheKey = teamMemberKey(id);
+
+        const cached = await getCache(cacheKey);
+        if (cached) return sendResponse({ res, message: "Team member fetched successfully", data: cached });
+
+        const team = await Admin.findById(id).select(EXCLUDED_FIELDS).lean();
+        if (!team) return sendError(res, "Team member not found", STATUS_CODES.NOT_FOUND);
+
+        await setCache(cacheKey, team, CACHE_TTL.DETAIL);
+        return sendResponse({ res, message: "Team member fetched successfully", data: team });
+    } catch (err) {
+        logger.error("[getTeamMemberById] Error:", err);
+        return sendError(res, "Failed to fetch team member");
+    }
+};
+
+// GET ADMINS BY ROLE 
 const getAdminsByRole = async (req, res, role) => {
     try {
         const {
-            page = 1,
-            limit = 10,
-            search,
-            sort_by = "createdAt",
-            sort_order = "desc",
+            page = 1, limit = 10, search,
+            sort_by = "createdAt", sort_order = "desc",
         } = req.query;
 
         const pageNum = Number(page);
         const limitNum = Number(limit);
-        const skip = (pageNum - 1) * limitNum;
+
+        const cacheKey = buildCacheKey("admins:list", {
+            limit: limitNum,
+            page: pageNum,
+            role,
+            search: search || "none",
+            sort_by,
+            sort_order,
+        });
+
+        const cached = await getCache(cacheKey);
+        if (cached) return sendResponse({ res, message: `${role}s fetched successfully`, data: cached });
 
         const filter = { role };
-
         if (search) {
-            const escapedSearch = escapeRegex(search.trim());
+            const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             filter.$or = [
-                { first_name: { $regex: escapedSearch, $options: "i" } },
-                { last_name: { $regex: escapedSearch, $options: "i" } },
-                { email: { $regex: escapedSearch, $options: "i" } },
+                { first_name: { $regex: escaped, $options: "i" } },
+                { last_name: { $regex: escaped, $options: "i" } },
+                { email: { $regex: escaped, $options: "i" } },
             ];
         }
 
-        const sortDirection = sort_order === "asc" ? 1 : -1;
-        const sort = { [sort_by]: sortDirection };
-
-        const cacheKey = `admins:${role}:${pageNum}:${limitNum}:${search || "none"}:${sort_by}:${sort_order}`;
-
-        const cached = await get(cacheKey);
-        if (cached) {
-            return sendResponse({
-                res,
-                message: `${role}s fetched successfully`,
-                data: JSON.parse(cached),
-            });
-        }
+        const sort = { [sort_by]: sort_order === "asc" ? 1 : -1 };
+        const skip = (pageNum - 1) * limitNum;
 
         const [admins, total] = await Promise.all([
-            Admin.find(filter)
-                .select(EXCLUDED_FIELDS)
-                .sort(sort)
-                .skip(skip)
-                .limit(limitNum)
-                .lean(),
+            Admin.find(filter).select(EXCLUDED_FIELDS).sort(sort).skip(skip).limit(limitNum).lean(),
             Admin.countDocuments(filter),
         ]);
 
+        const totalPages = Math.ceil(total / limitNum);
         const responseData = {
             admins,
             pagination: {
                 currentPage: pageNum,
-                totalPages: Math.ceil(total / limitNum),
+                totalPages,
                 totalItems: total,
                 itemsPerPage: limitNum,
-                hasNextPage: pageNum < Math.ceil(total / limitNum),
+                hasNextPage: pageNum < totalPages,
                 hasPrevPage: pageNum > 1,
             },
         };
 
-        await set(cacheKey, JSON.stringify(responseData), "EX", LIST_CACHE_TTL);
-
-        return sendResponse({
-            res,
-            message: `${role}s fetched successfully`,
-            data: responseData,
-        });
+        await setCache(cacheKey, responseData, CACHE_TTL.LIST);
+        return sendResponse({ res, message: `${role}s fetched successfully`, data: responseData });
     } catch (err) {
-        logger.error(`Get ${role}s Error:`, err);
+        logger.error(`[getAdminsByRole:${role}] Error:`, err);
         return sendError(res, `Failed to fetch ${role}s`);
     }
 };
 
-export const getAdmins = (req, res) =>
-    getAdminsByRole(req, res, USER_ROLES.ADMIN);
+export const getAdmins = (req, res) => getAdminsByRole(req, res, USER_ROLES.ADMIN);
+export const getSuperAdmins = (req, res) => getAdminsByRole(req, res, USER_ROLES.SUPER_ADMIN);
 
-export const getSuperAdmins = (req, res) =>
-    getAdminsByRole(req, res, USER_ROLES.SUPER_ADMIN);
+// UPDATE TEAM MEMBER
+export const updateTeamMember = async (req, res) => {
+    try {
+        const { auth_id } = req.user;
+        const { id: team_id } = req.params;
+        const { first_name, last_name, email, phone, gender, date_of_birth, address, verification_status } = req.body;
+
+        if (auth_id === team_id?.toString()) {
+            return sendError(res, "You cannot update your own details via this endpoint", STATUS_CODES.FORBIDDEN);
+        }
+
+        const teamMember = await Admin.findById(team_id).select("_id email").lean();
+        if (!teamMember) return sendError(res, "Team member not found", STATUS_CODES.NOT_FOUND);
+
+        if (email && email !== teamMember.email) {
+            const conflict = await Admin.exists({ email: email.toLowerCase() });
+            if (conflict) return sendError(res, "Email already in use", STATUS_CODES.CONFLICT);
+        }
+
+        const updatePayload = {
+            ...(first_name && { first_name }),
+            ...(last_name && { last_name }),
+            ...(email && { email: email.toLowerCase() }),
+            ...(phone && { phone }),
+            ...(gender && { gender }),
+            ...(date_of_birth && { date_of_birth }),
+            ...(address && { address }),
+            ...(verification_status && { verification_status }),
+        };
+
+        if (Object.keys(updatePayload).length === 0) {
+            return sendError(res, "No update fields provided", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const updatedTeamMember = await Admin.findByIdAndUpdate(
+            team_id,
+            { $set: updatePayload },
+            { new: true, runValidators: true }
+        ).select(EXCLUDED_FIELDS).lean();
+
+        if (!updatedTeamMember) return sendError(res, "Failed to update team member", STATUS_CODES.INTERNAL_SERVER_ERROR);
+
+        await Promise.all([
+            updateCache(teamMemberKey(team_id), updatedTeamMember, CACHE_TTL.DETAIL),
+            deleteByPattern(teamListPattern),
+        ]);
+
+        return sendResponse({ res, message: "Team member details updated successfully", data: updatedTeamMember });
+    } catch (err) {
+        logger.error("[updateTeamMember] Error:", err);
+        return sendError(res, "Failed to update team member");
+    }
+};
 
 // UPDATE ACCOUNT STATUS
 export const updateAccountStatus = async (req, res) => {
     try {
-        const { auth_id, status, reason } = req.body;
+        const { auth_id, account_status, reason } = req.body;
         const { auth_id: currentUserId, role: currentRole } = req.user;
-        // Model mapping
-        const MODEL_MAP = {
-            admin: Admin,
-            user: User,
-            driver: Driver,
-            store: Store,
-        };
 
-        const Model = MODEL_MAP[currentRole === "super_admin" ? USER_ROLES.ADMIN : currentRole];
-
-        if (!Model) {
-            return sendError(res, "Invalid account type", STATUS_CODES.BAD_REQUEST);
+        if (auth_id === currentUserId.toString()) {
+            return sendError(res, "You cannot change your own account status", STATUS_CODES.FORBIDDEN);
         }
 
-        // Prevent self-modification (only for admins)
-        if ((currentRole === "admin" || currentRole === "super_admin") && auth_id === currentUserId.toString()) {
-            return sendError(
-                res,
-                "You cannot change your own account status",
-                STATUS_CODES.FORBIDDEN
-            );
-        }
-
-        const result = await Model.findById(auth_id)
-            .select("_id role status")
-            .lean();
-
-        if (!result) {
-            return sendError(
-                res,
-                `${currentRole} not found`,
-                STATUS_CODES.NOT_FOUND
-            );
-        }
-
-        // Prevent modifying super_admin
-        if ((currentRole === "admin" || currentRole === "super_admin") && result.role === USER_ROLES.SUPER_ADMIN) {
-            return sendError(
-                res,
-                "Cannot modify super admin accounts",
-                STATUS_CODES.FORBIDDEN
-            );
-        }
-
-        // Prevent setting same status
-        if (result.status === status) {
-            return sendError(
-                res,
-                `Account is already ${status}`,
-                STATUS_CODES.CONFLICT
-            );
+        const target = await Admin.findById(auth_id).select("_id role").lean();
+        if (!target) return sendError(res, "Admin not found", STATUS_CODES.NOT_FOUND);
+        if (target.role === USER_ROLES.SUPER_ADMIN) {
+            return sendError(res, "Cannot modify super admin accounts", STATUS_CODES.FORBIDDEN);
         }
 
         const updateData = {
-            status,
+            account_status,
             status_updated_at: new Date(),
             status_updated_by: currentUserId,
+            ...(account_status === ACCOUNT_STATUS.BLOCKED && reason && { block_reason: reason }),
         };
 
-        if (status === ACCOUNT_STATUS.BLOCKED && reason) {
-            updateData.block_reason = reason;
+        const updatedAdmin = await Admin.findByIdAndUpdate(
+            auth_id,
+            { $set: updateData },
+            { new: true }
+        ).select(EXCLUDED_FIELDS).lean();
+
+        await Promise.all([
+            updateCache(teamMemberKey(auth_id), updatedAdmin, CACHE_TTL.DETAIL),
+            deleteByPattern(teamListPattern),
+        ]);
+
+        return sendResponse({ res, message: "Account status updated successfully" });
+    } catch (err) {
+        logger.error("[updateAccountStatus] Error:", err);
+        return sendError(res, "Failed to update account status");
+    }
+};
+
+// BULK DEACTIVATE ADMINS
+export const bulkDeactivateAdmins = async (req, res) => {
+    try {
+        const { ids, reason } = req.body;
+        const { auth_id: currentUserId, role: currentRole } = req.user;
+
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return sendError(res, "No admin IDs provided", STATUS_CODES.BAD_REQUEST);
+        }
+        if (ids.includes(currentUserId.toString())) {
+            return sendError(res, "You cannot deactivate your own account", STATUS_CODES.FORBIDDEN);
         }
 
-        await Model.findByIdAndUpdate(auth_id, { $set: updateData });
+        const activeAdmins = await Admin.find({
+            _id: { $in: ids },
+            account_status: ACCOUNT_STATUS.ACTIVE,
+            verification_status: VERIFICATION_STATUS.VERIFIED,
+        }).select("_id role").lean();
 
-        // Cache invalidation (dynamic key)
-        await del(`${currentRole}:profile:${auth_id}`);
-
-        if (currentRole === "admin" || currentRole === "super_admin") {
-            await invalidateTeamCache();
+        if (activeAdmins.length === 0) {
+            return sendError(res, "No active admins found with the provided IDs", STATUS_CODES.NOT_FOUND);
         }
 
-        // Remove sessions if blocked / inactive
-        if (
-            status === ACCOUNT_STATUS.BLOCKED ||
-            status === ACCOUNT_STATUS.INACTIVE
-        ) {
-            const { keys } = await scanKeys(`refresh:${auth_id}:*`);
+        if (currentRole !== USER_ROLES.SUPER_ADMIN && activeAdmins.some((a) => a.role === USER_ROLES.SUPER_ADMIN)) {
+            return sendError(res, "You cannot deactivate super admin accounts", STATUS_CODES.FORBIDDEN);
+        }
 
-            if (keys.length > 0) {
-                await Promise.all(keys.map((key) => del(key)));
+        const activeIds = activeAdmins.map((a) => a._id);
+
+        const result = await Admin.updateMany(
+            { _id: { $in: activeIds } },
+            {
+                $set: {
+                    account_status: ACCOUNT_STATUS.BLOCKED,
+                    block_reason: reason ?? "Admin bulk deactivation",
+                    status_updated_by: currentUserId,
+                    status_updated_at: new Date(),
+                },
             }
-        }
+        );
+
+        await Promise.all([
+            deleteManyCache(activeIds.map((id) => teamMemberKey(id))),
+            deleteByPattern(teamListPattern),
+            deleteByPattern(adminsListPattern),
+        ]);
 
         return sendResponse({
             res,
-            message: `${currentRole} account status updated to ${status}`,
+            message: `${result.modifiedCount} admin(s) deactivated successfully`,
+            data: { requested: ids.length, deactivated: result.modifiedCount },
         });
-
     } catch (err) {
-        logger.error("Update Account Status Error:", err);
-        return sendError(res, "Failed to update account status");
+        logger.error("[bulkDeactivateAdmins] Error:", err);
+        return sendError(res, "Failed to deactivate admins");
     }
 };

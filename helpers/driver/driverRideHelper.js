@@ -5,7 +5,6 @@ import redis, { get, set, del, delByPattern } from "../../services/redisService.
 import { markDriverOnTrip, markDriverAvailable } from "../../services/driverGeoService.js";
 import { BOOKING_STATUS } from "../../utils/constants.js";
 import {
-    DRIVER_RIDE_CACHE,
     DRIVER_VISIBLE_STATUSES,
     DRIVER_HISTORY_STATUSES,
 } from "../../constants/driver/driver.ride.js";
@@ -26,7 +25,7 @@ import logger from "../../utils/logger.js";
 
 
 // CACHE
-export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
+export { getCachedData, setCacheData } from "../../utils/cache.js";
 
 export const invalidateDriverRideCache = async (driverId, bookingId = null) => {
     try {
@@ -257,7 +256,7 @@ export const processArriveAtPickup = async (bookingId, driverId) => {
 };
 
 // COMPLETE PICKUP luggage collected, heading to store
-export const processCompletePickup = async (bookingId, driverId, otp) => {
+export const processCompletePickup = async (bookingId, driverId, otp, photos = []) => {
     const now = new Date();
 
     const booking = await Booking.findOne({
@@ -267,11 +266,22 @@ export const processCompletePickup = async (bookingId, driverId, otp) => {
     }).select("pickup.assignment.otp");
 
     if (!booking) return null;
-    
+
+    // OTP Rate limiting check
+    const rateLimitKey = `rate_limit:otp:${driverId}:${bookingId}`;
+    const failedAttempts = parseInt(await redis.get(rateLimitKey) || "0", 10);
+    if (failedAttempts >= 5) {
+        throw new Error("Too many failed attempts. Locked out for 15 minutes.");
+    }
+
     // OTP Verification
     if (booking.pickup.assignment.otp !== otp) {
+        const fails = await redis.incr(rateLimitKey);
+        if (fails === 1) await redis.expire(rateLimitKey, 15 * 60);
         throw new Error("Invalid pickup OTP");
     }
+
+    await redis.del(rateLimitKey); // clear on success
 
     return Booking.findByIdAndUpdate(
         bookingId,
@@ -281,6 +291,7 @@ export const processCompletePickup = async (bookingId, driverId, otp) => {
                 lastStatusUpdatedAt: now,
                 "pickup.assignment.completedAt": now,
                 "pickup.assignment.otp": null, // Clear used OTP
+                "luggagePhotos.pickup": photos,
             },
             $push: {
                 timeline: {
@@ -487,7 +498,7 @@ async function flagCriticalCancellation(bookingId, driverId, status, reason) {
 }
 
 // COMPLETE DELIVERY driver reached the user and handed back the luggage
-export const processCompleteDelivery = async (bookingId, driverId, otp) => {
+export const processCompleteDelivery = async (bookingId, driverId, otp, photos = []) => {
     const now = new Date();
 
     const booking = await Booking.findOne({
@@ -498,10 +509,21 @@ export const processCompleteDelivery = async (bookingId, driverId, otp) => {
 
     if (!booking) return null;
 
+    // OTP Rate limiting check
+    const rateLimitKey = `rate_limit:otp:${driverId}:${bookingId}`;
+    const failedAttempts = parseInt(await redis.get(rateLimitKey) || "0", 10);
+    if (failedAttempts >= 5) {
+        throw new Error("Too many failed attempts. Locked out for 15 minutes.");
+    }
+
     // OTP Verification
     if (booking.delivery.assignment.otp !== otp) {
+        const fails = await redis.incr(rateLimitKey);
+        if (fails === 1) await redis.expire(rateLimitKey, 15 * 60);
         throw new Error("Invalid delivery OTP");
     }
+
+    await redis.del(rateLimitKey); // clear on success
 
     const updated = await Booking.findByIdAndUpdate(
         bookingId,
@@ -511,6 +533,7 @@ export const processCompleteDelivery = async (bookingId, driverId, otp) => {
                 lastStatusUpdatedAt: now,
                 "delivery.assignment.completedAt": now,
                 "delivery.assignment.otp": null, // Clear used OTP
+                "luggagePhotos.delivery": photos,
                 "payment.status": "paid", // usually completed at this point
             },
             $push: {

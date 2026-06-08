@@ -7,6 +7,7 @@ import { getOfferStatus } from "../../../helpers/user/driverAssignHelper.js";
 import { processRideAccept, processRideReject } from "../../../helpers/driver/driverRideHelper.js";
 import { STATUS_CODES, USER_ROLES } from "../../../utils/constants.js";
 import Driver from "../../../models/Driver.js";
+import { addDriverToRedis } from "../../../services/driverGeoService.js";
 
 export const registerDriverHandlers = (io, socket) => {
     const driverId = socket.user.id;
@@ -27,10 +28,17 @@ export const registerDriverHandlers = (io, socket) => {
         try {
             const driver = await Driver.findByIdAndUpdate(
                 driverId,
-                { is_online: true, live_location: [payload.lng, payload.lat] },
+                { 
+                    is_online: true, 
+                    currentLocation: {
+                        type: "Point",
+                        coordinates: [payload.lng, payload.lat]
+                    } 
+                },
                 { new: true }
             );
             if (driver) {
+                await addDriverToRedis(driver);
                 emitAdminDriverStatusChanged(io, driverId, `${driver.first_name} ${driver.last_name}`, true, driver.is_on_trip, payload);
             }
         } catch (err) {

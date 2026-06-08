@@ -11,6 +11,7 @@ import {
     deleteStore,
     getDashboard,
     goOnline,
+    sendUpdatePhoneOTP,
 } from "../../controllers/store_owner/storeOwner.controller.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
@@ -30,6 +31,7 @@ router.use(authMiddleware);
 // Profile
 router.get("/profile", apiLimiter, getProfile);
 router.put("/profile", apiLimiter, validate(updateProfileSchema), updateProfile);
+router.post("/profile/update-phone-otp", apiLimiter, sendUpdatePhoneOTP);
 router.post("/complete-profile", apiLimiter, validate(completeProfileSchema), completeProfile);
 
 // Dashboard

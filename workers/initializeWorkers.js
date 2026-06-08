@@ -3,6 +3,7 @@ import { createDeleteUnverifiedWorker } from "./deleteUnverifiedAccountWorker.js
 import { JOB_QUEUES } from "../utils/constants.js";
 import { createDriverAssignWorker } from "./jobs/driverSearchJob.js";
 import { createReturnProcessWorker } from "./returnProcessWorker.js";
+import { createBookingCancelledWorker } from "./bookingCancelledWorker.js";
 import logger from "../utils/logger.js";
 
 
@@ -15,6 +16,7 @@ export const initializeWorkers = () => {
     activeWorkers.push(createDeleteUnverifiedWorker(JOB_QUEUES.DELETE_UNVERIFIED_STORE));
     activeWorkers.push(createDriverAssignWorker());
     activeWorkers.push(createReturnProcessWorker());
+    activeWorkers.push(createBookingCancelledWorker());
 };
 
 export const closeAllWorkers = async () => {

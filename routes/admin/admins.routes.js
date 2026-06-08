@@ -11,6 +11,9 @@ import {
   updateAccountStatus,
   updateProfile,
   getTeamsMember,
+  getTeamMemberById,
+  bulkDeactivateAdmins,
+  updateTeamMember
 } from "../../controllers/admin/admin.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -18,6 +21,7 @@ import {
   updateAccountSchema,
   updateProfileSchema,
   listQuerySchema,
+  userIdSchema
 } from "../../validations/admin/admin.validation.js";
 
 const router = express.Router();
@@ -49,11 +53,38 @@ router.get(
   getTeamsMember
 );
 
+// Get By ID
+router.get(
+  "/team/:id",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  validate(userIdSchema, "params"),
+  getTeamMemberById
+)
+
+// Update team members details
+router.put(
+  "/team/:id",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  validate(userIdSchema, "params"),
+  validate(updateProfileSchema),
+  updateTeamMember
+);
+
+// Bulk Deactivate
+router.post(
+  "/bulk-delete",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  bulkDeactivateAdmins
+)
+
 // Get admins only
 router.get(
   "/admins",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN),
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(listQuerySchema, "query"),
   getAdmins
 );
@@ -62,7 +93,7 @@ router.get(
 router.get(
   "/super-admins",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN),
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(listQuerySchema, "query"),
   getSuperAdmins
 );
@@ -71,10 +102,11 @@ router.get(
 router.post(
   "/invite",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN),
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(inviteSchema),
   createAdminInvite
 );
+
 
 // Update account status (block/unblock/etc.)
 router.put(
@@ -84,5 +116,12 @@ router.put(
   validate(updateAccountSchema),
   updateAccountStatus
 );
+
+router.delete(
+  "/bulk-delete",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  bulkDeactivateAdmins
+)
 
 export default router;

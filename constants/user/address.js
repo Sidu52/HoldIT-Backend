@@ -1,15 +1,3 @@
-export const ADDRESS_LIMITS = {
-    MAX_ADDRESSES: 10,
-};
-
-export const CACHE_KEYS = {
-    USER_ADDRESSES: (userId) => `user:${userId}:addresses`,
-};
-
-export const CACHE_TTL = {
-    ADDRESSES: 600,
-};
-
 export const ADDRESS_MESSAGES = {
     // Success
     FETCHED: "Addresses fetched successfully.",
@@ -26,4 +14,21 @@ export const ADDRESS_MESSAGES = {
     ADD_FAILED: "Failed to add address.",
     UPDATE_FAILED: "Failed to update address.",
     DELETE_FAILED: "Failed to delete address.",
+};
+
+// LIMITS
+export const ADDRESS_LIMITS = {
+    MAX_ADDRESSES: 10,
+};
+
+// CACHE KEYS
+export const CACHE_KEYS = {
+    USER_ADDRESSES: (userId) => `user:addresses:${userId}`,
+    USER_ADDRESS_DETAIL: (userId, addressId) => `user:${userId}:address:${addressId}`,
+};
+
+// CACHE TTL (seconds)
+export const CACHE_TTL = {
+    LIST: 120,
+    DETAIL: 300,
 };

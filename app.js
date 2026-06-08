@@ -1,4 +1,3 @@
-// Dependencies
 import express from "express";
 import dotenv from "dotenv";
 dotenv.config();
@@ -12,6 +11,11 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import logger from "./utils/logger.js";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Services
 import { connectMongo, disconnectMongo } from "./services/mongoService.js";
@@ -25,6 +29,7 @@ import { setupSwagger } from "./swagger.routes.js";
 import { validateObjectIdParams, enforcePaginationLimit } from "./middlewares/safety.middleware.js";
 
 // Routes
+import CommonRoutes from "./routes/common.route.js";
 import AdminRoutes from "./routes/admin/index.js";
 import UserRoutes from "./routes/users/index.js";
 import DriverRoutes from "./routes/driver/index.js";
@@ -57,8 +62,10 @@ app.use(
             if (!origin) return callback(null, true);
 
             const allowedOrigins = [
-                "http://localhost:4000"
-            ];
+                "http://localhost:4000",
+                "http://localhost:4001",
+                process.env.CLIENT_URL
+            ].filter(Boolean);
 
             if (allowedOrigins.includes(origin)) {
                 callback(null, true);
@@ -77,7 +84,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(validateObjectIdParams);
 app.use(enforcePaginationLimit);
 
+// Serve static files
+app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
+
 // ROUTES
+CommonRoutes(app);
 AdminRoutes(app);
 DriverRoutes(app);
 StoreRoutes(app);

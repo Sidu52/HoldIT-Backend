@@ -93,12 +93,12 @@ export const bulkUploadUsers = async (req, res) => {
                 email: user.email?.toLowerCase(),
                 phone: user.phone,
                 gender: user.gender,
-                dob: user.dob ? new Date(user.dob) : undefined,
+                date_of_birth: user.date_of_birth ? new Date(user.date_of_birth) : undefined,
                 address: user.address,
                 service_area_id: user.service_area_id
                     ? new mongoose.Types.ObjectId(user.service_area_id)
                     : undefined,
-                status: ACCOUNT_STATUS.ACTIVE,
+                account_status: ACCOUNT_STATUS.ACTIVE,
                 is_serviceable: user.is_serviceable ?? true,
                 is_signup: user.is_signup ?? false,
             };
@@ -177,7 +177,6 @@ export const bulkUploadDriver = async (req, res) => {
     }
 };
 
-
 export const bulkUploadStoreOwner = async (req, res) => {
     try {
         const storeOwners = req.body;
@@ -203,9 +202,8 @@ export const bulkUploadStoreOwner = async (req, res) => {
                 date_of_birth: owner.date_of_birth,
                 address: owner.address,
                 onboarding_status: owner.onboarding_status,
-                status: owner.status,
-                is_verified: owner.is_verified ?? false,
-                is_active: owner.is_active ?? true,
+                account_status: owner.status,
+                verification_status: owner.verification_status,
                 update_by: owner.update_by || null,
                 store_id: owner.store_id || null,
                 account_deactivated_reason: owner.account_deactivated_reason || null,
@@ -241,6 +239,7 @@ export const bulkUploadStoreOwner = async (req, res) => {
         });
     }
 };
+
 export const bulkUploadStore = async (req, res) => {
 
 };
@@ -319,7 +318,6 @@ export const bulkUploadAdmin = async (req, res) => {
         });
     }
 };
-
 
 export const bulkUploadBooking = async (req, res) => {
 

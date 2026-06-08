@@ -21,6 +21,7 @@ import {
     cancelRideSchema,
     completeRideSchema
 } from "../../validations/driver/ride.driver.validation.js";
+import { upload } from "../../middlewares/upload.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 
 const router = express.Router();
@@ -44,6 +45,7 @@ router.put("/:booking_id/arrive-pickup", apiLimiter, arriveAtPickupController);
 router.put(
     "/:booking_id/complete-pickup",
     apiLimiter,
+    upload.array("photos", 5),
     validate(completeRideSchema),
     completePickupController
 );
@@ -62,6 +64,7 @@ router.put("/:booking_id/arrive-delivery", apiLimiter, arriveAtUserReturnControl
 router.put(
     "/:booking_id/complete-delivery",
     apiLimiter,
+    upload.array("photos", 5),
     validate(completeRideSchema),
     completeDeliveryController
 );

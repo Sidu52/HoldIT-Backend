@@ -25,6 +25,8 @@ const getRedisConfig = () => {
     return {
         host: process.env.REDIS_HOST,
         port: Number(process.env.REDIS_PORT),
+        username: process.env.REDIS_USERNAME,
+        password: process.env.REDIS_PASSWORD,
         maxRetriesPerRequest: null,
         ...(process.env.REDIS_TLS === "true" && {
             tls: { rejectUnauthorized: false },
@@ -113,68 +115,53 @@ export const initRedis = async () => {
 };
 
 // BASIC OPERATIONS
-export const set = async (key, value, type, expiration) => {
-    if (!key || value === undefined || value === null) {
-        throw new Error("Redis SET: key and value are required");
-    }
-    if (type && expiration) {
-        return redis.set(key, value, type, expiration);
-    }
-    return redis.set(key, value);
-};
-
 export const get = async (key) => {
     if (!key) throw new Error("Redis GET: key is required");
     return redis.get(key);
 };
 
-export const del = async (key) => {
-    if (!key) throw new Error("Redis DEL: key is required");
-    return redis.del(key);
+export const set = async (key, value, ttl = null) => {
+    if (!key || value === undefined || value === null) {
+        throw new Error("Redis SET: key and value are required");
+    }
+    return ttl ? redis.set(key, value, "EX", ttl) : redis.set(key, value);
+};
+
+export const update = async (key, value, ttl = null) => {
+    return set(key, value, ttl); // Same as set
 };
 
 export const exists = async (key) => {
     if (!key) throw new Error("Redis EXISTS: key is required");
-    return redis.exists(key);
+    return Boolean(await redis.exists(key));
 };
 
-export const ttl = async (key) => {
-    if (!key) throw new Error("Redis TTL: key is required");
-    return redis.ttl(key);
+export const del = async (key) => {
+    if (!key) throw new Error("Redis DELETE: key is required");
+    return redis.del(key);
 };
 
-// PATTERN-BASED OPERATIONS
+export const delMany = async (keys = []) => {
+    if (!Array.isArray(keys) || keys.length === 0) {
+        throw new Error("Redis DEL_MANY: keys array is required");
+    }
+    return redis.del(...keys);
+};
 
-/**
- * Scan for keys matching a pattern
- * Uses SCAN (non-blocking) instead of KEYS (blocking)
- */
-export const scanKeys = async (pattern) => {
-    if (!pattern) throw new Error("Redis SCAN: pattern is required");
+// -------------------------
+// Delete by pattern
+// -------------------------
+export const delByPattern = async (pattern) => {
+    if (!pattern) throw new Error("Redis DEL_PATTERN: pattern is required");
 
     const keys = [];
     let cursor = "0";
 
     do {
-        const [nextCursor, foundKeys] = await redis.scan(
-            cursor,
-            "MATCH",
-            pattern,
-            "COUNT",
-            100
-        );
+        const [nextCursor, foundKeys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100);
         cursor = nextCursor;
         keys.push(...foundKeys);
     } while (cursor !== "0");
-
-    return { keys };
-};
-
-// Delete all keys matching a pattern
-export const delByPattern = async (pattern) => {
-    if (!pattern) throw new Error("Redis DEL_PATTERN: pattern is required");
-
-    const { keys } = await scanKeys(pattern);
 
     if (keys.length === 0) return 0;
 
@@ -183,19 +170,97 @@ export const delByPattern = async (pattern) => {
 
     for (let i = 0; i < keys.length; i += BATCH_SIZE) {
         const batch = keys.slice(i, i + BATCH_SIZE);
-        const result = await redis.del(...batch);
-        deleted += result;
+        deleted += await redis.del(...batch);
     }
 
     return deleted;
 };
 
-// SAFETY
-export const flushall = async () => {
-    if (process.env.NODE_ENV === "production") {
-        throw new Error("flushall is disabled in production");
-    }
-    return redis.flushall();
-};
+
+
+// export const set = async (key, value, type, expiration) => {
+//     if (!key || value === undefined || value === null) {
+//         throw new Error("Redis SET: key and value are required");
+//     }
+//     if (type && expiration) {
+//         return redis.set(key, value, type, expiration);
+//     }
+//     return redis.set(key, value);
+// };
+
+// export const get = async (key) => {
+//     if (!key) throw new Error("Redis GET: key is required");
+//     return redis.get(key);
+// };
+
+// export const del = async (key) => {
+//     if (!key) throw new Error("Redis DEL: key is required");
+//     return redis.del(key);
+// };
+
+// export const exists = async (key) => {
+//     if (!key) throw new Error("Redis EXISTS: key is required");
+//     return redis.exists(key);
+// };
+
+// export const ttl = async (key) => {
+//     if (!key) throw new Error("Redis TTL: key is required");
+//     return redis.ttl(key);
+// };
+
+// export const setNX = async (key, value, ttl) => {
+//     if (!key || value === undefined || value === null) {
+//         throw new Error("Redis SETNX: key and value are required");
+//     }
+//     return redis.set(key, value, "EX", ttl, "NX");
+// };
+
+// export const scanKeys = async (pattern) => {
+//     if (!pattern) throw new Error("Redis SCAN: pattern is required");
+
+//     const keys = [];
+//     let cursor = "0";
+
+//     do {
+//         const [nextCursor, foundKeys] = await redis.scan(
+//             cursor,
+//             "MATCH",
+//             pattern,
+//             "COUNT",
+//             100
+//         );
+//         cursor = nextCursor;
+//         keys.push(...foundKeys);
+//     } while (cursor !== "0");
+
+//     return { keys };
+// };
+
+// export const delByPattern = async (pattern) => {
+//     if (!pattern) throw new Error("Redis DEL_PATTERN: pattern is required");
+
+//     const { keys } = await scanKeys(pattern);
+
+//     if (keys.length === 0) return 0;
+
+//     const BATCH_SIZE = 100;
+//     let deleted = 0;
+
+//     for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+//         const batch = keys.slice(i, i + BATCH_SIZE);
+//         const result = await redis.del(...batch);
+//         deleted += result;
+//     }
+
+//     return deleted;
+// };
+
+// // SAFETY
+// export const flushall = async () => {
+//     if (process.env.NODE_ENV === "production") {
+//         throw new Error("flushall is disabled in production");
+//     }
+//     return redis.flushall();
+// };
 
 export default redis;

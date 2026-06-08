@@ -66,22 +66,11 @@ const DriverSchema = new mongoose.Schema(
             trim: true,
             maxlength: 500,
         },
-
-        // Online / Active state
         is_online: {
             type: Boolean,
             default: false,
             index: true,
         },
-        is_active: {
-            type: Boolean,
-            default: true,
-            index: true,
-        },
-
-        // Trip state
-        // Tracks whether driver is currently on an active booking trip.
-        // Used by Redis meta + driver-assignment eligibility checks.
         is_on_trip: {
             type: Boolean,
             default: false,
@@ -92,14 +81,7 @@ const DriverSchema = new mongoose.Schema(
             ref: "Booking",
             default: null,
         },
-
-        // ── Verification & Status ─────────────────────────────────────
-        is_verified: {
-            type: Boolean,
-            default: false,
-            index: true,
-        },
-        status: {
+        account_status: {
             type: String,
             enum: Object.values(ACCOUNT_STATUS),
             default: ACCOUNT_STATUS.PENDING,
@@ -111,8 +93,6 @@ const DriverSchema = new mongoose.Schema(
             default: VERIFICATION_STATUS.PENDING,
             index: true,
         },
-
-        // ── Service area & vehicle ─────────────────────────────────────
         service_area_id: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "ServiceableArea",
@@ -122,6 +102,10 @@ const DriverSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
             index: true,
+        },
+        is_signup: {
+            type: Boolean,
+            default: false,
         },
         vehicle_type: {
             type: String,
@@ -135,20 +119,18 @@ const DriverSchema = new mongoose.Schema(
             unique: true,
         },
 
-        // ── Location ──────────────────────────────────────────────────
         currentLocation: {
             type: {
                 type: String,
                 enum: ["Point"]
             },
             coordinates: {
-                type: [Number],   // [lng, lat] — GeoJSON order
+                type: [Number],
             },
             address: String,
             updatedAt: Date,
         },
 
-        // ── Misc ──────────────────────────────────────────────────────
         last_login_at: Date,
         last_active_at: {
             type: Date,
@@ -164,14 +146,21 @@ const DriverSchema = new mongoose.Schema(
             ref: "Admin",
         },
         documents: [DocumentSchema],
+        rating_avg: {
+            type: Number,
+            default: 0,
+            index: true,
+        },
+        rating_count: {
+            type: Number,
+            default: 0,
+        },
     },
     {
         timestamps: true,
         collection: "drivers"
     }
 );
-
-// ── Indexes ───────────────────────────────────────────────────────────────────
 
 DriverSchema.index(
     { currentLocation: "2dsphere" },
@@ -181,13 +170,9 @@ DriverSchema.index(
         }
     }
 );
-DriverSchema.index({ is_online: 1, is_active: 1, service_area_id: 1 });
-DriverSchema.index({ status: 1, verification_status: 1 });
+DriverSchema.index({ is_online: 1, service_area_id: 1 });
+DriverSchema.index({ account_status: 1, verification_status: 1 });
 DriverSchema.index({ is_on_trip: 1, is_online: 1 });
-
-// ── Redis sync hooks ──────────────────────────────────────────────────────────
-// Dynamic import used to avoid circular dependency:
-//   Driver model → driverGeoService → (no model import) ✅
 
 const syncDriverToRedis = async (doc) => {
     if (!doc) return;
@@ -197,10 +182,9 @@ const syncDriverToRedis = async (doc) => {
         );
 
         const shouldBeInRedis =
-            doc.is_active &&
+            doc.account_status === ACCOUNT_STATUS.ACTIVE &&
             doc.is_online &&
             !doc.is_on_trip &&
-            doc.status === ACCOUNT_STATUS.ACTIVE &&
             doc.verification_status === VERIFICATION_STATUS.VERIFIED;
 
         if (shouldBeInRedis) {

@@ -32,7 +32,6 @@ const router = express.Router();
 // All routes require authentication
 router.use(authMiddleware);
 
-// Role Groups
 // Read access support can view but not modify
 const BOOKING_READ_ROLES = [
   USER_ROLES.SUPER_ADMIN,

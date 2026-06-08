@@ -9,17 +9,17 @@ import {
   getDriverById,
   updateDriver,
   bulkDeactivateDrivers,
-  updateDriverAccount,
+  updateDriverStatus,
+  driverLocation,
 } from "../../controllers/admin/driver.admin.controller.js";
 import {
   listDriversSchema,
   driverIdSchema,
   updateDriverSchema,
   bulkDeactivateSchema,
-  updateDriverLocationSchema,
+  updateLocationSchema,
   updateDriverAccountSchema,
 } from "../../validations/admin/driver.validation.js";
-import { updateDriverLocation } from "../../services/driverGeoService.js";
 
 const router = express.Router();
 
@@ -38,8 +38,9 @@ const DRIVER_MODIFY_ROLES = [
 ];
 
 // Bulk deactivate
-router.post(
-  "/bulk-deactivate",
+
+router.delete(
+  "/bulk-delete",
   apiLimiter,
   roleMiddleware(...DRIVER_MODIFY_ROLES),
   validate(bulkDeactivateSchema),
@@ -65,30 +66,30 @@ router.get(
 );
 
 router.patch(
-    "/:driver_id",
-    apiLimiter,
-    roleMiddleware(...DRIVER_MODIFY_ROLES),
-    validate(driverIdSchema, "params"),
-    validate(updateDriverSchema, "body"),
-    updateDriver
+  "/:driver_id",
+  apiLimiter,
+  roleMiddleware(...DRIVER_MODIFY_ROLES),
+  validate(driverIdSchema, "params"),
+  validate(updateDriverSchema, "body"),
+  updateDriver
 );
 
 router.patch(
-    "/:driver_id/location",
-    apiLimiter,
-    roleMiddleware(...DRIVER_MODIFY_ROLES),
-    validate(driverIdSchema, "params"),
-    validate(updateDriverLocationSchema, "body"),
-    updateDriverLocation
+  "/:driver_id/location",
+  apiLimiter,
+  roleMiddleware(...DRIVER_MODIFY_ROLES),
+  validate(driverIdSchema, "params"),
+  validate(updateLocationSchema, "body"),
+  driverLocation
 );
 
 router.patch(
-    "/:driver_id/account",
-    apiLimiter,
-    roleMiddleware(...DRIVER_MODIFY_ROLES),
-    validate(driverIdSchema, "params"),
-    validate(updateDriverAccountSchema, "body"),
-    updateDriverAccount
+  "/:driver_id/status",
+  apiLimiter,
+  roleMiddleware(...DRIVER_MODIFY_ROLES),
+  validate(driverIdSchema, "params"),
+  validate(updateDriverAccountSchema, "body"),
+  updateDriverStatus
 );
 
 

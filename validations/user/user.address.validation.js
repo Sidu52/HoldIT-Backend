@@ -1,4 +1,5 @@
 import Joi from "joi";
+import { ADDRESS_TYPE_OPTIONS } from "../../utils/constants.js";
 
 export const coordinatesSchema = Joi.array()
     .items(Joi.number())
@@ -22,6 +23,10 @@ export const coordinatesSchema = Joi.array()
     });
 
 export const addAddressSchema = Joi.object({
+    type: Joi.string().trim().valid("Home", "Office", "Other").required().messages({
+        "any.required": "Type is required",
+        "any.only": `Type must be one of: ${Object.values(ADDRESS_TYPE_OPTIONS).join(", ")}`,
+    }),
     street: Joi.string().trim().required().messages({
         "string.empty": "Street is required",
     }),
@@ -48,7 +53,8 @@ export const updateAddressSchema = Joi.object({
     postal_code: Joi.string().trim().optional(),
     country: Joi.string().trim().optional(),
     coordinates: coordinatesSchema.optional(),
-    is_default: Joi.boolean().optional(),
+    is_default: Joi.bool().optional(),
+    type: Joi.string().trim().optional(),
 }).min(1).messages({
     "object.min": "At least one field must be provided for update",
 });

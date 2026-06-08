@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 
 const PricingRuleSchema = new mongoose.Schema(
     {
-        //  Different areas have different pricing.
         name: {
             type: String,
             trim: true,

@@ -11,10 +11,9 @@ export const addDriverToRedis = async (driver) => {
 
     // Must be driver active, online, verified, not on a trip
     if (
-        !driver.is_active ||
         !driver.is_online ||
         driver.is_on_trip ||
-        driver.status !== ACCOUNT_STATUS.ACTIVE ||
+        driver.account_status !== ACCOUNT_STATUS.ACTIVE ||
         driver.verification_status !== VERIFICATION_STATUS.VERIFIED
     ) {
         // Silently remove from Redis if driver stage no longer qualifies
@@ -126,6 +125,7 @@ export const removeDriverFromRedis = async (driverId, serviceAreaId = null) => {
 // does not touch meta fields like is_on_trip.
 
 export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = null) => {
+    console.log(`[DriverGeo] updateDriverLocation for ${driverId}: [${lng}, ${lat}]`);
     if (!driverId || lng == null || lat == null) return false;
 
     if (

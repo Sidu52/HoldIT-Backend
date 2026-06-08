@@ -90,6 +90,9 @@ export const updateServiceableAreaSchema = Joi.object({
             "string.pattern.base": "Invalid pincode format",
         }),
     location: locationSchema,
+    is_active: Joi.boolean().required().messages({
+        "any.required": "is_active field is required",
+    }),
     service_radius_km: Joi.number().min(0.5).max(100),
     delivery_charge: Joi.number().min(0).max(10000),
 })
@@ -98,9 +101,36 @@ export const updateServiceableAreaSchema = Joi.object({
         "object.min": "At least one field is required to update",
     });
 
+
 // TOGGLE STATUS
 export const toggleStatusSchema = Joi.object({
     is_active: Joi.boolean().required().messages({
         "any.required": "is_active field is required",
+    }),
+});
+
+// CHECK SERVICEABILITY
+export const checkServiceableSchema = Joi.object({
+    lat: Joi.number().required().messages({
+        "any.required": "Latitude is required",
+    }),
+    lng: Joi.number().required().messages({
+        "any.required": "Longitude is required",
+    }),
+});
+
+// DISTANCE CALCULATION
+export const distanceSchema = Joi.object({
+    lat1: Joi.number().required().messages({
+        "any.required": "Latitude is required",
+    }),
+    lng1: Joi.number().required().messages({
+        "any.required": "Longitude is required",
+    }),
+    lat2: Joi.number().required().messages({
+        "any.required": "Latitude is required",
+    }),
+    lng2: Joi.number().required().messages({
+        "any.required": "Longitude is required",
     }),
 });

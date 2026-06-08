@@ -1,454 +1,230 @@
 import ServiceableArea from "../../models/ServiceableArea.js";
-import {
-  set,
-  get,
-  del,
-  delByPattern,
-} from "../../services/redisService.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
-import { ACCOUNT_STATUS, STATUS_CODES } from "../../utils/constants.js";
+import { getCache, setCache, deleteCache, deleteByPattern, buildCacheKey } from "../../utils/cache.js";
+import { STATUS_CODES, CACHE_TTL } from "../../utils/constants.js";
+import { escapeRegex } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 
+// Key Builders
+const areaKey = (id) => `area:${id}`;
+const areaListPattern = "areas:*";
 
-// Cache TTLs and constants
-const LIST_CACHE_TTL = 300; // 5 minutes
-const DETAIL_CACHE_TTL = 300; // 5 minutes
-const EXCLUDED_FIELDS = "-__v";
-
-const ALLOWED_UPDATE_FIELDS = [
-  "name",
-  "city",
-  "state",
-  "pincode",
-  "location",
-  "service_radius_km",
-  "delivery_charge",
-];
-
-// Helper: Escape Regex
-const escapeRegex = (str) => {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const invalidateAreaCache = async (id = null) => {
+    await Promise.allSettled([
+        deleteByPattern(areaListPattern),
+        id && deleteCache(areaKey(id)),
+    ].filter(Boolean));
 };
 
-// Invalidate Cache
-const invalidateAreaCache = async (areaId = null) => {
-  try {
-    const promises = [delByPattern("serviceable_areas:*")];
-    if (areaId) {
-      promises.push(del(`serviceable_area:${areaId}`));
+// CREATE
+export const createArea = async (req, res) => {
+    try {
+        const { name, city, state, pincode, location, service_radius_km, delivery_charge } = req.body;
+
+        const existing = await ServiceableArea.findOne({ name, city, state, pincode }).lean();
+        if (existing) return sendError(res, "Area already exists", STATUS_CODES.CONFLICT);
+
+        const area = await ServiceableArea.create({
+            name, city, state, pincode, location, service_radius_km, delivery_charge,
+            created_by: req.user?.auth_id,
+        });
+
+        await invalidateAreaCache();
+
+        return sendResponse({ res, statusCode: STATUS_CODES.CREATED, message: "Area created successfully", data: area });
+    } catch (err) {
+        if (err.code === 11000) return sendError(res, "Area already exists in this city", STATUS_CODES.CONFLICT);
+        logger.error("[createArea] Error:", err);
+        return sendError(res, "Failed to create area");
     }
-    await Promise.all(promises);
-  } catch (err) {
-    logger.error("Cache invalidation error:", err);
-  }
 };
 
-// Build Cache Key
-const buildCacheKey = (prefix, params) => {
-  const parts = Object.entries(params)
-    .filter(([, value]) => value !== undefined && value !== "")
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}:${value}`);
+// GET LIST
+export const getAreas = async (req, res) => {
+    try {
+        const {
+            page = 1, limit = 10, city, state, is_active, search,
+            sort_by = "createdAt", sort_order = "desc",
+        } = req.query;
 
-  return `${prefix}:${parts.join(":")}`;
-};
+        const pageNum = Number(page);
+        const limitNum = Number(limit);
 
-// CREATE SERVICEABLE AREA
-export const createServiceableArea = async (req, res) => {
-  try {
-    const {
-      name,
-      city,
-      state,
-      pincode,
-      location,
-      service_radius_km,
-      delivery_charge,
-    } = req.body;
+        const cacheKey = buildCacheKey("areas", {
+            page: pageNum, limit: limitNum, city, state,
+            is_active, search: search || "none", sort_by, sort_order,
+        });
 
-    // Check for duplicate area name in same city
-    const existing = await ServiceableArea.findOne({
-      name: { $regex: `^${escapeRegex(name.trim())}$`, $options: "i" },
-      city: { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" },
-      is_deleted: { $ne: true },
-    }).lean();
+        const cached = await getCache(cacheKey);
+        if (cached) return sendResponse({ res, message: "Areas fetched successfully", data: cached });
 
-    if (existing) {
-      return sendError(
-        res,
-        `Serviceable area "${name}" already exists in ${city}`,
-        STATUS_CODES.CONFLICT
-      );
-    }
+        const filter = {
+            ...(city && { city }),
+            ...(state && { state }),
+            ...(is_active !== undefined && { is_active: is_active === "true" }),
+        };
 
-    const area = await ServiceableArea.create({
-      name: name.trim(),
-      city: city.trim(),
-      state: state.trim(),
-      pincode,
-      location,
-      service_radius_km,
-      delivery_charge,
-      created_by: req.user.auth_id,
-    });
-
-    // Invalidate list caches
-    await invalidateAreaCache();
-
-    return sendResponse({
-      res,
-      statusCode: STATUS_CODES.CREATED,
-      message: "Serviceable area created successfully",
-      data: area,
-    });
-  } catch (error) {
-    logger.error("Create Serviceable Area Error:", error);
-    return sendError(res, "Failed to create serviceable area");
-  }
-};
-
-// GET SERVICEABLE AREAS (Paginated)
-export const getServiceableAreas = async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 10,
-      city,
-      state,
-      is_active,
-      search,
-      sort_by = "createdAt",
-      sort_order = "desc",
-    } = req.query;
-
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
-    const skip = (pageNum - 1) * limitNum;
-
-    // Build filter
-    const filter = { is_deleted: { $ne: true } };
-
-    if (city) {
-      filter.city = { $regex: `^${escapeRegex(city.trim())}$`, $options: "i" };
-    }
-
-    if (state) {
-      filter.state = { $regex: `^${escapeRegex(state.trim())}$`, $options: "i" };
-    }
-
-    if (is_active !== undefined) {
-      filter.is_active = is_active;
-    }
-
-    if (search) {
-      const escapedSearch = escapeRegex(search.trim());
-      filter.$or = [
-        { name: { $regex: escapedSearch, $options: "i" } },
-        { city: { $regex: escapedSearch, $options: "i" } },
-        { pincode: { $regex: escapedSearch, $options: "i" } },
-      ];
-    }
-
-    // Build sort
-    const sortDirection = sort_order === "asc" ? 1 : -1;
-    const sort = { [sort_by]: sortDirection };
-
-    // Cache key
-    const cacheKey = buildCacheKey("serviceable_areas", {
-      page: pageNum,
-      limit: limitNum,
-      city,
-      state,
-      is_active,
-      search,
-      sort_by,
-      sort_order,
-    });
-
-    // Check cache
-    const cached = await get(cacheKey);
-    if (cached) {
-      return sendResponse({
-        res,
-        message: "Serviceable areas fetched successfully",
-        data: JSON.parse(cached),
-      });
-    }
-
-    // Execute queries in parallel
-    const [areas, total] = await Promise.all([
-      ServiceableArea.find(filter)
-        .select(EXCLUDED_FIELDS)
-        .sort(sort)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      ServiceableArea.countDocuments(filter),
-    ]);
-
-    const totalPages = Math.ceil(total / limitNum);
-
-    const responseData = {
-      areas,
-      pagination: {
-        currentPage: pageNum,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: limitNum,
-        hasNextPage: pageNum < totalPages,
-        hasPrevPage: pageNum > 1,
-      },
-    };
-
-    // Cache result
-    await set(
-      cacheKey,
-      JSON.stringify(responseData),
-      "EX",
-      LIST_CACHE_TTL
-    );
-
-    return sendResponse({
-      res,
-      message: "Serviceable areas fetched successfully",
-      data: responseData,
-    });
-  } catch (error) {
-    logger.error("Get Serviceable Areas Error:", error);
-    return sendError(res, "Failed to fetch serviceable areas");
-  }
-};
-
-// GET SERVICEABLE AREA BY ID
-export const getServiceableAreaById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const cacheKey = `serviceable_area:${id}`;
-
-    const cached = await get(cacheKey);
-    if (cached) {
-      return sendResponse({
-        res,
-        message: "Serviceable area fetched successfully",
-        data: JSON.parse(cached),
-      });
-    }
-
-    const area = await ServiceableArea.findOne({
-      _id: id,
-      is_deleted: { $ne: true },
-    })
-      .select(EXCLUDED_FIELDS)
-      .lean();
-
-    if (!area) {
-      return sendError(
-        res,
-        "Serviceable area not found",
-        STATUS_CODES.NOT_FOUND
-      );
-    }
-
-    await set(
-      cacheKey,
-      JSON.stringify(area),
-      "EX",
-      DETAIL_CACHE_TTL
-    );
-
-    return sendResponse({
-      res,
-      message: "Serviceable area fetched successfully",
-      data: area,
-    });
-  } catch (error) {
-    logger.error("Get Serviceable Area Error:", error);
-    return sendError(res, "Failed to fetch serviceable area");
-  }
-};
-
-// UPDATE SERVICEABLE AREA
-export const updateServiceableArea = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = {};
-    ALLOWED_UPDATE_FIELDS.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
-      }
-    });
-
-    if (Object.keys(updates).length === 0) {
-      return sendError(
-        res,
-        "No valid fields to update",
-        STATUS_CODES.BAD_REQUEST
-      );
-    }
-
-    // Add audit fields
-    updates.updated_by = req.user.auth_id;
-    updates.updated_at = new Date();
-
-    // If name or city is changing, check for duplicates
-    if (updates.name || updates.city) {
-      const current = await ServiceableArea.findById(id)
-        .select("name city")
-        .lean();
-
-      if (current) {
-        const checkName = updates.name || current.name;
-        const checkCity = updates.city || current.city;
-
-        const duplicate = await ServiceableArea.findOne({
-          _id: { $ne: id },
-          name: {
-            $regex: `^${escapeRegex(checkName.trim())}$`,
-            $options: "i",
-          },
-          city: {
-            $regex: `^${escapeRegex(checkCity.trim())}$`,
-            $options: "i",
-          },
-          is_deleted: { $ne: true },
-        }).lean();
-
-        if (duplicate) {
-          return sendError(
-            res,
-            `Serviceable area "${checkName}" already exists in ${checkCity}`,
-            STATUS_CODES.CONFLICT
-          );
+        if (search) {
+            const r = { $regex: escapeRegex(search.trim()), $options: "i" };
+            filter.$or = [{ name: r }, { pincode: r }, { city: r }, { state: r }];
         }
-      }
+
+        const sort = { [sort_by]: sort_order === "asc" ? 1 : -1 };
+        const skip = (pageNum - 1) * limitNum;
+
+        const [areas, total] = await Promise.all([
+            ServiceableArea.find(filter).sort(sort).skip(skip).limit(limitNum).lean(),
+            ServiceableArea.countDocuments(filter),
+        ]);
+
+        const totalPages = Math.ceil(total / limitNum);
+        const responseData = {
+            areas,
+            pagination: {
+                currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum,
+                hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1,
+            },
+        };
+
+        await setCache(cacheKey, responseData, CACHE_TTL.LIST);
+        return sendResponse({ res, message: "Areas fetched successfully", data: responseData });
+    } catch (err) {
+        logger.error("[getAreas] Error:", err);
+        return sendError(res, "Failed to fetch areas");
     }
+};
 
-    const area = await ServiceableArea.findOneAndUpdate(
-      { _id: id, is_deleted: { $ne: true } },
-      { $set: updates },
-      { new: true, runValidators: true }
-    )
-      .select(EXCLUDED_FIELDS)
-      .lean();
+// GET BY ID
+export const getAreaById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const cacheKey = areaKey(id);
 
-    if (!area) {
-      return sendError(
-        res,
-        "Serviceable area not found",
-        STATUS_CODES.NOT_FOUND
-      );
+        const cached = await getCache(cacheKey);
+        if (cached) return sendResponse({ res, message: "Area fetched successfully", data: cached });
+
+        const area = await ServiceableArea.findById(id).lean();
+        if (!area) return sendError(res, "Area not found", STATUS_CODES.NOT_FOUND);
+
+        await setCache(cacheKey, area, CACHE_TTL.DETAIL);
+        return sendResponse({ res, message: "Area fetched successfully", data: area });
+    } catch (err) {
+        logger.error("[getAreaById] Error:", err);
+        return sendError(res, "Failed to fetch area");
     }
+};
 
-    // Invalidate caches
-    await invalidateAreaCache(id);
+// UPDATE
+export const updateArea = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, city, state, pincode, location, service_radius_km, delivery_charge, is_active } = req.body;
 
-    return sendResponse({
-      res,
-      message: "Serviceable area updated successfully",
-      data: area,
-    });
-  } catch (error) {
-    logger.error("Update Serviceable Area Error:", error);
-    return sendError(res, "Failed to update serviceable area");
-  }
+        const updates = {
+            ...(name !== undefined && { name: name.trim(), name_normalized: name.toLowerCase().trim() }),
+            ...(city !== undefined && { city: city.trim(), city_normalized: city.toLowerCase().trim() }),
+            ...(state !== undefined && { state: state.trim() }),
+            ...(pincode !== undefined && { pincode: pincode.trim() }),
+            ...(service_radius_km !== undefined && { service_radius_km }),
+            ...(delivery_charge !== undefined && { delivery_charge }),
+            ...(is_active !== undefined && { is_active }),
+            ...(location !== undefined && { location: { type: "Point", coordinates: location.coordinates } }),
+            updated_by: req.user.auth_id,
+        };
+
+        // only updated_by means no real fields were sent
+        if (Object.keys(updates).length === 1) {
+            return sendError(res, "No fields provided to update", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const area = await ServiceableArea.findByIdAndUpdate(id, { $set: updates }, { new: true, runValidators: true }).lean();
+        if (!area) return sendError(res, "Area not found", STATUS_CODES.NOT_FOUND);
+
+        await invalidateAreaCache(id);
+        return sendResponse({ res, message: "Area updated successfully", data: area });
+    } catch (err) {
+        if (err.code === 11000) return sendError(res, "Area with this name already exists in the city", STATUS_CODES.CONFLICT);
+        logger.error("[updateArea] Error:", err);
+        return sendError(res, "Failed to update area");
+    }
 };
 
 // TOGGLE STATUS
-export const toggleServiceableAreaStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { is_active } = req.body;
+export const toggleAreaStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { is_active } = req.body;
 
-    const area = await ServiceableArea.findOne({
-      _id: id,
-      is_deleted: { $ne: true },
-    })
-      .select("is_active name")
-      .lean();
+        if (typeof is_active !== "boolean") {
+            return sendError(res, "is_active (boolean) is required", STATUS_CODES.BAD_REQUEST);
+        }
 
-    if (!area) {
-      return sendError(
-        res,
-        "Serviceable area not found",
-        STATUS_CODES.NOT_FOUND
-      );
+        const area = await ServiceableArea.findByIdAndUpdate(
+            id,
+            { $set: { is_active, updated_by: req.user?.auth_id } },
+            { new: true, runValidators: true }
+        ).lean();
+
+        if (!area) return sendError(res, "Area not found", STATUS_CODES.NOT_FOUND);
+
+        await invalidateAreaCache(id);
+        return sendResponse({ res, message: `Area ${is_active ? "activated" : "deactivated"} successfully`, data: area });
+    } catch (err) {
+        logger.error("[toggleAreaStatus] Error:", err);
+        return sendError(res, "Failed to update area status");
     }
-
-    if (area.is_active === is_active) {
-      return sendError(
-        res,
-        `Area is already ${is_active ?  ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.INACTIVE}`,
-        STATUS_CODES.CONFLICT
-      );
-    }
-
-    const updatedArea = await ServiceableArea.findByIdAndUpdate(
-      id,
-      {
-        $set: {
-          is_active,
-          status_updated_by: req.user.auth_id,
-          status_updated_at: new Date(),
-        },
-      },
-      { new: true }
-    )
-      .select(EXCLUDED_FIELDS)
-      .lean();
-
-    // Invalidate caches
-    await invalidateAreaCache(id);
-
-    return sendResponse({
-      res,
-      message: `Serviceable area ${is_active ? "activated" : "deactivated"} successfully`,
-      data: updatedArea,
-    });
-  } catch (error) {
-    logger.error("Toggle Status Error:", error);
-    return sendError(res, "Failed to update status");
-  }
 };
 
-// SOFT DELETE
-export const deleteServiceableArea = async (req, res) => {
-  try {
-    const { id } = req.params;
+// DELETE
+export const deleteArea = async (req, res) => {
+    try {
+        const { id } = req.params;
 
-    const area = await ServiceableArea.findOne({
-      _id: id,
-      is_deleted: { $ne: true },
-    })
-      .select("_id name")
-      .lean();
+        const area = await ServiceableArea.findByIdAndDelete(id).lean();
+        if (!area) return sendError(res, "Area not found", STATUS_CODES.NOT_FOUND);
 
-    if (!area) {
-      return sendError(
-        res,
-        "Serviceable area not found",
-        STATUS_CODES.NOT_FOUND
-      );
+        await invalidateAreaCache(id);
+        return sendResponse({ res, message: "Area deleted successfully" });
+    } catch (err) {
+        logger.error("[deleteArea] Error:", err);
+        return sendError(res, "Failed to delete area");
     }
+};
 
-    await ServiceableArea.findByIdAndUpdate(id, {
-      $set: {
-        is_deleted: true,
-        is_active: false,
-        deleted_by: req.user.auth_id,
-        deleted_at: new Date(),
-      },
-    });
+// CHECK SERVICEABILITY
+export const checkServiceable = async (req, res) => {
+    try {
+        const { lat, lng } = req.query;
 
-    // Invalidate caches
-    await invalidateAreaCache(id);
+        if (!lat || !lng) return sendError(res, "lat & lng required", STATUS_CODES.BAD_REQUEST);
 
-    return sendResponse({
-      res,
-      message: "Serviceable area deleted successfully",
-    });
-  } catch (error) {
-    logger.error("Delete Serviceable Area Error:", error);
-    return sendError(res, "Failed to delete serviceable area");
-  }
+        const areas = await ServiceableArea.find({
+            is_active: true,
+            is_deleted: false,
+            location: {
+                $near: {
+                    $geometry: { type: "Point", coordinates: [Number(lng), Number(lat)] },
+                    $maxDistance: 100000,
+                },
+            },
+        }).lean();
+
+        const match = areas.find((a) =>
+            getDistance(Number(lat), Number(lng), a.location.coordinates[1], a.location.coordinates[0]) <= a.service_radius_km
+        );
+
+        return sendResponse({ res, data: { serviceable: !!match, area: match || null } });
+    } catch (err) {
+        logger.error("[checkServiceable] Error:", err);
+        return sendError(res, "Serviceability check failed");
+    }
+};
+
+// DISTANCE UTIL 
+export const getDistance = (lat1, lon1, lat2, lon2) => {
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };

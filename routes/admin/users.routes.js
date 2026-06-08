@@ -10,14 +10,18 @@ import {
     updateUserProfile,
     updateUserStatus,
     bulkDeactivateUsers,
+    addUserAddress,
+    deleteUserAddress,
+    updateUserAddress,
 } from "../../controllers/admin/user.admin.controller.js";
 import {
     userIdSchema,
     listUsersSchema,
     updateUserSchema,
     updateUserStatusSchema,
-    bulkDeactivateSchema,
+    bulkDeactivateUsersSchema,
 } from "../../validations/admin/user.validation.js";
+import { addAddressSchema, updateAddressSchema } from "../../validations/user/user.address.validation.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -34,13 +38,14 @@ const MODIFY_ROLES = [
     USER_ROLES.ADMIN,
 ];
 
-router.post("/bulk-deactivate",
+router.delete("/bulk-delete",
     apiLimiter,
     roleMiddleware(...MODIFY_ROLES),
-    validate(bulkDeactivateSchema, "body"), 
+    validate(bulkDeactivateUsersSchema, "body"),
     bulkDeactivateUsers
 );
 
+// Get all users
 router.get("/",
     apiLimiter,
     roleMiddleware(...VIEW_ROLES),
@@ -48,6 +53,7 @@ router.get("/",
     getUsers
 );
 
+// Get user by ID
 router.get("/:user_id",
     apiLimiter,
     roleMiddleware(...VIEW_ROLES),
@@ -55,14 +61,16 @@ router.get("/:user_id",
     getUserById
 );
 
+// Update user profile
 router.put("/:user_id",
     apiLimiter,
     roleMiddleware(...MODIFY_ROLES),
     validate(userIdSchema, "params"),
-    validate(updateUserSchema, "body"),  
+    validate(updateUserSchema, "body"),
     updateUserProfile
 );
 
+// Update user status
 router.patch("/:user_id/status",
     apiLimiter,
     roleMiddleware(...MODIFY_ROLES),
@@ -70,5 +78,23 @@ router.patch("/:user_id/status",
     validate(updateUserStatusSchema, "body"),
     updateUserStatus
 );
+
+router.put(
+    "/:userId/addresses/:addressId",
+    validate(updateAddressSchema),
+    updateUserAddress
+);
+
+router.post(
+    "/:userId/addresses",
+    validate(addAddressSchema),
+    addUserAddress
+);
+
+router.delete(
+    "/:userId/addresses/:addressId",
+    deleteUserAddress
+);
+
 
 export default router;

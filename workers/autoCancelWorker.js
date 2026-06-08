@@ -30,30 +30,20 @@ export const createAutoCancelWorker = () => {
                 const skipStatuses = [
                     BOOKING_STATUS.DRIVER_ARRIVED,
                     BOOKING_STATUS.PICKED_UP,
+                    BOOKING_STATUS.AT_STORE,
                     BOOKING_STATUS.STORED,
+                    BOOKING_STATUS.RETURN_REQUESTED,
+                    BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                    BOOKING_STATUS.OUT_FOR_RETURN,
+                    BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
                     BOOKING_STATUS.DELIVERED,
                     BOOKING_STATUS.CANCELLED,
+                    BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL
                 ];
 
                 if (skipStatuses.includes(booking.status)) {
                     logger.info(`[Auto Cancel] Booking ${bookingId} is ${booking.status}, skipping.`);
                     return { success: false, reason: "already_progressed" };
-                }
-
-                // Special Guard: If DRIVER_ASSIGNED, verify they haven't accepted yet
-                if (booking.status === BOOKING_STATUS.DRIVER_ASSIGNED) {
-                    const acceptKeyPickup = `booking:accept:${bookingId}:pickup`;
-                    const acceptKeyDelivery = `booking:accept:${bookingId}:delivery`;
-
-                    const [pendingPickup, pendingDelivery] = await Promise.all([
-                        import("../services/redisService.js").then(m => m.get(acceptKeyPickup)),
-                        import("../services/redisService.js").then(m => m.get(acceptKeyDelivery))
-                    ]);
-
-                    if (!pendingPickup && !pendingDelivery) {
-                        logger.info(`[Auto Cancel] Driver has already accepted ${bookingId}, skipping.`);
-                        return { success: false, reason: "driver_accepted" };
-                    }
                 }
 
                 // EXECUTE UNIFIED CANCELLATION
@@ -69,8 +59,6 @@ export const createAutoCancelWorker = () => {
                     cancelJob("driver-assign", `driver-pickup-${bookingId}`),
                     cancelJob("driver-assign", `check-accept-${bookingId}-pickup`),
                     cancelJob("driver-assign", `check-accept-${bookingId}-delivery`),
-                    del(`booking:accept:${bookingId}:pickup`),
-                    del(`booking:accept:${bookingId}:delivery`),
                 ]);
 
                 return { success: true, bookingId };

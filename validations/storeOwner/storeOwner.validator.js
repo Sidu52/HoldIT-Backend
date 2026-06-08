@@ -12,12 +12,14 @@ export const completeProfileSchema = Joi.object({
 });
 
 export const updateProfileSchema = Joi.object({
-    first_name: Joi.string().trim().max(100).optional(),
-    last_name: Joi.string().trim().max(100).optional(),
+    first_name: Joi.string().trim().max(100).optional().allow(""),
+    last_name: Joi.string().trim().max(100).optional().allow(""),
     email: Joi.string().email().trim().lowercase().optional(),
     gender: Joi.string().valid(...Object.values(GENDER_OPTIONS)).optional(),
-    date_of_birth: Joi.date().max("now").optional(),
-    address: Joi.string().trim().max(500).optional(),
+    date_of_birth: Joi.date().max("now").optional().allow(null, ""),
+    address: Joi.string().trim().max(500).optional().allow(""),
+    phone: Joi.string().trim().min(10).max(15).optional(),
+    phoneOtp: Joi.string().trim().length(4).optional(),
 }).min(1);
 
 export const createStoreSchema = Joi.object({

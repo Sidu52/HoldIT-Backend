@@ -5,12 +5,14 @@ import { apiLimiter } from "../../config/rateLimiter.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import { USER_ROLES } from "../../utils/constants.js";
 import {
-    createServiceableArea,
-    getServiceableAreas,
-    getServiceableAreaById,
-    updateServiceableArea,
-    toggleServiceableAreaStatus,
-    deleteServiceableArea,
+    createArea,
+    getAreas,
+    getAreaById,
+    updateArea,
+    toggleAreaStatus,
+    deleteArea,
+    checkServiceable,
+    getDistance
 } from "../../controllers/admin/serviceable.admin.controller.js";
 import {
     serviceableAreaIdSchema,
@@ -18,6 +20,8 @@ import {
     createServiceableAreaSchema,
     updateServiceableAreaSchema,
     toggleStatusSchema,
+    checkServiceableSchema,
+    distanceSchema,
 } from "../../validations/admin/serviceableArea.validation.js";
 
 const router = express.Router();
@@ -43,7 +47,7 @@ router.post(
     apiLimiter,
     roleMiddleware(...AREA_MODIFY_ROLES),
     validate(createServiceableAreaSchema),
-    createServiceableArea
+    createArea
 );
 
 // List serviceable areas
@@ -52,7 +56,7 @@ router.get(
     apiLimiter,
     roleMiddleware(...AREA_VIEW_ROLES),
     validate(listServiceableAreasSchema, "query"),
-    getServiceableAreas
+    getAreas
 );
 
 // Get single serviceable area
@@ -61,7 +65,7 @@ router.get(
     apiLimiter,
     roleMiddleware(...AREA_VIEW_ROLES),
     validate(serviceableAreaIdSchema, "params"),
-    getServiceableAreaById
+    getAreaById
 );
 
 // Update serviceable area
@@ -71,7 +75,7 @@ router.put(
     roleMiddleware(...AREA_MODIFY_ROLES),
     validate(serviceableAreaIdSchema, "params"),
     validate(updateServiceableAreaSchema),
-    updateServiceableArea
+    updateArea
 );
 
 // Toggle active status
@@ -81,7 +85,7 @@ router.patch(
     roleMiddleware(...AREA_MODIFY_ROLES),
     validate(serviceableAreaIdSchema, "params"),
     validate(toggleStatusSchema),
-    toggleServiceableAreaStatus
+    toggleAreaStatus
 );
 
 // Soft delete (Super Admin only)
@@ -90,7 +94,25 @@ router.delete(
     apiLimiter,
     roleMiddleware(USER_ROLES.SUPER_ADMIN),
     validate(serviceableAreaIdSchema, "params"),
-    deleteServiceableArea
+    deleteArea
+);
+
+// Check serviceable area
+router.get(
+    "/check-serviceability",
+    apiLimiter,
+    roleMiddleware(...AREA_VIEW_ROLES),
+    validate(checkServiceableSchema, "query"),
+    checkServiceable
+);
+
+// Distance calculation
+router.get(
+    "/distance",
+    apiLimiter,
+    roleMiddleware(...AREA_VIEW_ROLES),
+    validate(distanceSchema, "query"),
+    getDistance
 );
 
 export default router;

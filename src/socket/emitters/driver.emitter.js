@@ -43,3 +43,7 @@ export const emitAdminAlertNoDriver = (io, bookingId, userId, pickupLocation, at
         waitingFor,
     });
 };
+
+export const emitDriverNewOffer = (io, driverId, offerData) => {
+    safeEmit(io, rooms.driver(driverId), SOCKET_EVENTS.DRIVER_NEW_OFFER, offerData);
+};

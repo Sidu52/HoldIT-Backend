@@ -10,7 +10,7 @@ import {
 } from "../../constants/user/support.js";
 import logger from "../../utils/logger.js";
 
-export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
+export { getCachedData, setCacheData } from "../../utils/cache.js";
 
 
 export const invalidateTicketCache = async (userId, ticketId = null) => {

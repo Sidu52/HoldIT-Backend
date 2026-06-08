@@ -10,14 +10,15 @@ import {
     getStoreOwnerById,
     updateStoreOwner,
     updateStoreOwnerStatus,
+    bulkDeactivateStoreOwners,
 } from "../../controllers/admin/storeOwner.admin.controller.js";
 import {
+    storeOwnerIdSchema,
     listStoreOwnersSchema,
     createStoreOwnerSchema,
     updateStoreOwnerSchema,
     updateOwnerStatusSchema,
 } from "../../validations/admin/store_owner.validation.js";
-import { storeOwnerIdSchema } from "../../validations/admin/store.validation.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -40,7 +41,6 @@ router.get("/",
     getStoreOwners
 );
 
-// GET  /admin/store-owners/:store_owner_id
 router.get("/:store_owner_id",
     apiLimiter,
     roleMiddleware(...VIEW_ROLES),
@@ -72,6 +72,12 @@ router.patch("/:store_owner_id/status",
     validate(storeOwnerIdSchema, "params"),
     validate(updateOwnerStatusSchema, "body"),
     updateStoreOwnerStatus
+);
+
+router.delete("/bulk-delete",
+    apiLimiter,
+    roleMiddleware(...MODIFY_ROLES),
+    bulkDeactivateStoreOwners
 );
 
 export default router;

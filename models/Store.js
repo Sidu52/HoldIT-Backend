@@ -31,8 +31,14 @@ const StoreSchema = new mongoose.Schema(
             type: String,
             maxlength: 15,
         },
-        store_open_time: String,
-        store_close_time: String,
+        store_open_time: {
+            type: String,
+            required: true,
+        },
+        store_close_time: {
+            type: String,
+            required: true,
+        },
         location: {
             type: {
                 type: String,
@@ -41,10 +47,14 @@ const StoreSchema = new mongoose.Schema(
                 required: true,
             },
             coordinates: {
-                type: [Number], // [lng, lat]
+                type: [Number],
                 required: true,
             },
             address: String,
+            is_serviceable: {
+                type: Boolean,
+                default: false,
+            }
         },
         service_area_id: {
             type: mongoose.Schema.Types.ObjectId,
@@ -57,12 +67,6 @@ const StoreSchema = new mongoose.Schema(
             default: false,
             index: true,
         },
-        is_active: {
-            type: Boolean,
-            default: true,
-            index: true,
-        },
-
         current_booking_count: {
             type: Number,
             default: 0,
@@ -72,21 +76,17 @@ const StoreSchema = new mongoose.Schema(
             type: Number,
             default: 50,
         },
-        rating: {
+        rating_avg: {
             type: Number,
             default: 0,
             min: 0,
             max: 5,
+            index: true,
         },
         rating_count: {
             type: Number,
             default: 0,
             min: 0,
-        },
-
-        is_verified: {
-            type: Boolean,
-            default: false,
         },
         verification_status: {
             type: String,
@@ -99,8 +99,7 @@ const StoreSchema = new mongoose.Schema(
             ref: "Admin",
         },
         verified_at: Date,
-
-        status: {
+        account_status: {
             type: String,
             enum: Object.values(ACCOUNT_STATUS),
             default: ACCOUNT_STATUS.PENDING,
@@ -111,16 +110,13 @@ const StoreSchema = new mongoose.Schema(
             maxlength: 500,
         },
         deactivated_at: Date,
-        deactivated_by: { 
+        deactivated_by: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Admin",
         },
-        is_signup: {
-            type: Boolean,
-            default: false,
-        },
         last_login_at: Date,
         last_active_at: Date,
+
         status_updated_by: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Admin",
@@ -131,9 +127,9 @@ const StoreSchema = new mongoose.Schema(
 );
 
 StoreSchema.index({ location: "2dsphere" });
-StoreSchema.index({ service_area_id: 1, is_active: 1, is_online: 1 });
-StoreSchema.index({ status: 1, verification_status: 1 });
-StoreSchema.index({ store_owner_id: 1, is_active: 1 });
+StoreSchema.index({ service_area_id: 1, is_online: 1 });
+StoreSchema.index({ account_status: 1, verification_status: 1 });
+StoreSchema.index({ store_owner_id: 1 });
 
 const syncStoreToRedis = async (doc) => {
     if (!doc) return;
@@ -143,9 +139,8 @@ const syncStoreToRedis = async (doc) => {
         );
 
         const shouldBeInRedis =
-            doc.is_active &&
             doc.is_online &&
-            doc.status === ACCOUNT_STATUS.ACTIVE &&
+            doc.account_status === ACCOUNT_STATUS.ACTIVE &&
             doc.verification_status === VERIFICATION_STATUS.VERIFIED;
 
         if (shouldBeInRedis) {
@@ -153,8 +148,18 @@ const syncStoreToRedis = async (doc) => {
         } else {
             await removeStoreFromRedis(doc._id, doc.service_area_id);
         }
+
+        // Invalidate profile & dashboard caches on any store modification
+        const storeId = doc._id.toString();
+        const { invalidateCache } = await import("../utils/cache.js");
+        await Promise.all([
+            invalidateCache(`store:profile:${storeId}`),
+            invalidateCache(`store:dashboard:${storeId}`)
+        ]).catch(err => {
+            logger.error(`[Store Hook] Cache invalidation failed for ${storeId}:`, err.message);
+        });
     } catch (err) {
-        logger.error(`[Store Hook] Redis sync failed for ${doc._id}:`, err.message);
+        logger.error(`[Store Hook] Redis sync/cache invalidation failed for ${doc._id}:`, err.message);
     }
 };
 

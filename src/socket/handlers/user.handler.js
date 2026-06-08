@@ -3,7 +3,7 @@ import { SOCKET_EVENTS } from "../socket.events.js";
 import { rooms } from "../socket.rooms.js";
 import { locationService } from "../services/location.service.js";
 import Booking from "../../../models/Booking.js";
-import { USER_ROLES } from "../../../utils/constants.js";
+import { USER_ROLES, BOOKING_STATUS } from "../../../utils/constants.js";
 
 export const registerUserHandlers = (io, socket) => {
     const userId = socket.user.id;
@@ -12,6 +12,33 @@ export const registerUserHandlers = (io, socket) => {
     // Join private user room for targeted notifications
     socket.join(rooms.user(userId));
     logger.debug(`[Socket:User] ${userId} joined room ${rooms.user(userId)}`);
+
+    // Auto-join active tracking rooms on connect
+    if (role === USER_ROLES.USER) {
+        Booking.find({
+            userId,
+            status: { $in: [
+                BOOKING_STATUS.DRIVER_ASSIGNED,
+                BOOKING_STATUS.DRIVER_ARRIVED,
+                BOOKING_STATUS.PICKED_UP,
+                BOOKING_STATUS.AT_STORE,
+                BOOKING_STATUS.RETURN_DRIVER_ASSIGNED
+            ]}
+        }).select("_id status").lean().then(activeBookings => {
+            activeBookings.forEach(async (b) => {
+                const bIdStr = b._id.toString();
+                socket.join(rooms.driverLocation(bIdStr));
+                const location = await locationService.getLocationForBooking(bIdStr);
+                socket.emit(SOCKET_EVENTS.USER_SUBSCRIBED_BOOKING, {
+                    bookingId: bIdStr,
+                    status: b.status,
+                    driverLocation: location || null
+                });
+            });
+        }).catch(err => {
+            logger.error(`[Socket:User] Auto-rejoin failed: ${err.message}`);
+        });
+    }
 
     // Both User and Admin can request location
     socket.on(SOCKET_EVENTS.DRIVER_LOCATION_GET, async (payload, callback) => {

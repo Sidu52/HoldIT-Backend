@@ -5,7 +5,7 @@ import {
 } from "../../constants/user/store.js";
 
 // Cache
-export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
+export { getCachedData, setCacheData } from "../../utils/cache.js";
 // Query Builders
 
 // Data Transformers
@@ -90,7 +90,8 @@ export const calculateAvailability = (store) => {
         storeId: store._id,
         storeName: store.store_name,
         isOnline: store.is_online,
-        isActive: store.is_active,
+        verification_status: store.verification_status,
+        account_status: store.account_status,
         isCurrentlyOpen,
         totalCapacity: max_booking_capacity,
         currentBookings: current_booking_count,
@@ -98,7 +99,7 @@ export const calculateAvailability = (store) => {
         utilizationPercent: max_booking_capacity > 0
             ? parseFloat(((current_booking_count / max_booking_capacity) * 100).toFixed(1))
             : 0,
-        canAcceptBooking: store.is_online && store.is_active && isCurrentlyOpen && availableSlots > 0,
+        canAcceptBooking: store.is_online && store.account_status == ACCOUNT_STATUS.ACTIVE && store.verification_status == VERIFICATION_STATUS.VERIFIED && isCurrentlyOpen && availableSlots > 0,
         operatingHours: {
             open: store.store_open_time || null,
             close: store.store_close_time || null,
@@ -106,6 +107,20 @@ export const calculateAvailability = (store) => {
     };
 };
 
+export const haversineDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371; // Radius of Earth in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLng = (lng2 - lng1) * (Math.PI / 180);
+    const a =
+        Math.sin(dLat / 2) *
+        Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) *
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 
 export const checkStoreOpenStatus = (openTime, closeTime) => {
     if (!openTime || !closeTime) return true;

@@ -44,6 +44,14 @@ export const emitBookingStoreAssigned = (io, bookingId, userId, store) => {
     });
 };
 
+export const emitStoreIncomingBooking = (io, bookingId, storeId, bookingSummary) => {
+    const targets = [rooms.store(storeId)];
+    safeEmit(io, targets, SOCKET_EVENTS.STORE_INCOMING_BOOKING, {
+        bookingId,
+        summary: bookingSummary,
+    });
+};
+
 // booking:driver_searching
 export const emitBookingDriverSearching = (io, bookingId, userId) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];

@@ -1,8 +1,14 @@
+import { BOOKING_STATUS } from "./constants.js";
 import logger from "./logger.js";
+export { setAuthCookies } from "./token.js";
+
+
+export const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export const getDateRange = (range) => {
   const now = new Date();
   const end = new Date(now);
-  end.setHours(23, 59, 59, 999); // End of today
+  end.setHours(23, 59, 59, 999);
 
   let start;
 
@@ -111,25 +117,46 @@ export const getDistanceInKm = (lat1, lon1, lat2, lon2) => {
 
 // Add this helper at the top of booking.admin.controller.js (after imports)
 export const safeAbortSession = async (session) => {
-    try {
-        if (session.inTransaction()) {
-            await session.abortTransaction();
-        }
-    } catch (err) {
-        logger.warn("[safeAbortSession] Failed to abort transaction:", err.message);
-    } finally {
-        session.endSession();
+  try {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
     }
+  } catch (err) {
+    logger.warn("[safeAbortSession] Failed to abort transaction:", err.message);
+  } finally {
+    session.endSession();
+  }
 };
 
 export const buildPagination = (page, limit, total) => {
-    const totalPages = Math.ceil(total / limit);
-    return {
-        currentPage: page,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-    };
-};
+  const totalPages = Math.ceil(total / limit);
+  return {
+    currentPage: page,
+    totalPages,
+    totalItems: total,
+    itemsPerPage: limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+};
+
+export const isValidStatusTransition = (currentStatus, targetStatus) => {
+  const transitions = {
+    [BOOKING_STATUS.CREATED]: [BOOKING_STATUS.STORE_ASSIGNED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.STORE_ASSIGNED]: [BOOKING_STATUS.DRIVER_ASSIGNED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.DRIVER_ASSIGNED]: [BOOKING_STATUS.DRIVER_ARRIVED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.DRIVER_ARRIVED]: [BOOKING_STATUS.PICKED_UP, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.PICKED_UP]: [BOOKING_STATUS.AT_STORE, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.AT_STORE]: [BOOKING_STATUS.STORED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.STORED]: [BOOKING_STATUS.RETURN_REQUESTED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.RETURN_REQUESTED]: [BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.RETURN_DRIVER_ASSIGNED]: [BOOKING_STATUS.OUT_FOR_RETURN, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.OUT_FOR_RETURN]: [BOOKING_STATUS.ARRIVED_FOR_DELIVERY, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.ARRIVED_FOR_DELIVERY]: [BOOKING_STATUS.DELIVERED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.DELIVERED]: [],
+    [BOOKING_STATUS.CANCELLED]: [],
+    [BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL]: [BOOKING_STATUS.STORE_ASSIGNED, BOOKING_STATUS.CANCELLED], // Can be reassigned by ops
+  };
+
+  return transitions[currentStatus]?.includes(targetStatus) || false;
+};

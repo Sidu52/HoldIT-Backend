@@ -7,3 +7,9 @@ API_FLOW.txt
 package-lock.json
 TASK.txt
 cleanup.mjs
+test_phase2.js
+test_phase3.js
+test_syntax.js
+
+docs/doc
+docs/roles

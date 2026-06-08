@@ -24,17 +24,15 @@ export const STORE_DEFAULTS = {
 
 // Filter: Only show stores that are active, online, verified, and approved
 export const STORE_VISIBILITY_FILTER = {
-    is_active: true,
-    is_online: true,
     verification_status: VERIFICATION_STATUS.VERIFIED,
-    status: ACCOUNT_STATUS.ACTIVE,
+    account_status: ACCOUNT_STATUS.ACTIVE,
 };
 
 // Select Fields
 export const STORE_SELECT = {
     LIST: "store_name store_open_time store_close_time store_description store_contact_number location rating rating_count is_online",
     DETAIL: "store_name store_open_time store_close_time store_description store_contact_number location rating rating_count is_online current_booking_count max_booking_capacity service_area_id",
-    AVAILABILITY: "store_name current_booking_count max_booking_capacity is_online is_active store_open_time store_close_time",
+    AVAILABILITY: "store_name current_booking_count max_booking_capacity is_online store_open_time store_close_time",
 };
 
 // Messages

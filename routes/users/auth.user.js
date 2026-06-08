@@ -1,5 +1,10 @@
 import express from "express";
-import { apiLimiter, loginLimiter, otpLimiter, refreshLimiter } from "../../config/rateLimiter.js";
+import {
+    apiLimiter,
+    loginLimiter,
+    otpLimiter,
+    refreshLimiter,
+} from "../../config/rateLimiter.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -19,38 +24,20 @@ import {
 
 const router = express.Router();
 
+//  Public routes
 // Login / Register
-router.post(
-    "/login",
-    loginLimiter,
-    validate(loginSchema),
-    authUser
-);
+router.post("/login", loginLimiter, validate(loginSchema), authUser);
 
 // Resend OTP
-router.post(
-    "/resend-otp",
-    otpLimiter,
-    validate(resendOTPSchema),
-    sendOTP
-);
+router.post("/resend-otp", otpLimiter, validate(resendOTPSchema), sendOTP);
 
 // Verify OTP
-router.post(
-    "/verify-otp",
-    otpLimiter,
-    validate(verifyOTPSchema),
-    verifyOTP
-);
+router.post("/verify-otp", otpLimiter, validate(verifyOTPSchema), verifyOTP);
 
-// Refresh token
-router.post(
-    "/refresh",
-    refreshLimiter,
-    refreshToken
-);
+// Refresh access token
+router.post("/refresh", refreshLimiter, refreshToken);
 
-// PROTECTED ROUTES
+// Protected routes
 router.use(authMiddleware);
 
 // Complete profile
@@ -62,10 +49,6 @@ router.put(
 );
 
 // Logout
-router.post(
-    "/logout",
-    apiLimiter,
-    logout
-);
+router.post("/logout", apiLimiter, logout);
 
 export default router;

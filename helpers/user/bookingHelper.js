@@ -3,9 +3,9 @@ import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
 import User from "../../models/User.js";
-import { get, set, del, delByPattern } from "../../services/redisService.js";
+import { del, delByPattern } from "../../services/redisService.js";
 import { addJobToQueue } from "../../services/jobService.js";
-import { checkServiceability } from "../../utils/serviceable.js";
+import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import { ACCOUNT_STATUS, BOOKING_STATUS, JOB_QUEUES } from "../../utils/constants.js";
 import {
     STORE_SEARCH,
@@ -17,23 +17,28 @@ import {
 import { safeAbortSession } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 
-// Validate that a scheduled time meets minimum lead time
+// ─── SCHEDULING ───────────────────────────────────────────────────────────────
+
+/**
+ * Returns whether a proposed scheduled time satisfies the minimum lead-time
+ * requirement, plus the parsed Date for use in the controller.
+ */
 export const validateScheduledTime = (scheduledAt, minLeadMinutes) => {
     const scheduledTime = new Date(scheduledAt);
     const minTime = new Date(Date.now() + minLeadMinutes * 60 * 1000);
-
     return {
         valid: scheduledTime >= minTime,
         scheduledTime,
     };
 };
 
-// USER VERIFICATION
-export const verifyUserForBooking = async (userId, session = null) => {
-    const query = User.findById(userId)
-        .select("status is_active")
-        .lean();
+// ─── USER VERIFICATION ────────────────────────────────────────────────────────
 
+/**
+ * Confirms the user exists and their account is active before allowing a booking.
+ */
+export const verifyUserForBooking = async (userId, session = null) => {
+    const query = User.findById(userId).select("account_status").lean();
     if (session) query.session(session);
 
     const user = await query;
@@ -42,59 +47,56 @@ export const verifyUserForBooking = async (userId, session = null) => {
         return { valid: false, user: null, errorType: "NOT_FOUND" };
     }
 
-    if (user.status !== ACCOUNT_STATUS.ACTIVE || !user.is_active) {
+    if (user.account_status !== ACCOUNT_STATUS.ACTIVE) {
         return { valid: false, user, errorType: "NOT_ACTIVE" };
     }
 
     return { valid: true, user, errorType: null };
 };
 
-// SERVICEABILITY
+// ─── SERVICEABILITY ───────────────────────────────────────────────────────────
 
-// Check if a pickup location falls within a serviceable area.
-// Returns { isServiceable, serviceAreaId } from checkServiceability util.
-export const verifyServiceability = async (lat, lng) => {
-    return checkServiceability(lat, lng);
-};
+/**
+ * Thin pass-through kept for import consistency across the codebase.
+ * Delegates entirely to the shared utility.
+ */
+export const verifyServiceability = checkServiceability;
 
-// Check if the user has already reached their max active booking count.
+// ─── ACTIVE BOOKING LIMIT ─────────────────────────────────────────────────────
+
 export const checkActiveBookingLimit = async (userId, session = null) => {
     const query = Booking.countDocuments({
         userId,
         status: { $in: ACTIVE_STATUSES },
     });
-
     if (session) query.session(session);
 
     const count = await query;
-
     return {
         hasReachedLimit: count >= BOOKING_LIMITS.MAX_ACTIVE_BOOKINGS,
         currentCount: count,
     };
 };
 
-// STORE SEARCH & ASSIGNMENT
+// ─── STORE SEARCH & ASSIGNMENT ────────────────────────────────────────────────
+
 /**
- * Find the nearest available store using MongoDB $geoNear.
+ * Finds the nearest available store using a $geoNear aggregation.
+ * Prioritises distance then remaining capacity.
  */
 export const findNearestAvailableStore = async (lat, lng, session = null) => {
     try {
         const pipeline = [
             {
                 $geoNear: {
-                    near: {
-                        type: "Point",
-                        coordinates: [lng, lat],
-                    },
+                    near: { type: "Point", coordinates: [lng, lat] },
                     distanceField: "distance",
                     spherical: true,
                     maxDistance: STORE_SEARCH.MAX_DISTANCE_KM * 1000,
                     query: {
-                        is_active: true,
                         is_online: true,
                         verification_status: "verified",
-                        status: ACCOUNT_STATUS.ACTIVE,
+                        account_status: ACCOUNT_STATUS.ACTIVE,
                     },
                 },
             },
@@ -105,9 +107,9 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
                     },
                 },
             },
-            {
-                $sort: { distance: 1, availableSlots: -1 },
-            },
+            // Only consider stores that actually have capacity
+            { $match: { availableSlots: { $gt: 0 } } },
+            { $sort: { distance: 1, availableSlots: -1 } },
             { $limit: 1 },
             {
                 $project: {
@@ -123,8 +125,8 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
             },
         ];
 
-        const options = session ? { session } : {};
-        const results = await Store.aggregate(pipeline).option(options);
+        const aggregateOptions = session ? { session } : {};
+        const results = await Store.aggregate(pipeline, aggregateOptions);
 
         if (!results.length) {
             return { store: null, error: "NO_STORE" };
@@ -137,69 +139,20 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
     }
 };
 
-// DRIVER SEARCH
-export const findNearbyDrivers = async (lat, lng, session, radius = 5000) => {
-    const pipeline = [
-        {
-            $geoNear: {
-                near: {
-                    type: "Point",
-                    coordinates: [lng, lat],
-                },
-                distanceField: "distance",
-                spherical: true,
-                maxDistance: radius,
-                key: "currentLocation",  // ✅ explicitly point to the field
-                query: {
-                    is_active: true,
-                    is_online: true,
-                    verification_status: "verified",
-                    status: ACCOUNT_STATUS.ACTIVE,
-                },
-            },
-        },
-        {
-            $addFields: {
-                availableSlots: {
-                    $subtract: ["$max_booking_capacity", "$current_booking_count"],
-                },
-            },
-        },
-        { $sort: { distance: 1, availableSlots: -1 } },
-        { $limit: 10 },
-        {
-            $project: {
-                _id: 1,
-                driver_name: 1,
-                location: 1,
-                distance: 1,
-                availableSlots: 1,
-                max_booking_capacity: 1,
-                current_booking_count: 1,
-                service_area_id: 1,
-            },
-        },
-    ];
-
-    const results = await Driver.aggregate(pipeline, { session, lean: true });
-    return results;
-};
-
 /**
- * Atomically increment store's current_booking_count.
+ * Atomically increments the store's booking count, guarded by a capacity check.
+ * Returns { success: false } if the store is full (race condition protection).
  */
 export const assignStoreToBooking = async (storeId, session) => {
     try {
         const updatedStore = await Store.findOneAndUpdate(
             {
                 _id: storeId,
-                $expr: {
-                    $lt: ["$current_booking_count", "$max_booking_capacity"],
-                },
+                $expr: { $lt: ["$current_booking_count", "$max_booking_capacity"] },
             },
             { $inc: { current_booking_count: 1 } },
-            { returnDocument: "after", session }
-        ).lean();
+            { returnDocument: "after", session, lean: true }
+        );
 
         if (!updatedStore) {
             return { success: false, store: null };
@@ -213,28 +166,98 @@ export const assignStoreToBooking = async (storeId, session) => {
 };
 
 /**
- * Decrement store capacity when a booking is cancelled.
+ * Decrements the store's booking count, guarded against going below zero.
+ * Safe to call even if storeId is null/undefined (no-op).
  */
 export const releaseStoreCapacity = async (storeId, session = null) => {
     if (!storeId) return;
 
     try {
-        const options = session ? { session } : {};
         await Store.findOneAndUpdate(
             { _id: storeId, current_booking_count: { $gt: 0 } },
             { $inc: { current_booking_count: -1 } },
-            options
+            session ? { session } : {}
         );
     } catch (err) {
-        logger.error(`[bookingHelper] releaseStoreCapacity failed for ${storeId}:`, err.message);
+        logger.error(
+            `[bookingHelper] releaseStoreCapacity failed for store ${storeId}:`,
+            err.message
+        );
     }
 };
 
-// ─── CANCELLATION ─────────────────────────────────────────────────────────────
+// ─── DRIVER SEARCH ────────────────────────────────────────────────────────────
 
 /**
- * Atomic system-initiated booking cancellation.
- * Unified version used by: autoCancelWorker, driverSearchJob (exhaustion).
+ * Finds nearby available drivers by geo proximity.
+ * Used by the async driver-search job — NOT called on the booking creation
+ * hot path (that would introduce a TOCTOU race).
+ *
+ * BUG FIXED: original passed `{ session, lean: true }` as aggregate options —
+ * `lean` is not a valid aggregate option and is silently ignored.
+ * Aggregations always return plain objects; `.lean()` is a Query-only method.
+ */
+export const findNearbyDrivers = async (lat, lng, session = null, radius = 5000) => {
+    try {
+        const pipeline = [
+            {
+                $geoNear: {
+                    near: { type: "Point", coordinates: [lng, lat] },
+                    distanceField: "distance",
+                    spherical: true,
+                    maxDistance: radius,
+                    key: "currentLocation", // explicit field key for multi-index models
+                    query: {
+                        is_online: true,
+                        verification_status: "verified",
+                        account_status: ACCOUNT_STATUS.ACTIVE,
+                    },
+                },
+            },
+            {
+                $addFields: {
+                    availableSlots: {
+                        $subtract: ["$max_booking_capacity", "$current_booking_count"],
+                    },
+                },
+            },
+            { $match: { availableSlots: { $gt: 0 } } },
+            { $sort: { distance: 1, availableSlots: -1 } },
+            { $limit: 10 },
+            {
+                $project: {
+                    _id: 1,
+                    first_name: 1,
+                    last_name: 1,
+                    phone: 1,
+                    vehicle_type: 1,
+                    distance: 1,
+                    availableSlots: 1,
+                    service_area_id: 1,
+                },
+            },
+        ];
+
+        const aggregateOptions = session ? { session } : {};
+        return await Driver.aggregate(pipeline, aggregateOptions);
+    } catch (err) {
+        logger.error("[bookingHelper] findNearbyDrivers error:", err.message);
+        return [];
+    }
+};
+
+// ─── AUTO-CANCEL ──────────────────────────────────────────────────────────────
+
+/**
+ * System-initiated atomic booking cancellation.
+ * Used by: autoCancelWorker, driverSearchJob (on driver exhaustion).
+ *
+ * BUG FIXED: original chained `.select()` after `findOneAndUpdate()` — that
+ * doesn't work; `.select()` must be part of the query chain before execution.
+ * Added explicit projection to the findOneAndUpdate options instead.
+ *
+ * NOTE: `findOneAndUpdate` bypasses `pre('save')` hooks so `isActive` and
+ * `lastStatusUpdatedAt` are set explicitly in the $set here — do not remove them.
  */
 export const autoCancelBooking = async (bookingId, reason) => {
     const session = await mongoose.startSession();
@@ -247,9 +270,7 @@ export const autoCancelBooking = async (bookingId, reason) => {
         const booking = await Booking.findOneAndUpdate(
             {
                 _id: bookingId,
-                status: {
-                    $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DELIVERED],
-                },
+                status: { $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.DELIVERED] },
             },
             {
                 $set: {
@@ -269,12 +290,17 @@ export const autoCancelBooking = async (bookingId, reason) => {
                     ),
                 },
             },
-            { returnDocument: "after", session }
-        ).select("_id userId storeId cancelReason payment pricing");
+            {
+                returnDocument: "after",
+                // Explicit projection on the options object — the correct API
+                projection: { _id: 1, userId: 1, storeId: 1, cancelReason: 1, payment: 1, pricing: 1 },
+                session,
+            }
+        );
 
         if (!booking) {
             await safeAbortSession(session);
-            logger.info(`[AutoCancel] Booking ${bookingId} already terminal or not found`);
+            logger.info(`[AutoCancel] Booking ${bookingId} already terminal or not found.`);
             return { success: false };
         }
 
@@ -285,31 +311,56 @@ export const autoCancelBooking = async (bookingId, reason) => {
         await session.commitTransaction();
         session.endSession();
 
-        // --- POST-COMMIT SIDE EFFECTS ---
+        // Post-commit side-effects — best-effort, individual failures are logged
+        const { cleanupBookingRedisKeys } = await import("./driverAssignHelper.js");
+
+        const results = await Promise.allSettled([
+            cleanupBookingRedisKeys(bookingId),
+            queueCancellationNotification(booking),
+            invalidateBookingCache(booking.userId.toString(), bookingId.toString()),
+        ]);
+
+        results.forEach((result, i) => {
+            if (result.status === "rejected") {
+                const labels = ["cleanupRedisKeys", "queueNotification", "invalidateCache"];
+                logger.error(
+                    `[AutoCancel] Post-commit step '${labels[i]}' failed for booking ${bookingId}:`,
+                    result.reason?.message
+                );
+            }
+        });
+
+        logger.info(`[AutoCancel] Booking ${bookingId} cancelled: ${reason}`);
+        // Emit socket event to notify user/store/admin about cancellation
         try {
-            // Lazy import to avoid circular dependency
-            const { cleanupBookingRedisKeys } = await import("./driverAssignHelper.js");
-
-            await Promise.allSettled([
-                cleanupBookingRedisKeys(bookingId),
-                queueCancellationNotification(booking),
-                invalidateBookingCache(booking.userId.toString(), bookingId),
-            ]);
-        } catch (postErr) {
-            logger.error(`[AutoCancel] Post-commit cleanup error for ${bookingId}:`, postErr.message);
+            const { getIO } = await import("../../src/socket/index.js");
+            const { emitBookingCancelled } = await import("../../src/socket/emitters/booking.emitter.js");
+            const io = (() => { try { return getIO(); } catch { return null; } })();
+            if (io) {
+                emitBookingCancelled(
+                    io,
+                    booking._id.toString(),
+                    booking.userId?.toString(),
+                    booking.storeId?.toString() ?? null,
+                    null,
+                    "SYSTEM",
+                    reason,
+                    new Date()
+                );
+            }
+        } catch (socketErr) {
+            logger.debug(`[AutoCancel:Socket] Emission skipped: ${socketErr.message}`);
         }
-
-        logger.info(`[AutoCancel] Booking ${bookingId} auto-cancelled: ${reason}`);
         return { success: true };
     } catch (err) {
         await safeAbortSession(session);
-        logger.error(`[AutoCancel] Fatal failure for ${bookingId}:`, err);
+        logger.error(`[AutoCancel] Fatal failure for booking ${bookingId}:`, err);
         return { success: false };
     }
 };
 
 /**
- * Queue a notification job after a booking is cancelled.
+ * Queues cancellation notification and, if already paid, a refund job.
  */
 const queueCancellationNotification = async (booking) => {
     const bookingId = booking._id.toString();
@@ -327,15 +378,16 @@ const queueCancellationNotification = async (booking) => {
                 type: "AUTO_CANCEL_NO_DRIVER",
             },
         },
-        {
-            jobId: `cancel-notify-${bookingId}`,
-            ...DEFAULT_JOB_OPTIONS,
-        }
+        { jobId: `cancel-notify-${bookingId}`, ...DEFAULT_JOB_OPTIONS }
     ).catch((err) =>
-        logger.error(`[bookingHelper] Failed to queue cancel notification for ${bookingId}:`, err.message)
+        logger.error(
+            `[bookingHelper] Failed to queue cancel notification for ${bookingId}:`,
+            err.message
+        )
     );
 
-    if (booking.payment?.status === "PAID") {
+    // Only trigger a refund if payment was captured (not just initiated)
+    if (booking.payment?.status === "paid") {
         await addJobToQueue(
             JOB_QUEUES.RETURN_PROCESS,
             {
@@ -348,49 +400,80 @@ const queueCancellationNotification = async (booking) => {
                     reason: "Auto-cancelled: No driver available",
                 },
             },
-            {
-                jobId: `refund-${bookingId}`,
-                ...DEFAULT_JOB_OPTIONS,
-            }
+            { jobId: `refund-${bookingId}`, ...DEFAULT_JOB_OPTIONS }
         ).catch((err) =>
-            logger.error(`[bookingHelper] Failed to queue refund for ${bookingId}:`, err.message)
+            logger.error(
+                `[bookingHelper] Failed to queue refund for ${bookingId}:`,
+                err.message
+            )
         );
     }
 };
 
-// CACHE 
+// ─── CACHE ────────────────────────────────────────────────────────────────────
+
+/**
+ * Invalidates all booking-related Redis cache keys for a user.
+ *
+ * BUG FIXED: original wrapped Promise.allSettled in try/catch — allSettled
+ * never rejects, so the catch was dead code and individual failures were
+ * silently swallowed. Now logs each rejected settlement individually.
+ */
 export const invalidateBookingCache = async (userId, bookingId = null) => {
     if (!userId) return;
 
-    try {
-        const ops = [
-            delByPattern(REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN(userId)),
-            del(REDIS_KEYS.BOOKING_ACTIVE(userId)),
-            delByPattern(REDIS_KEYS.BOOKING_HISTORY_PATTERN(userId)),
-        ];
+    const ops = [
+        { label: "list-pattern", fn: () => delByPattern(REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN(userId)) },
+        { label: "active-key", fn: () => del(REDIS_KEYS.BOOKING_ACTIVE(userId)) },
+        { label: "history-pattern", fn: () => delByPattern(REDIS_KEYS.BOOKING_HISTORY_PATTERN(userId)) },
+    ];
 
-        if (bookingId) {
-            ops.push(del(REDIS_KEYS.BOOKING_CACHE_DETAIL(userId, bookingId)));
-        }
-
-        await Promise.allSettled(ops);
-        logger.debug(`[Cache] Invalidated booking caches for user ${userId}`);
-    } catch (err) {
-        logger.error("[bookingHelper] Cache invalidation error:", err.message);
+    if (bookingId) {
+        ops.push({
+            label: "detail-key",
+            fn: () => del(REDIS_KEYS.BOOKING_CACHE_DETAIL(userId, bookingId)),
+        });
     }
+
+    const results = await Promise.allSettled(ops.map((o) => o.fn()));
+
+    results.forEach((result, i) => {
+        if (result.status === "rejected") {
+            logger.warn(
+                `[Cache] Failed to invalidate '${ops[i].label}' for user ${userId}:`,
+                result.reason?.message
+            );
+        }
+    });
 };
 
-export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
+export { getCachedData, setCacheData } from "../../utils/cache.js";
 
-// BOOKING QUERIES
+// ─── BOOKING QUERIES ──────────────────────────────────────────────────────────
+
+/**
+ * Lean read — use for any handler that only needs to read booking data.
+ */
 export const findUserBooking = async (bookingId, userId, selectFields = "") => {
-    return Booking.findOne({ _id: bookingId, userId })
-        .select(selectFields)
-        .lean();
+    return Booking.findOne({ _id: bookingId, userId }).select(selectFields).lean();
 };
 
-export const findMutableUserBooking = async (bookingId, userId, selectFields = "") => {
-    return Booking.findOne({ _id: bookingId, userId }).select(selectFields);
+/**
+ * Returns a full Mongoose document (non-lean) for handlers that call .save().
+ *
+ * BUG FIXED: original silently dropped the session parameter — transactional
+ * controllers (cancelBooking, requestReturn) need the read to join the session
+ * so they see their own in-progress writes (read-your-own-writes).
+ */
+export const findMutableUserBooking = async (
+    bookingId,
+    userId,
+    selectFields = "",
+    session = null
+) => {
+    const query = Booking.findOne({ _id: bookingId, userId }).select(selectFields);
+    if (session) query.session(session);
+    return query;
 };
 
 export const findStore = async (storeId, selectFields = "") => {
@@ -413,17 +496,11 @@ export const createTimelineEntry = (
     updatedBy = null,
     updatedByModel = null
 ) => {
-    const entry = {
-        status,
-        note,
-        createdAt: new Date(),
-    };
-
+    const entry = { status, note, createdAt: new Date() };
     if (updatedBy) {
         entry.updatedBy = updatedBy;
         entry.updatedByModel = updatedByModel;
     }
-
     return entry;
 };
 
@@ -436,6 +513,16 @@ export const calculateTotalLuggage = (luggage) => {
 
 // ─── JOB HELPER ───────────────────────────────────────────────────────────────
 
+/**
+ * Queues a booking-related job.
+ *
+ * BUG FIXED: original swallowed errors via an internal .catch() — callers in
+ * the controller wrap this in try/catch expecting it to throw on failure so
+ * they can log at the right level. The internal .catch() intercepted first,
+ * making the outer try/catch dead code.
+ *
+ * This function now throws on failure. Callers are responsible for handling errors.
+ */
 export const queueBookingJob = async (queueName, jobName, data, extraOptions = {}) => {
     const jobId = `${jobName}-${data.bookingId ?? Date.now()}`;
 
@@ -443,7 +530,5 @@ export const queueBookingJob = async (queueName, jobName, data, extraOptions = {
         queueName,
         { name: jobName, data },
         { jobId, ...DEFAULT_JOB_OPTIONS, ...extraOptions }
-    ).catch((err) =>
-        logger.error(`[bookingHelper] Failed to queue ${jobName}:`, err.message)
     );
 };

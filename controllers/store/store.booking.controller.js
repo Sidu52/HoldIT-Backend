@@ -9,13 +9,12 @@ import { timingSafeEqual } from "../../helpers/user/authHelper.js";
 import { incrementStoreCapacity, decrementStoreCapacity } from "../../services/storeServices.js";
 import { markDriverAvailable, addDriverToRedis } from "../../services/driverGeoService.js";
 import { getIO } from "../../src/socket/index.js";
-import { 
-    emitBookingStored, 
-    emitBookingOutForReturn 
+import {
+    emitBookingStored,
+    emitBookingOutForReturn
 } from "../../src/socket/emitters/booking.emitter.js";
 import logger from "../../utils/logger.js";
 
-/** Safely get Socket.IO instance */
 const safeGetIO = () => {
     try { return getIO(); } catch { return null; }
 };
@@ -37,14 +36,14 @@ export const getIncomingBookings = async (req, res) => {
 
         const bookings = await Booking.find({
             storeId: new mongoose.Types.ObjectId(storeId),
-            status: { 
+            status: {
                 $in: [
-                    BOOKING_STATUS.STORE_ASSIGNED, 
-                    BOOKING_STATUS.DRIVER_ASSIGNED, 
-                    BOOKING_STATUS.DRIVER_ARRIVED, 
-                    BOOKING_STATUS.PICKED_UP, 
+                    BOOKING_STATUS.STORE_ASSIGNED,
+                    BOOKING_STATUS.DRIVER_ASSIGNED,
+                    BOOKING_STATUS.DRIVER_ARRIVED,
+                    BOOKING_STATUS.PICKED_UP,
                     BOOKING_STATUS.AT_STORE
-                ] 
+                ]
             },
             isActive: true,
         })
@@ -76,12 +75,12 @@ export const getActiveBookings = async (req, res) => {
 
         const filter = {
             storeId: new mongoose.Types.ObjectId(storeId),
-            status: { 
+            status: {
                 $in: [
-                    BOOKING_STATUS.STORED, 
-                    BOOKING_STATUS.RETURN_REQUESTED, 
+                    BOOKING_STATUS.STORED,
+                    BOOKING_STATUS.RETURN_REQUESTED,
                     BOOKING_STATUS.RETURN_DRIVER_ASSIGNED
-                ] 
+                ]
             },
             isActive: true,
         };
@@ -201,7 +200,7 @@ export const confirmStored = async (req, res) => {
 
         const userId = updated.userId.toString();
         const driverId = updated.pickup?.assignment?.driverId?.toString();
-        
+
         // 1. Increment Store Capacity
         await incrementStoreCapacity(storeId);
 
@@ -216,7 +215,7 @@ export const confirmStored = async (req, res) => {
 
                     // Re-sync to Redis (update Geo index and metadata)
                     await addDriverToRedis(driver);
-                    await markDriverAvailable(driverId); 
+                    await markDriverAvailable(driverId);
                 }
             } catch (err) {
                 logger.error(`[ConfirmStored] Driver release/sync failed for ${driverId}:`, err);
@@ -231,10 +230,10 @@ export const confirmStored = async (req, res) => {
             const io = safeGetIO();
             if (io) {
                 emitBookingStored(
-                    io, 
-                    booking_id, 
-                    userId, 
-                    updated.storage?.storedAt, 
+                    io,
+                    booking_id,
+                    userId,
+                    updated.storage?.storedAt,
                     "Your Store" // Could fetch actual name if needed
                 );
             }
@@ -338,17 +337,17 @@ export const getDashboard = async (req, res) => {
             data: {
                 store,
                 stats: {
-                    incoming: (statusCounts[BOOKING_STATUS.STORE_ASSIGNED] || 0) + 
-                              (statusCounts[BOOKING_STATUS.DRIVER_ASSIGNED] || 0) + 
-                              (statusCounts[BOOKING_STATUS.DRIVER_ARRIVED] || 0) + 
-                              (statusCounts[BOOKING_STATUS.PICKED_UP] || 0) + 
-                              (statusCounts[BOOKING_STATUS.AT_STORE] || 0),
-                    stored: (statusCounts[BOOKING_STATUS.STORED] || 0) + 
-                            (statusCounts[BOOKING_STATUS.RETURN_REQUESTED] || 0) + 
-                            (statusCounts[BOOKING_STATUS.RETURN_DRIVER_ASSIGNED] || 0),
+                    incoming: (statusCounts[BOOKING_STATUS.STORE_ASSIGNED] || 0) +
+                        (statusCounts[BOOKING_STATUS.DRIVER_ASSIGNED] || 0) +
+                        (statusCounts[BOOKING_STATUS.DRIVER_ARRIVED] || 0) +
+                        (statusCounts[BOOKING_STATUS.PICKED_UP] || 0) +
+                        (statusCounts[BOOKING_STATUS.AT_STORE] || 0),
+                    stored: (statusCounts[BOOKING_STATUS.STORED] || 0) +
+                        (statusCounts[BOOKING_STATUS.RETURN_REQUESTED] || 0) +
+                        (statusCounts[BOOKING_STATUS.RETURN_DRIVER_ASSIGNED] || 0),
                     delivered: statusCounts[BOOKING_STATUS.DELIVERED] || 0,
-                    cancelled: (statusCounts[BOOKING_STATUS.CANCELLED] || 0) + 
-                               (statusCounts[BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL] || 0),
+                    cancelled: (statusCounts[BOOKING_STATUS.CANCELLED] || 0) +
+                        (statusCounts[BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL] || 0),
                     capacityUsed: store.current_booking_count,
                     capacityAvailable: Math.max(0, store.max_booking_capacity - store.current_booking_count),
                 },

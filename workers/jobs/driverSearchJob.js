@@ -35,11 +35,8 @@ import {
 } from "../../helpers/user/driverAssignHelper.js";
 import { autoCancelBooking } from "../../helpers/user/bookingHelper.js";
 import { getIO } from "../../src/socket/index.js";
-import {
-    emitBookingDriverSearching,
-    emitBookingNoDriverAvailable,
-} from "../../src/socket/emitters/booking.emitter.js";
-import { emitAdminAlertNoDriver } from "../../src/socket/emitters/driver.emitter.js";
+import { emitBookingDriverSearching, emitBookingNoDriverAvailable } from "../../src/socket/emitters/booking.emitter.js";
+import { emitAdminAlertNoDriver, emitDriverNewOffer } from "../../src/socket/emitters/driver.emitter.js";
 import logger from "../../utils/logger.js";
 
 /** Safely get the Socket.IO instance; returns null if not initialized. */
@@ -268,6 +265,17 @@ async function handleOfferNextDriver(job) {
         logger.info(
             `[Offer] Timeout in ${DRIVER_ASSIGNMENT.OFFER_TIMEOUT_SECONDS}s`
         );
+
+        const booking = await getBookingForDriverSearch(bookingId);
+
+        emitDriverNewOffer(safeGetIO(), nextDriverId, {
+            bookingId,
+            type,
+            pickupLocation: booking?.pickupLocation,
+            deliveryLocation: booking?.deliveryLocation,
+            attemptNumber,
+            expiresInSeconds: DRIVER_ASSIGNMENT.OFFER_TIMEOUT_SECONDS,
+        });
 
         await scheduleOfferTimeoutCheck(
             bookingId,
