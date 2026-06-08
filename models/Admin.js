@@ -1,7 +1,7 @@
 
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
-import { ACCOUNT_STATUS, GENDER_OPTIONS, USER_ROLES } from "../utils/constants.js";
+import { ACCOUNT_STATUS, GENDER_OPTIONS, USER_ROLES, VERIFICATION_STATUS } from "../utils/constants.js";
 
 const adminSchema = new mongoose.Schema(
     {
@@ -25,8 +25,8 @@ const adminSchema = new mongoose.Schema(
         phone: {
             type: String,
             trim: true,
-            maxlength: 15, 
-            sparse: true, 
+            maxlength: 15,
+            sparse: true,
             unique: true,
         },
         address: {
@@ -43,10 +43,16 @@ const adminSchema = new mongoose.Schema(
                 return this.is_verified;
             },
         },
-        status: {
+        account_status: {
             type: String,
             enum: Object.values(ACCOUNT_STATUS),
             default: ACCOUNT_STATUS.PENDING,
+            index: true,
+        },
+        verification_status: {
+            type: String,
+            enum: Object.values(VERIFICATION_STATUS),
+            default: VERIFICATION_STATUS.PENDING,
             index: true,
         },
         gender: {
@@ -56,18 +62,21 @@ const adminSchema = new mongoose.Schema(
         role: {
             type: String,
             enum: Object.values(USER_ROLES),
-            default: USER_ROLES.ADMIN,
             required: true,
             index: true,
         },
         last_login_at: {
             type: Date,
         },
-        is_verified: {
-            type: Boolean,
-            default: false,
-        },
         invited_by: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Admin",
+        },
+        account_deactivated_reason: {
+            type: String,
+            default: "",
+        },
+        updated_by: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Admin",
         },
@@ -80,17 +89,13 @@ adminSchema.index({ role: 1, status: 1 });
 adminSchema.index({ createdAt: -1 });
 
 // Pre-save hook to hash password
-adminSchema.pre("save", async function (next) {
+adminSchema.pre("save", async function () {
     if (!this.isModified("password_hash")) {
-        return next();
+        return;
     }
-    try {
-        const salt = await bcrypt.genSalt(10);
-        this.password_hash = await bcrypt.hash(this.password_hash, salt);
-        return next();
-    } catch (err) {
-        return next(err);
-    }
+
+    const salt = await bcrypt.genSalt(10);
+    this.password_hash = await bcrypt.hash(this.password_hash, salt);
 });
 
 // Method to compare password

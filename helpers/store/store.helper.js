@@ -5,21 +5,29 @@ import { markDriverAvailable } from "../../services/driverGeoService.js";
 import { ACCOUNT_STATUS, BOOKING_STATUS, STATUS_CODES } from "../../utils/constants.js";
 
 // VERIFY STORE
-export const verifyStore = (store) => {
+export const verifyStore = (store, owner = null) => {
     if (!store) {
         return { valid: false, message: "Store not found.", code: STATUS_CODES.NOT_FOUND };
     }
 
-    if (store.status === ACCOUNT_STATUS.BLOCKED) {
+    if (owner) {
+        if (owner.account_status === ACCOUNT_STATUS.BLOCKED) {
+            return { valid: false, message: "This store owner account has been suspended.", code: STATUS_CODES.FORBIDDEN };
+        }
+        if (owner.account_status === ACCOUNT_STATUS.PENDING) {
+            return { valid: false, message: "This store owner account is not active. Please contact support.", code: STATUS_CODES.FORBIDDEN };
+        }
+        if (owner.account_status === ACCOUNT_STATUS.INACTIVE) {
+            return { valid: false, message: "This store owner account is inactive. Please contact support.", code: STATUS_CODES.FORBIDDEN };
+        }
+    }
+
+    if (store.account_status === ACCOUNT_STATUS.BLOCKED) {
         return { valid: false, message: "This store account has been suspended.", code: STATUS_CODES.FORBIDDEN };
-    }
-
-    if (!store.is_verified) {
-        return { valid: false, message: "Store account is not verified. Please contact support.", code: STATUS_CODES.FORBIDDEN };
-    }
-
-    if (!store.is_active) {
-        return { valid: false, message: "Store account is not active. Please contact support.", code: STATUS_CODES.FORBIDDEN };
+    } else if (store.account_status === ACCOUNT_STATUS.PENDING) {
+        return { valid: false, message: "This store account is not verified. Please contact support.", code: STATUS_CODES.FORBIDDEN };
+    } else if (store.account_status === ACCOUNT_STATUS.INACTIVE) {
+        return { valid: false, message: "This store account is not active. Please contact support.", code: STATUS_CODES.FORBIDDEN };
     }
 
     return { valid: true };

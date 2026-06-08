@@ -171,7 +171,7 @@
  *                 email:
  *                   type: string
  *                   example: hi@gmail.com
- *                 dob:
+ *                 date_of_birth:
  *                   type: string
  *                   example: "2001-01-01"
  *                 address:
@@ -188,7 +188,7 @@
  *                 - last_name
  *                 - gender
  *                 - email
- *                 - dob
+ *                 - date_of_birth
  *                 - address
  *                 - lat
  *                 - lng

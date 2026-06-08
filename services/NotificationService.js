@@ -18,7 +18,7 @@ class NotificationService {
             // Development fallback: Send to email
             if (process.env.NODE_ENV !== "test") {
                 await sendEmail({
-                    to: process.env.DEV_EMAIL_ADDRESS || "hitechsidu992@gmail.com",
+                    to: process.env.DEV_EMAIL_ADDRESS || "alstonsidhu@gmail.com",
                     subject: "Your Holdit OTP Code",
                     template: "otp-verification-email.html",
                     data: {

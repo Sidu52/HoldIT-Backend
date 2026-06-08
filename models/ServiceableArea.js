@@ -10,9 +10,9 @@ const serviceableAreaSchema = new mongoose.Schema(
     },
     name_normalized: {
       type: String,
-      required: true,
-      lowercase: true,
       trim: true,
+      maxlength: 200,
+      index: true,
     },
 
     city: {
@@ -23,9 +23,8 @@ const serviceableAreaSchema = new mongoose.Schema(
     },
     city_normalized: {
       type: String,
-      required: true,
-      lowercase: true,
       trim: true,
+      maxlength: 100,
       index: true,
     },
 
@@ -84,12 +83,6 @@ const serviceableAreaSchema = new mongoose.Schema(
       index: true,
     },
 
-    is_deleted: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-
     created_by: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Admin",
@@ -110,11 +103,10 @@ serviceableAreaSchema.index(
 );
 serviceableAreaSchema.index({ is_active: 1, city_normalized: 1 });
 
-// Pre-save normalization
-serviceableAreaSchema.pre("validate", function (next) {
+// Pre-save normalization for uniqueness
+serviceableAreaSchema.pre("validate", async function () {
   if (this.name) this.name_normalized = this.name.toLowerCase().trim();
   if (this.city) this.city_normalized = this.city.toLowerCase().trim();
-  next();
 });
 
 export default mongoose.model("ServiceableArea", serviceableAreaSchema);

@@ -90,6 +90,9 @@ export const updateServiceableAreaSchema = Joi.object({
             "string.pattern.base": "Invalid pincode format",
         }),
     location: locationSchema,
+    is_active: Joi.boolean().required().messages({
+        "any.required": "is_active field is required",
+    }),
     service_radius_km: Joi.number().min(0.5).max(100),
     delivery_charge: Joi.number().min(0).max(10000),
 })
@@ -97,6 +100,7 @@ export const updateServiceableAreaSchema = Joi.object({
     .messages({
         "object.min": "At least one field is required to update",
     });
+
 
 // TOGGLE STATUS
 export const toggleStatusSchema = Joi.object({

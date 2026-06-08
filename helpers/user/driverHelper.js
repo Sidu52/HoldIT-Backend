@@ -6,7 +6,7 @@ import {
 } from "../../constants/user/driver.js";
 
 // CACHE
-export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
+export { getCachedData, setCacheData } from "../../utils/cache.js";
 
 export const findVisibleDriverById = async (driverId, selectFields) => {
     return Driver.findOne({
@@ -22,7 +22,6 @@ export const fetchDriverReviews = async (driverId, skip, limit) => {
         {
             $match: {
                 driverId: driverId,
-                is_active: true,
             },
         },
         { $sort: { createdAt: -1 } },
@@ -86,7 +85,6 @@ export const fetchDriverRatingSummary = async (driverId) => {
         {
             $match: {
                 driverId: driverId,
-                is_active: true,
             },
         },
         {

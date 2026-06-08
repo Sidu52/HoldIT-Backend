@@ -26,10 +26,11 @@ const transporter = nodemailer.createTransport({
 
 // Verify connection on startup
 transporter.verify().then(() => {
-   logger.info("✅ Email service ready");
+  logger.info("Email service ready");
 }).catch((err) => {
   logger.error("Email service failed to initialize:", err.message);
 });
+
 
 // TEMPLATE CACHE & RENDERING
 const templateCache = new Map();

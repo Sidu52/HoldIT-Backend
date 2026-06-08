@@ -1,14 +1,8 @@
 import mongoose from "mongoose";
-import { ACCOUNT_STATUS, GENDER_OPTIONS, ON_BOARDING_STATUS } from "../utils/constants.js";
+import { ACCOUNT_STATUS, GENDER_OPTIONS, VERIFICATION_STATUS } from "../utils/constants.js";
 
 const StoreOwnerSchema = new mongoose.Schema(
     {
-        auth_id: {
-            type: String,
-            unique: true,
-            sparse: true,
-            index: true,
-        },
         first_name: {
             type: String,
             trim: true,
@@ -44,42 +38,23 @@ const StoreOwnerSchema = new mongoose.Schema(
         },
 
         last_login_at: Date,
-        last_active_at: {
-            type: Date,
-            index: true,
-        },
 
-        is_verified: {
-            type: Boolean,
-            default: false,
-            index: true,
-        },
-        verified_by: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Admin",
-        },
-        verified_at: Date,
-
-        onboarding_status: {
-            type: String,
-            enum: Object.values(ON_BOARDING_STATUS),
-            default: ON_BOARDING_STATUS.PENDING,
-            index: true,
-        },
-
-        status: {
+        account_status: {
             type: String,
             enum: Object.values(ACCOUNT_STATUS),
             default: ACCOUNT_STATUS.PENDING,
             index: true,
         },
-        is_active: {
-            type: Boolean,
-            default: true,
+        verification_status: {
+            type: String,
+            enum: Object.values(VERIFICATION_STATUS),
+            default: VERIFICATION_STATUS.PENDING,
             index: true,
         },
+
         account_deactivated_reason: {
             type: String,
+            trim: true,
             maxlength: 500,
             default: null,
         },
@@ -88,24 +63,17 @@ const StoreOwnerSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Admin",
         },
-        updated_by: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Admin",
-        },
     },
     { timestamps: true }
 );
 
-// Indexes
-StoreOwnerSchema.index({ status: 1, onboarding_status: 1 });
-StoreOwnerSchema.index({ is_active: 1, status: 1 });
-
-// Virtual: owner's stores 
+StoreOwnerSchema.index({ account_status: 1, verification_status: 1 });
 StoreOwnerSchema.virtual("stores", {
     ref: "Store",
     localField: "_id",
     foreignField: "store_owner_id",
 });
+
 
 const StoreOwner = mongoose.model("StoreOwner", StoreOwnerSchema);
 export default StoreOwner;

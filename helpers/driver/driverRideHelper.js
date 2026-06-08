@@ -5,7 +5,6 @@ import redis, { get, set, del, delByPattern } from "../../services/redisService.
 import { markDriverOnTrip, markDriverAvailable } from "../../services/driverGeoService.js";
 import { BOOKING_STATUS } from "../../utils/constants.js";
 import {
-    DRIVER_RIDE_CACHE,
     DRIVER_VISIBLE_STATUSES,
     DRIVER_HISTORY_STATUSES,
 } from "../../constants/driver/driver.ride.js";
@@ -26,7 +25,7 @@ import logger from "../../utils/logger.js";
 
 
 // CACHE
-export { getCachedData, setCacheData } from "../../utils/cacheHelper.js";
+export { getCachedData, setCacheData } from "../../utils/cache.js";
 
 export const invalidateDriverRideCache = async (driverId, bookingId = null) => {
     try {
@@ -267,7 +266,7 @@ export const processCompletePickup = async (bookingId, driverId, otp, photos = [
     }).select("pickup.assignment.otp");
 
     if (!booking) return null;
-    
+
     // OTP Rate limiting check
     const rateLimitKey = `rate_limit:otp:${driverId}:${bookingId}`;
     const failedAttempts = parseInt(await redis.get(rateLimitKey) || "0", 10);

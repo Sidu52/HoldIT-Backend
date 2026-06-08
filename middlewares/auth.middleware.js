@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { sendResponse } from "../utils/apiResponse.js";
+import { sendResponse, sendError } from "../utils/apiResponse.js";
 import { STATUS_CODES, TOKEN_TYPES, USER_ROLES } from "../utils/constants.js";
 
 export const authMiddleware = (req, res, next) => {
@@ -7,21 +7,21 @@ export const authMiddleware = (req, res, next) => {
     const token = extractToken(req);
 
     if (!token) {
-      return sendResponse({
+      return sendError(
         res,
-        message: "Authentication required",
-        statusCode: STATUS_CODES.UNAUTHORIZED,
-      });
+        "Authentication required",
+        STATUS_CODES.UNAUTHORIZED
+      );
     }
 
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
     if (decoded.type !== TOKEN_TYPES.ACCESS) {
-      return sendResponse({
+      return sendError(
         res,
-        message: "Invalid token type",
-        statusCode: STATUS_CODES.UNAUTHORIZED,
-      });
+        "Invalid token type",
+        STATUS_CODES.UNAUTHORIZED
+      );
     }
     req.user = decoded;
     next();
@@ -31,11 +31,11 @@ export const authMiddleware = (req, res, next) => {
         ? "Token has expired"
         : "Invalid or expired token";
 
-    return sendResponse({
+    return sendError(
       res,
       message,
-      statusCode: STATUS_CODES.UNAUTHORIZED,
-    });
+      STATUS_CODES.UNAUTHORIZED
+    );
   }
 };
 
@@ -45,19 +45,19 @@ export const authMiddleware = (req, res, next) => {
 export const authorize = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return sendResponse({
+      return sendError(
         res,
-        message: "Authentication required",
-        statusCode: STATUS_CODES.UNAUTHORIZED,
-      });
+        "Authentication required",
+        STATUS_CODES.UNAUTHORIZED
+      );
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return sendResponse({
+      return sendError(
         res,
-        message: "You do not have permission to perform this action",
-        statusCode: STATUS_CODES.FORBIDDEN,
-      });
+        "You do not have permission to perform this action",
+        STATUS_CODES.FORBIDDEN
+      );
     }
 
     next();
@@ -79,7 +79,15 @@ const extractToken = (req) => {
     return authHeader.split(" ")[1];
   }
 
+  // Determine correct cookie name based on request path
+  const path = req.originalUrl || req.url || "";
+  let cookieName = "accessToken";
+  if (path.includes("/admin")) cookieName = "admin_accessToken";
+
   // Fallback to cookie
+  if (req.cookies?.[cookieName]) {
+    return req.cookies[cookieName];
+  }
   if (req.cookies?.accessToken) {
     return req.cookies.accessToken;
   }

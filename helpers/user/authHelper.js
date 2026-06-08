@@ -7,6 +7,7 @@ import { generateOTP } from "../../utils/otp.js";
 import {
     generateAccessToken,
     generateRefreshToken,
+    clearAuthCookies,
 } from "../../utils/token.js";
 import {
     OTP_EXPIRY,
@@ -14,16 +15,10 @@ import {
     REFRESH_TOKEN_EXPIRY,
     TOKEN_TYPES,
 } from "../../utils/constants.js";
-import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
-// 4 day set
-const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
-const COOKIE_OPTIONS = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/",
-};
 
+export { clearAuthCookies };
+import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
+const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 5;
 
 // TIMING SAFE COMPARE
 export const timingSafeEqual = (a, b) => {
@@ -33,13 +28,8 @@ export const timingSafeEqual = (a, b) => {
     return cryptoTimingSafeEqual(bufA, bufB);
 };
 
-export const clearAuthCookies = (res) => {
-    res.clearCookie("accessToken", COOKIE_OPTIONS);
-    res.clearCookie("refreshToken", COOKIE_OPTIONS);
-};
-
 // TOKEN PAIR GENERATION
-export const generateTokenPair = async (userId, role) => {
+export const generateTokenPair = async (userId, role, path) => {
     const tokenId = uuidv4();
 
     const accessToken = generateAccessToken({
@@ -53,6 +43,7 @@ export const generateTokenPair = async (userId, role) => {
         role: role,
         token_id: tokenId,
         type: TOKEN_TYPES.REFRESH,
+        path,
     });
 
     await set(

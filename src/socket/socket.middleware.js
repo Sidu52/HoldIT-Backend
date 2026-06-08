@@ -29,7 +29,7 @@ export const socketAuthMiddleware = async (socket, next) => {
 
         if (!tokenRaw) {
             const cookies = parseCookies(socket.handshake.headers?.cookie);
-            tokenRaw = cookies.accessToken;
+            tokenRaw = cookies.accessToken || cookies.admin_accessToken;
         }
 
         if (!tokenRaw) {

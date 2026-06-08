@@ -4,6 +4,7 @@ services:
     container_name: holdit-redis
     ports:
       - "6379:6379"
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
     volumes:
       - redis_data:/data
     restart: unless-stopped

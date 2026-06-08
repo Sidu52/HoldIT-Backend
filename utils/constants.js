@@ -1,5 +1,5 @@
 // STATUS CODES
-const STATUS_CODES = {
+export const STATUS_CODES = Object.freeze({
   SUCCESS: 200,
   CREATED: 201,
   BAD_REQUEST: 400,
@@ -9,10 +9,10 @@ const STATUS_CODES = {
   CONFLICT: 409,
   TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
-};
+});
 
 // USER & ROLE MANAGEMENT
-const USER_ROLES = {
+export const USER_ROLES = Object.freeze({
   ADMIN: "admin",
   SUPER_ADMIN: "super_admin",
   OPERATION_MANAGER: "operation_manager",
@@ -21,10 +21,23 @@ const USER_ROLES = {
   STORE: "store",
   STORE_OWNER: "store_owner",
   USER: "user",
-};
+});
+
+export const ROLES = Object.freeze({
+  ADMIN: "admin",
+  SUPER_ADMIN: "super_admin",
+  OPERATION_MANAGER: "operation_manager",
+  CUSTOMER_SUPPORT: "customer_support",
+});
+
+export const ADDRESS_TYPE_OPTIONS = [
+  "Home",
+  "Office",
+  "Other",
+];
 
 // BOOKING STATUS
-const BOOKING_STATUS = {
+export const BOOKING_STATUS = Object.freeze({
   CREATED: "created",
   STORE_ASSIGNED: "store_assigned",
   DRIVER_ASSIGNED: "driver_assigned",
@@ -39,9 +52,9 @@ const BOOKING_STATUS = {
   DELIVERED: "delivered",
   CANCELLED: "cancelled",
   DRIVER_CANCELLED_CRITICAL: "driver_cancelled_critical",
-};
+});
 
-const JOB_QUEUES = {
+export const JOB_QUEUES = Object.freeze({
   STORE_ASSIGN: "store-assign",
   DRIVER_ASSIGN: "driver-assign",
   BOOKING_AUTO_CANCEL: "booking-auto-cancel",
@@ -50,99 +63,95 @@ const JOB_QUEUES = {
   DELETE_UNVERIFIED_STORE: "delete-unverified-store",
   BOOKING_CANCELLED: "booking-cancelled",
   RETURN_PROCESS: "return-process",
-};
+});
 
-// SUPPORT TICKET
-const TICKET_STATUS = {
-  OPEN: "OPEN",
-  IN_PROGRESS: "IN_PROGRESS",
-  AWAITING_USER: "AWAITING_USER",
-  AWAITING_ADMIN: "AWAITING_ADMIN",
-  RESOLVED: "RESOLVED",
-  CLOSED: "CLOSED",
-};
-
-const TICKET_PRIORITY = {
-  LOW: "LOW",
-  MEDIUM: "MEDIUM",
-  HIGH: "HIGH",
-  URGENT: "URGENT",
-};
-
-const TICKET_CATEGORY = {
-  BOOKING_ISSUE: "BOOKING_ISSUE",
-  PAYMENT_ISSUE: "PAYMENT_ISSUE",
-  DRIVER_COMPLAINT: "DRIVER_COMPLAINT",
-  STORE_COMPLAINT: "STORE_COMPLAINT",
-  LUGGAGE_DAMAGE: "LUGGAGE_DAMAGE",
-  LUGGAGE_LOST: "LUGGAGE_LOST",
-  APP_BUG: "APP_BUG",
-  ACCOUNT_ISSUE: "ACCOUNT_ISSUE",
-  REFUND_REQUEST: "REFUND_REQUEST",
-  GENERAL_INQUIRY: "GENERAL_INQUIRY",
-  OTHER: "OTHER",
-};
-
-const ACCOUNT_STATUS = {
+export const ACCOUNT_STATUS = Object.freeze({
   ACTIVE: "active",
   PENDING: "pending",
-  BLOCKED: "blocked",
   INACTIVE: "inactive",
-};
+  BLOCKED: "blocked",
+});
 
-// VERIFICATION & ONBOARDING
-const VERIFICATION_STATUS = {
+// VERIFICATION
+export const VERIFICATION_STATUS = Object.freeze({
   PENDING: "pending",
   VERIFIED: "verified",
   REJECTED: "rejected",
-};
+  PROFILE_COMPLETE: "profile_complete",
+});
 
-const GENDER_OPTIONS = ["male", "female", "other"];
+// CACHE TTL (seconds)
+export const CACHE_TTL = Object.freeze({
+  LIST: 120,
+  DETAIL: 300,
+  DASHBOARD: 300,
+  STORE: 300,
+});
 
-// AUTHENTICATION & TOKENS
-const TOKEN_TYPES = {
-  ACCESS: "access",
-  REFRESH: "refresh",
-  INVITE: "invite",
-};
-
-// DERIVED TIME VALUES
-const OTP_FAIL_WINDOW_SECONDS = 15 * 60;
-const UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS = 24 * 60 * 60 * 1000;
-
-const ACCESS_TOKEN_EXPIRY = 60 * 60;
-const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60;
-const INVITE_TOKEN_EXPIRY = 24;
-
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_MAX_LENGTH = 100;
+export const DETAIL_CACHE_TTL = 300;     // 5 minutes
+export const STORES_CACHE_TTL = 120;     // 2 minutes
+export const DASHBOARD_CACHE_TTL = 300;  // 5 minutes
 
 // OTP CONFIGURATION
-const OTP_LENGTH = 4;
-const OTP_EXPIRY = 5;
-const OTP_MAX_ATTEMPTS = 5;
-const OTP_COOLDOWN = 60;
-const OTP_MAX_REQUESTS_PER_HOUR = 5;
+export const OTP_LENGTH = 6;
+export const OTP_EXPIRY = 10;                      // minutes — OTP valid for 10 mins
+export const OTP_COOLDOWN = 60;                    // seconds between resend requests
+export const OTP_MAX_ATTEMPTS = 5;                 // max failed verifications before lockout
+export const OTP_FAIL_WINDOW_SECONDS = 15 * 60;    // 15-minute fail-lockout window
+export const OTP_MAX_REQUESTS_PER_HOUR = 5;        // max OTP sends per rate-limit window
 
-// RATE LIMITING
-const RATE_LIMIT = {
-  LOGIN_MAX_ATTEMPTS: 5,
-  LOGIN_WINDOW_MINUTES: 15,
-  API_MAX_REQUESTS: 100,
-  API_WINDOW_MINUTES: 15,
-};
+// Kept for backward compatibility (REDIS_TTL.OTP uses this)
+export const OTP_CONFIG = Object.freeze({
+  EXPIRY_MINUTES: OTP_EXPIRY,
+});
 
-const ASSIGNMENT_TYPES = {
-  PICKUP: "PICKUP",
-  DELIVERY: "DELIVERY",
-  RETURN: "RETURN",
-};
+export const REDIS_TTL = Object.freeze({
+  PENDING_USER: 20 * 60,
+  OTP: OTP_EXPIRY * 60,
+});
 
-const ON_BOARDING_STATUS = {
-  DEMO: "demo",
-  DOCUMENTS_PENDING: "documents_pending",
-  ACTIVE: "active",
-};
+// PASSWORD CONFIGURATION
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_MAX_LENGTH = 128;
+
+// TOKEN CONFIGURATION
+export const TOKEN_TYPES = Object.freeze({
+  ACCESS: "access",
+  REFRESH: "refresh",
+});
+
+export const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
+
+// UNVERIFIED ACCOUNT CLEANUP DELAY
+export const UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// SUPPORT TICKET
+export const TICKET_STATUS = Object.freeze({
+  OPEN: "open",
+  IN_PROGRESS: "in_progress",
+  AWAITING_USER: "awaiting_user",
+  AWAITING_ADMIN: "awaiting_admin",
+  RESOLVED: "resolved",
+  CLOSED: "closed",
+});
+
+export const TICKET_PRIORITY = Object.freeze({
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high",
+  URGENT: "urgent",
+});
+
+export const TICKET_CATEGORY = Object.freeze({
+  BOOKING: "booking",
+  PAYMENT: "payment",
+  STORE: "store",
+  DRIVER: "driver",
+  ACCOUNT: "account",
+  OTHER: "other",
+});
+
+const GENDER_OPTIONS = ["male", "female", "other"];
 
 // VEHICLE
 const VEHICLE_TYPES = {
@@ -154,49 +163,18 @@ const VEHICLE_TYPES = {
 };
 
 // WORKER CONFIGURATION
-const WORKER_CONFIG = {
+export const WORKER_CONFIG = {
   STORE_SEARCH_RADIUS_KM: 50,
   STORE_MAX_RETRY: 3,
   STORE_RETRY_DELAY_MS: 5000,
 
   // Driver assignment
-  DRIVER_SEARCH_RADIUS_KM: 10,
-  DRIVER_SEARCH_TIMEOUT_MINUTES: 15,
   DRIVER_OFFER_TIMEOUT_SECONDS: 60,
   DRIVER_MAX_OFFER_ATTEMPTS: 10,
   DRIVER_RETRY_DELAY_MS: 2000,
-
-  // Auto cancel
-  AUTO_CANCEL_DELAY_MINUTES: 15,
 };
 
 export {
-  JOB_QUEUES,
-  STATUS_CODES,
-  WORKER_CONFIG,
-  BOOKING_STATUS,
-  USER_ROLES,
-  ACCOUNT_STATUS,
   GENDER_OPTIONS,
-  TOKEN_TYPES,
-  ACCESS_TOKEN_EXPIRY,
-  REFRESH_TOKEN_EXPIRY,
-  INVITE_TOKEN_EXPIRY,
-  PASSWORD_MIN_LENGTH,
-  PASSWORD_MAX_LENGTH,
-  OTP_LENGTH,
-  OTP_EXPIRY,
-  OTP_MAX_ATTEMPTS,
-  OTP_COOLDOWN,
-  OTP_MAX_REQUESTS_PER_HOUR,
-  RATE_LIMIT,
-  ASSIGNMENT_TYPES,
-  VERIFICATION_STATUS,
-  ON_BOARDING_STATUS,
   VEHICLE_TYPES,
-  TICKET_STATUS,
-  TICKET_PRIORITY,
-  TICKET_CATEGORY,
-  OTP_FAIL_WINDOW_SECONDS,
-  UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS
 };

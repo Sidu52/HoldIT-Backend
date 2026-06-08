@@ -9,14 +9,13 @@ const BATCH_SIZE = 50;
 export const syncStoresToRedis = async () => {
     try {
         const stores = await Store.find({
-            is_active: true,
             is_online: true,
             verification_status: VERIFICATION_STATUS.VERIFIED,
             "location.coordinates": { $exists: true, $ne: [] },
         })
             .select(
                 "_id location service_area_id " +
-                "is_active is_online verification_status " +
+                "is_online verification_status " +
                 "current_booking_count max_booking_capacity rating"
             )
             .lean();

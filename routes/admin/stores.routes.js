@@ -9,20 +9,20 @@ import {
     getStoreById,
     updateStore,
     toggleStoreStatus,
-    updateStoreVerification,
     updateStoreOnline,
     createStore,
     bulkDeactivateStores,
+    updateStoreCurrentLocation,
 } from "../../controllers/admin/store.admin.controller.js";
 import {
     storeIdSchema,
     listStoresSchema,
     updateStoreSchema,
     updateStoreStatusSchema,
-    updateStoreVerificationSchema,
-    updateStoreDutySchema,
+    updateStoreOnlineSchema,
     createStoreSchema,
 } from "../../validations/admin/store.validation.js";
+import { updateLocationSchema } from "../../validations/admin/driver.validation.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -43,12 +43,6 @@ router.get("/",
     roleMiddleware(...VIEW_ROLES),
     validate(listStoresSchema, "query"),
     getStores
-);
-
-router.post("/bulk-delete",
-    apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
-    bulkDeactivateStores
 );
 
 router.delete("/bulk-delete",
@@ -84,7 +78,7 @@ router.patch("/:store_id/duty",
     apiLimiter,
     roleMiddleware(...MODIFY_ROLES),
     validate(storeIdSchema, "params"),
-    validate(updateStoreDutySchema, "body"),
+    validate(updateStoreOnlineSchema, "body"),
     updateStoreOnline
 );
 
@@ -96,13 +90,15 @@ router.patch("/:store_id/status",
     toggleStoreStatus
 );
 
-router.patch("/:store_id/verification",
+// Update Location 
+router.patch("/:store_id/location",
     apiLimiter,
-    roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+    roleMiddleware(...MODIFY_ROLES),
     validate(storeIdSchema, "params"),
-    validate(updateStoreVerificationSchema, "body"),
-    updateStoreVerification
-);
+    validate(updateLocationSchema, "body"),
+    updateStoreCurrentLocation
+)
+
 
 
 export default router;

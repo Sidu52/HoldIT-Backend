@@ -12,7 +12,8 @@ import {
   updateProfile,
   getTeamsMember,
   getTeamMemberById,
-  bulkDeactivateAdmins
+  bulkDeactivateAdmins,
+  updateTeamMember
 } from "../../controllers/admin/admin.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -61,15 +62,18 @@ router.get(
   getTeamMemberById
 )
 
-// Bulk Deactivate
-router.post(
-  "/bulk-delete",
+// Update team members details
+router.put(
+  "/team/:id",
   apiLimiter,
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  bulkDeactivateAdmins
-)
+  validate(userIdSchema, "params"),
+  validate(updateProfileSchema),
+  updateTeamMember
+);
 
-router.delete(
+// Bulk Deactivate
+router.post(
   "/bulk-delete",
   apiLimiter,
   roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
@@ -80,7 +84,7 @@ router.delete(
 router.get(
   "/admins",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN),
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(listQuerySchema, "query"),
   getAdmins
 );
@@ -89,7 +93,7 @@ router.get(
 router.get(
   "/super-admins",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN),
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(listQuerySchema, "query"),
   getSuperAdmins
 );
@@ -98,10 +102,11 @@ router.get(
 router.post(
   "/invite",
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN),
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(inviteSchema),
   createAdminInvite
 );
+
 
 // Update account status (block/unblock/etc.)
 router.put(
@@ -111,5 +116,12 @@ router.put(
   validate(updateAccountSchema),
   updateAccountStatus
 );
+
+router.delete(
+  "/bulk-delete",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  bulkDeactivateAdmins
+)
 
 export default router;

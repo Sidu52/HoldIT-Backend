@@ -41,11 +41,6 @@ const ReviewSchema = new mongoose.Schema(
             trim: true,
             maxlength: 1000,
         },
-        is_active: {
-            type: Boolean,
-            default: true,
-            index: true,
-        },
     },
     { timestamps: true }
 );
@@ -56,11 +51,8 @@ ReviewSchema.index(
     { unique: true }
 );
 
-// For driver review aggregation
-ReviewSchema.index({ driverId: 1, is_active: 1, createdAt: -1 });
-
-// For store review aggregation
-ReviewSchema.index({ storeId: 1, is_active: 1, createdAt: -1 });
+ReviewSchema.index({ driverId: 1, createdAt: -1 });
+ReviewSchema.index({ storeId: 1, createdAt: -1 });
 
 const Review = mongoose.model("Review", ReviewSchema);
 export default Review;

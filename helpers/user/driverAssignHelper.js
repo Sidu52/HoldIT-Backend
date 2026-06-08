@@ -255,16 +255,15 @@ export const verifyDriversInDB = async (driverIds) => {
 
     const drivers = await Driver.find({
         _id: { $in: driverIds },
-        is_active: true,
         is_online: true,
-        status: ACCOUNT_STATUS.ACTIVE,
+        account_status: ACCOUNT_STATUS.ACTIVE,
         verification_status: VERIFICATION_STATUS.VERIFIED,
         $or: [
             { is_on_trip: false },
             { is_on_trip: { $exists: false } },
         ],
     })
-        .select("_id first_name last_name status verification_status is_active is_online is_on_trip")
+        .select("_id first_name last_name account_status verification_status is_online is_on_trip")
         .lean();
 
     return drivers;
@@ -323,18 +322,18 @@ export const handleReturnDriverNotFound = async (bookingId, reason) => {
     const booking = await Booking.findByIdAndUpdate(
         bookingId,
         {
-            $set: { 
-                status: BOOKING_STATUS.STORED, 
+            $set: {
+                status: BOOKING_STATUS.STORED,
                 lastStatusUpdatedAt: now,
                 "delivery.returnOtp": null, // Clear transient OTP
                 "delivery.assignment": null, // Clear assignment attempt
             },
-            $push: { 
-                timeline: { 
-                    status: BOOKING_STATUS.STORED, 
-                    note: `Return driver search failed: ${reason}. You can retry requesting a return.`, 
-                    createdAt: now 
-                } 
+            $push: {
+                timeline: {
+                    status: BOOKING_STATUS.STORED,
+                    note: `Return driver search failed: ${reason}. You can retry requesting a return.`,
+                    createdAt: now
+                }
             },
         },
         { new: true }
@@ -342,10 +341,10 @@ export const handleReturnDriverNotFound = async (bookingId, reason) => {
 
     if (booking?.userId) {
         const userId = booking.userId.toString();
-        
+
         // 1. Invalidate Cache
         const { invalidateBookingCache } = await import("./bookingHelper.js");
-        await invalidateBookingCache(userId, bookingId).catch(() => {});
+        await invalidateBookingCache(userId, bookingId).catch(() => { });
 
         // 2. Emit Socket Event
         try {
@@ -353,7 +352,7 @@ export const handleReturnDriverNotFound = async (bookingId, reason) => {
             const { rooms } = await import("../../src/socket/socket.rooms.js");
             const { SOCKET_EVENTS } = await import("../../src/socket/socket.events.js");
             const io = getIO();
-            
+
             io.to(rooms.user(userId)).emit(SOCKET_EVENTS.BOOKING_NO_DRIVER, {
                 bookingId,
                 status: BOOKING_STATUS.STORED,
@@ -381,7 +380,7 @@ export const updateBookingStatus = async (bookingId, status, note) => {
 
     if (booking?.userId) {
         const userId = booking.userId.toString();
-        
+
         // 1. Invalidate Cache
         const { invalidateBookingCache } = await import("./bookingHelper.js");
         await invalidateBookingCache(userId, bookingId).catch((err) =>
@@ -394,7 +393,7 @@ export const updateBookingStatus = async (bookingId, status, note) => {
             const { rooms } = await import("../../src/socket/socket.rooms.js");
             const { SOCKET_EVENTS } = await import("../../src/socket/socket.events.js");
             const io = getIO();
-            
+
             // Generic event (Legacy/Simpler)
             const payload = { bookingId, status, note };
             io.to(rooms.user(userId)).emit("booking:status_updated", payload);
@@ -417,7 +416,7 @@ export const updateBookingStatus = async (bookingId, status, note) => {
             if (specificEvent) {
                 io.to(rooms.user(userId)).emit(specificEvent, payload);
             }
-            
+
             logger.debug(`[Socket] Emitted status_updated and ${specificEvent || "none"} to ${userId}`);
         } catch (socketErr) {
             // Socket might not be initialized in some contexts (e.g. CLI tools)

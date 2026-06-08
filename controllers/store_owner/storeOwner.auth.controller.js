@@ -1,11 +1,8 @@
 import jwt from "jsonwebtoken";
 import StoreOwner from "../../models/StoreOwner.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import { get, set, del, delByPattern } from "../../services/redisService.js";
-import redis from "../../services/redisService.js";
 import { verifyStoreOwner } from "../../helpers/store_owner/storeOwner.helper.js";
 import logger from "../../utils/logger.js";
-
 import {
     STATUS_CODES,
     ACCOUNT_STATUS,
@@ -14,7 +11,8 @@ import {
     OTP_COOLDOWN,
     TOKEN_TYPES,
     OTP_FAIL_WINDOW_SECONDS,
-    ON_BOARDING_STATUS,
+    VERIFICATION_STATUS,
+    DETAIL_CACHE_TTL,
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import {
@@ -27,71 +25,112 @@ import {
 import { setAuthCookies } from "../../utils/helper.js";
 import NotificationService from "../../services/NotificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
+import {
+    getCache,
+    setCache,
+    invalidateCache,
+    deleteCache,
+    incrementCache,
+} from "../../utils/cache.js";
 
-// REGISTER
-export const registerStoreOwner = asyncHandler(async (req, res) => {
-        const { phone } = req.body;
 
-        const existingOwner = await StoreOwner.findOne({ phone }).lean();
+const ownerCacheKey = (id) => `store_owners:${id}`;
 
-        if (existingOwner) {
-            return sendError(
-                res,
-                "User already exists. Please login instead.",
-                STATUS_CODES.BAD_REQUEST
-            );
-        }
-
-        // Create new user
-        await StoreOwner.create({
-            phone,
-            status: ACCOUNT_STATUS.PENDING,
-            is_active: true,
-            is_verified: false,
-        });
-
-        // Rate limit check
-        const isRateLimited = await checkOTPRateLimit(phone);
-        if (isRateLimited) {
-            return sendError(
+// Shared OTP dispatch helper
+async function dispatchOTP(res, phone) {
+    const isRateLimited = await checkOTPRateLimit(phone);
+    if (isRateLimited) {
+        return {
+            limited: true,
+            response: sendError(
                 res,
                 "Too many OTP requests. Please try again later.",
                 STATUS_CODES.TOO_MANY_REQUESTS
-            );
-        }
+            ),
+        };
+    }
 
-        // Cooldown check
-        const cooldownKey = `otp_cooldown:${phone}`;
-        const cooldownExists = await get(cooldownKey);
-
-        if (cooldownExists) {
-            return sendError(
+    const cooldownKey = `otp_cooldown:${phone}`;
+    const cooldownExists = await getCache(cooldownKey);
+    if (cooldownExists) {
+        return {
+            limited: true,
+            response: sendError(
                 res,
                 "Please wait before requesting another OTP.",
                 STATUS_CODES.TOO_MANY_REQUESTS
-            );
-        }
+            ),
+        };
+    }
 
-        // Generate OTP
-        const otp = await generateAndStoreOTP(phone);
-        await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
+    const otp = await generateAndStoreOTP(phone);
+    await setCache(cooldownKey, "1", OTP_COOLDOWN);
+    await NotificationService.sendOTP(phone, otp);
 
-        // Send SMS/Email via abstract service
-        await NotificationService.sendOTP(phone, otp);
+    return { limited: false };
+}
 
-        return sendResponse({
+// REGISTER
+export const registerStoreOwner = asyncHandler(async (req, res) => {
+    const { phone } = req.body;
+    const existingOwner = await StoreOwner.findOne({ phone })
+        .select("verification_status")
+        .lean();
+
+    if (existingOwner?.verification_status === VERIFICATION_STATUS.VERIFIED) {
+        return sendError(
             res,
-            message: "Registration OTP sent successfully",
-            data: { otp },
-        });
+            "User already exists. Please login instead.",
+            STATUS_CODES.BAD_REQUEST
+        );
+    }
+
+    const pendingKey = `pending_owner:${phone}`;
+    await setCache(pendingKey, phone, DETAIL_CACHE_TTL);
+
+    const { limited, response } = await dispatchOTP(res, phone);
+    if (limited) return response;
+
+    return sendResponse({ res, message: "Registration OTP sent successfully" });
 });
 
 // LOGIN
 export const loginStoreOwner = asyncHandler(async (req, res) => {
-        const { phone } = req.body;
+    const { phone } = req.body;
 
+    const owner = await StoreOwner.findOne({ phone })
+        .select("account_status verification_status")
+        .lean();
+
+    if (!owner) {
+        return sendError(
+            res,
+            "User not found. Please register first.",
+            STATUS_CODES.NOT_FOUND
+        );
+    }
+
+    const ownerCheck = verifyStoreOwner(owner);
+    if (!ownerCheck.valid) {
+        return sendError(res, ownerCheck.message, ownerCheck.code);
+    }
+
+    const { limited, response } = await dispatchOTP(res, phone);
+    if (limited) return response;
+
+    return sendResponse({ res, message: "Login OTP sent successfully" });
+});
+
+// RESEND OTP
+export const sendOTP = asyncHandler(async (req, res) => {
+    const { phone } = req.body;
+
+    const pendingKey = `pending_owner:${phone}`;
+    const isPending = await getCache(pendingKey);
+
+    if (!isPending) {
         const owner = await StoreOwner.findOne({ phone })
-            .select("status is_verified is_active")
+            .select("account_status verification_status")
             .lean();
 
         if (!owner) {
@@ -102,233 +141,208 @@ export const loginStoreOwner = asyncHandler(async (req, res) => {
             );
         }
 
-        // Validate user status
         const ownerCheck = verifyStoreOwner(owner);
         if (!ownerCheck.valid) {
             return sendError(res, ownerCheck.message, ownerCheck.code);
         }
+    }
 
-        // Rate limit
-        const isRateLimited = await checkOTPRateLimit(phone);
-        if (isRateLimited) {
-            return sendError(
-                res,
-                "Too many OTP requests. Please try again later.",
-                STATUS_CODES.TOO_MANY_REQUESTS
-            );
-        }
+    const { limited, response } = await dispatchOTP(res, phone);
+    if (limited) return response;
 
-        // Cooldown
-        const cooldownKey = `otp_cooldown:${phone}`;
-        const cooldownExists = await get(cooldownKey);
-
-        if (cooldownExists) {
-            return sendError(
-                res,
-                "Please wait before requesting another OTP.",
-                STATUS_CODES.TOO_MANY_REQUESTS
-            );
-        }
-
-        // Generate OTP
-        const otp = await generateAndStoreOTP(phone);
-        await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
-
-        // Send SMS/Email via abstract service
-        await NotificationService.sendOTP(phone, otp);
-
-        return sendResponse({
-            res,
-            message: "Login OTP sent successfully",
-            data: { otp },
-        });
-});
-
-// RESEND OTP
-export const sendOTP = asyncHandler(async (req, res) => {
-        const { phone } = req.body;
-
-        const owner = await StoreOwner.findOne({ phone })
-            .select("status is_verified is_active")
-            .lean();
-
-        const ownerCheck = verifyStoreOwner(owner);
-        if (!ownerCheck.valid) {
-            return sendError(res, ownerCheck.message, ownerCheck.code);
-        }
-
-        const isRateLimited = await checkOTPRateLimit(phone);
-        if (isRateLimited) {
-            return sendError(res, "Too many OTP requests. Please try again later.", STATUS_CODES.TOO_MANY_REQUESTS);
-        }
-
-        const cooldownKey = `otp_cooldown:${phone}`;
-        const cooldownExists = await get(cooldownKey);
-        if (cooldownExists) {
-            return sendError(res, "Please wait before requesting another OTP.", STATUS_CODES.TOO_MANY_REQUESTS);
-        }
-
-        const otp = await generateAndStoreOTP(phone);
-        await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
-
-        // Send SMS/Email via abstract service
-        await NotificationService.sendOTP(phone, otp);
-
-        return sendResponse({ res, message: "OTP sent successfully", data: { otp } });
+    return sendResponse({ res, message: "OTP sent successfully" });
 });
 
 // VERIFY OTP
 export const verifyOTP = asyncHandler(async (req, res) => {
-        const { phone, otp } = req.body;
+    const { phone, otp } = req.body;
 
-        const sanitizedPhone = phone.replace(/[^0-9+]/g, "");
-        const sanitizedOtp = otp.replace(/[^0-9]/g, "");
+    const sanitizedPhone = phone.replace(/[^0-9+]/g, "");
+    const sanitizedOtp = otp.replace(/[^0-9]/g, "");
 
-        if (sanitizedOtp.length !== OTP_LENGTH) {
-            return sendError(res, `OTP must be ${OTP_LENGTH} digits`, STATUS_CODES.BAD_REQUEST);
+    if (sanitizedOtp.length !== OTP_LENGTH) {
+        return sendError(res, `OTP must be ${OTP_LENGTH} digits`, STATUS_CODES.BAD_REQUEST);
+    }
+
+    const failKey = `otp_fail:${sanitizedPhone}`;
+    const failCount = await getCache(failKey);
+    if (failCount && parseInt(failCount, 10) >= OTP_MAX_ATTEMPTS) {
+        await deleteCache(`otp:${sanitizedPhone}`);
+        return sendError(
+            res,
+            "Too many failed attempts. Please request a new OTP.",
+            STATUS_CODES.TOO_MANY_REQUESTS
+        );
+    }
+
+    // Validate OTP
+    const savedOTP = await getCache(`otp:${sanitizedPhone}`);
+    const isOtpValid =
+        savedOTP &&
+        savedOTP.length === sanitizedOtp.length &&
+        timingSafeEqual(savedOTP, sanitizedOtp);
+
+    if (!isOtpValid) {
+        await incrementCache(failKey, OTP_FAIL_WINDOW_SECONDS);
+        return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
+    }
+
+    let owner = await StoreOwner.findOne({ phone: sanitizedPhone })
+        .select("_id account_status verification_status")
+        .lean();
+
+    if (!owner) {
+        const pendingKey = `pending_owner:${sanitizedPhone}`;
+        const pendingRaw = await getCache(pendingKey);
+
+        if (!pendingRaw) {
+            return sendError(
+                res,
+                "Registration session expired. Please register again.",
+                STATUS_CODES.UNAUTHORIZED
+            );
         }
 
-        const failKey = `otp_fail:${sanitizedPhone}`;
-        const failCount = await get(failKey);
-        if (failCount && parseInt(failCount, 10) >= OTP_MAX_ATTEMPTS) {
-            await del(`otp:${sanitizedPhone}`);
-            return sendError(res, "Too many failed attempts. Please request a new OTP.", STATUS_CODES.TOO_MANY_REQUESTS);
-        }
+        owner = await StoreOwner.create({
+            phone: sanitizedPhone,
+            account_status: ACCOUNT_STATUS.ACTIVE,
+            verification_status: VERIFICATION_STATUS.VERIFIED,
+            last_login_at: new Date(),
+        });
 
-        const owner = await StoreOwner.findOne({ phone: sanitizedPhone })
-            .select("_id status is_verified is_active onboarding_status")
-            .lean();
-
-        if (!owner) {
-            return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
-        }
-
+        await deleteCache(pendingKey);
+    } else {
         const ownerCheck = verifyStoreOwner(owner);
         if (!ownerCheck.valid) {
             return sendError(res, ownerCheck.message, ownerCheck.code);
         }
+    }
 
-        const savedOTP = await get(`otp:${sanitizedPhone}`);
-        const isOtpValid =
-            savedOTP &&
-            savedOTP.length === sanitizedOtp.length &&
-            timingSafeEqual(savedOTP, sanitizedOtp);
+    await Promise.all([
+        deleteCache(`otp:${sanitizedPhone}`),
+        deleteCache(failKey),
+        deleteCache(`otp_cooldown:${sanitizedPhone}`),
+        deleteCache(`otp_rate:${sanitizedPhone}`),
+    ]);
 
-        if (!isOtpValid) {
-            await redis.multi().incr(failKey).expire(failKey, OTP_FAIL_WINDOW_SECONDS).exec();
-            return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
-        }
+    const { accessToken, refreshToken } = await generateTokenPair(
+        owner._id,
+        "store_owner",
+        "/api/v1/store-owner/auth/refresh"
+    );
 
-        await Promise.all([
-            del(`otp:${sanitizedPhone}`),
-            del(failKey),
-            del(`otp_cooldown:${sanitizedPhone}`),
-            del(`otp_rate:${sanitizedPhone}`),
-        ]);
+    StoreOwner.findByIdAndUpdate(owner._id, {
+        $set: {
+            account_status: ACCOUNT_STATUS.ACTIVE,
+            verification_status: VERIFICATION_STATUS.VERIFIED,
+            last_login_at: new Date(),
+        },
+    }).catch((err) => logger.error("Failed to update owner login timestamps:", err));
 
-        const { accessToken, refreshToken } = await generateTokenPair(owner._id, "store_owner");
+    await setCache(
+        ownerCacheKey(owner._id),
+        {
+            _id: owner._id,
+            account_status: ACCOUNT_STATUS.ACTIVE,
+            verification_status: VERIFICATION_STATUS.VERIFIED,
+        },
+        DETAIL_CACHE_TTL
+    );
 
-        const now = new Date();
-        const isFirstLogin = !owner.is_verified;
+    await setAuthCookies(res, accessToken, refreshToken, "/api/v1/store-owner/auth/refresh");
 
-        await StoreOwner.findByIdAndUpdate(owner._id, {
-            $set: {
-                is_verified: true,
-                last_login_at: now,
-                last_active_at: now,
-            },
-        });
-
-        console.log("Login successful");
-        const response = await setAuthCookies(res, accessToken, refreshToken);
-        console.log("response", response);
-        return sendResponse({
-            res,
-            message: "Login successful",
-            data: {
-                accessToken,
-                refreshToken,
-                isFirstLogin,
-                // Tells the frontend which screen to show next
-                needsOnboarding: owner.onboarding_status !== ON_BOARDING_STATUS.COMPLETED,
-            },
-        });
+    return sendResponse({ res, message: "Login successful", data: {} });
 });
 
 // REFRESH TOKEN
 export const refreshToken = asyncHandler(async (req, res) => {
-        const { token } = extractRefreshToken(req);
-        if (!token) {
-            return sendError(res, "Refresh token required.", STATUS_CODES.UNAUTHORIZED);
+    const { token } = extractRefreshToken(req);
+    if (!token) {
+        return sendError(res, "Refresh token required.", STATUS_CODES.UNAUTHORIZED);
+    }
+    let decoded;
+    try {
+        decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+    } catch (jwtErr) {
+        clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
+        if (jwtErr.name === "TokenExpiredError") {
+            return sendError(res, "Session expired. Please log in again.", STATUS_CODES.UNAUTHORIZED);
         }
+        return sendError(res, "Invalid refresh token.", STATUS_CODES.UNAUTHORIZED);
+    }
 
-        let decoded;
-        try {
-            decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
-        } catch (jwtErr) {
-            clearAuthCookies(res);
-            if (jwtErr.name === "TokenExpiredError") {
-                return sendError(res, "Session expired. Please log in again.", STATUS_CODES.UNAUTHORIZED);
-            }
-            return sendError(res, "Invalid refresh token.", STATUS_CODES.UNAUTHORIZED);
-        }
+    if (decoded.type !== TOKEN_TYPES.REFRESH) {
+        return sendError(res, "Invalid token type.", STATUS_CODES.UNAUTHORIZED);
+    }
+    const redisKey = `refresh:${decoded.auth_id}:${decoded.token_id}`;
+    const exists = await getCache(redisKey);
 
-        if (decoded.type !== TOKEN_TYPES.REFRESH) {
-            return sendError(res, "Invalid token type.", STATUS_CODES.UNAUTHORIZED);
-        }
+    if (!exists) {
+        await invalidateCache(`refresh:${decoded.auth_id}:*`);
+        clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
+        return sendError(
+            res,
+            "Session invalid. All sessions have been revoked for security.",
+            STATUS_CODES.FORBIDDEN
+        );
+    }
 
-        const redisKey = `refresh:${decoded.auth_id}:${decoded.token_id}`;
-        const exists = await get(redisKey);
+    const cacheKey = ownerCacheKey(decoded.auth_id);
+    let owner = await getCache(cacheKey);
 
-        if (!exists) {
-            await delByPattern(`refresh:${decoded.auth_id}:*`);
-            clearAuthCookies(res);
-            return sendError(res, "Session invalid. All sessions have been revoked for security.", STATUS_CODES.FORBIDDEN);
-        }
-
-        const owner = await StoreOwner.findById(decoded.auth_id)
-            .select("status is_active")
+    if (!owner) {
+        owner = await StoreOwner.findById(decoded.auth_id)
+            .select("account_status verification_status")
             .lean();
 
         if (!owner) {
-            await del(redisKey);
-            clearAuthCookies(res);
+            await deleteCache(redisKey);
+            clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
             return sendError(res, "Store owner account not found.", STATUS_CODES.UNAUTHORIZED);
         }
+        await setCache(cacheKey, owner, DETAIL_CACHE_TTL);
+    }
 
-        if (owner.status === ACCOUNT_STATUS.BLOCKED || !owner.is_active) {
-            await del(redisKey);
-            clearAuthCookies(res);
-            return sendError(res, "This account has been suspended.", STATUS_CODES.FORBIDDEN);
-        }
+    if (
+        owner.account_status === ACCOUNT_STATUS.BLOCKED ||
+        owner.verification_status !== VERIFICATION_STATUS.VERIFIED
+    ) {
+        await deleteCache(redisKey);
+        await invalidateCache("store_owner", decoded.auth_id);
+        clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
+        return sendError(res, "This account has been suspended.", STATUS_CODES.FORBIDDEN);
+    }
 
-        await del(redisKey);
+    await deleteCache(redisKey);
 
-        const { accessToken, refreshToken: newRefreshToken } = await generateTokenPair(decoded.auth_id, "store_owner");
+    const { accessToken, refreshToken: newRefreshToken } = await generateTokenPair(
+        decoded.auth_id,
+        "store_owner",
+        "/api/v1/store-owner/auth/refresh"
+    );
+    StoreOwner.findByIdAndUpdate(decoded.auth_id, { last_login_at: new Date() }).catch((err) =>
+        logger.error("Failed to update owner last_login_at:", err)
+    );
 
-        StoreOwner.findByIdAndUpdate(decoded.auth_id, {
-            last_active_at: new Date(),
-        }).catch((err) => logger.error("Failed to update owner last_active_at:", err));
-setAuthCookies(res, accessToken, refreshToken);
-        return sendResponse({
-            res,
-            message: "Token refreshed successfully",
-            data: { accessToken, refreshToken: newRefreshToken },
-        });
+    await setAuthCookies(res, accessToken, newRefreshToken, "/api/v1/store-owner/auth/refresh");
+    return sendResponse({ res, message: "Token refreshed successfully" });
 });
 
 // LOGOUT
 export const logout = asyncHandler(async (req, res) => {
-        const token = req.cookies?.refreshToken;
+    const token = req.cookies?.refreshToken;
 
-        if (token) {
-            const decoded = jwt.decode(token);
-            if (decoded?.auth_id && decoded?.token_id) {
-                await del(`refresh:${decoded.auth_id}:${decoded.token_id}`);
-                await del(`access:${decoded.auth_id}:${decoded.token_id}`);
-            }
+    if (token) {
+        const decoded = jwt.decode(token);
+        if (decoded?.auth_id && decoded?.token_id) {
+            await Promise.all([
+                deleteCache(`refresh:${decoded.auth_id}:${decoded.token_id}`),
+                deleteCache(`access:${decoded.auth_id}:${decoded.token_id}`),
+                invalidateCache("store_owner", decoded.auth_id),
+            ]);
         }
+    }
 
-        clearAuthCookies(res);
-        return sendResponse({ res, message: "Logged out successfully" });
+    clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
+    return sendResponse({ res, message: "Logged out successfully" });
 });

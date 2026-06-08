@@ -4,15 +4,13 @@ export const DRIVER_CACHE = {
     DETAIL_KEY: (driverId) => `driver:user_view:${driverId}`,
     REVIEWS_KEY: (driverId, page, limit) => `driver:reviews:${driverId}:${page}:${limit}`,
 
-    DETAIL_TTL: 300,  
-    REVIEWS_TTL: 180,  
+    DETAIL_TTL: 300,
+    REVIEWS_TTL: 180,
 };
 
 export const DRIVER_VISIBILITY_FILTER = {
-    is_active: true,
-    is_verified: true,
     verification_status: VERIFICATION_STATUS.VERIFIED,
-    status: ACCOUNT_STATUS.ACTIVE,
+    account_status: ACCOUNT_STATUS.ACTIVE,
 };
 
 export const DRIVER_SELECT = {

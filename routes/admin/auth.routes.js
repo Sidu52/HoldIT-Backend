@@ -11,6 +11,7 @@ import {
     updateAdminPassword,
     verifyAdminForgotPasswordToken,
     verifyAuth,
+    refresh,
 } from "../../controllers/admin/auth.admin.controller.js";
 import {
     forgotPasswordSchema,
@@ -21,7 +22,6 @@ import {
     tokenQuerySchema,
 } from "../../validations/admin/auth.validation.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
-import { refresh } from "../../controllers/common/auth.common.controller.js";
 import { USER_ROLES } from "../../utils/constants.js";
 
 const router = express.Router();
@@ -65,7 +65,7 @@ router.post(
     createAdminForgotPasswordToken
 );
 
-// Verify reset token (from email link)
+// Verify reset token 
 router.get(
     "/verify-reset-token",
     apiLimiter,

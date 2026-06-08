@@ -30,7 +30,7 @@ export const updateProfileSchema = Joi.object({
     first_name: Joi.string().trim().min(2).max(50),
     last_name: Joi.string().trim().min(2).max(50),
     gender: Joi.string().valid(...GENDER_OPTIONS),
-    dob: Joi.date().less("now").messages({
+    date_of_birth: Joi.date().less("now").messages({
         "date.less": "Date of birth must be in the past",
     }),
     address: Joi.string().trim().min(5).max(255),
