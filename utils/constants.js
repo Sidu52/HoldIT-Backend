@@ -93,7 +93,7 @@ export const STORES_CACHE_TTL = 120;     // 2 minutes
 export const DASHBOARD_CACHE_TTL = 300;  // 5 minutes
 
 // OTP CONFIGURATION
-export const OTP_LENGTH = 6;
+export const OTP_LENGTH = 4;
 export const OTP_EXPIRY = 10;                      // minutes — OTP valid for 10 mins
 export const OTP_COOLDOWN = 60;                    // seconds between resend requests
 export const OTP_MAX_ATTEMPTS = 5;                 // max failed verifications before lockout

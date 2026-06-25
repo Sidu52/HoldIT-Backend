@@ -21,6 +21,7 @@ import {
     generateTokenPair,
     checkOTPRateLimit,
 } from "../../helpers/user/authHelper.js";
+import { deleteUserProfileCache } from "./cache.js";
 import { setAuthCookies } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 import NotificationService from "../../services/NotificationService.js";
@@ -473,7 +474,7 @@ export const updateUserDetails = asyncHandler(async (req, res) => {
     }
 
     // Bust profile cache
-    await del(`user:profile:${auth_id}`);
+    await deleteUserProfileCache(auth_id);
 
     return sendResponse({
         res,

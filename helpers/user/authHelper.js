@@ -48,7 +48,7 @@ export const generateTokenPair = async (userId, role, path) => {
 
     await set(
         `refresh:${userId}:${tokenId}`,
-        "valid",
+        JSON.stringify("valid"),
         "EX",
         REFRESH_TOKEN_EXPIRY
     );
@@ -81,7 +81,7 @@ export const generateAndStoreOTP = async (phone) => {
     await redis
         .multi()
         .del(otpKey)
-        .set(otpKey, otp, "EX", OTP_EXPIRY * 60)
+        .set(otpKey, JSON.stringify(otp), "EX", OTP_EXPIRY * 60)
         .exec();
 
     return otp;

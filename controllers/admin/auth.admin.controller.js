@@ -9,7 +9,11 @@ import sendEmail from "../../mailer/emailService.js";
 import { ACCOUNT_STATUS, STATUS_CODES, TOKEN_TYPES, VERIFICATION_STATUS, REFRESH_TOKEN_EXPIRY } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
-import { clearAuthCookies, setAuthCookies, generateTokenPair, generateRefreshToken, generateAccessToken } from "../../utils/token.js";
+import { clearAuthCookies, setAuthCookies, generateRefreshToken, generateAccessToken } from "../../utils/token.js";
+import { generateTokenPair } from "../../helpers/user/authHelper.js";
+
+const BCRYPT_SALT_ROUNDS = 12;
+const FORGOT_PASSWORD_EXPIRY = 60 * 60; // 1 hour in seconds
 
 const REFRESH_KEY = (authId, tokenId) => `refresh:${authId}:${tokenId}`;
 const INVITE_TOKEN_KEY = (token) => `admin:invite:token:${token}`;
@@ -143,7 +147,7 @@ export const refresh = async (req, res) => {
         // Rotate: delete old, issue new
         await deleteCache(redisKey);
         const newTokenId = uuidv4();
-        const newRefreshToken = generateRefreshToken({ auth_id: admin._id, token_id: newTokenId, type: TOKEN_TYPES.REFRESH, path: decoded.path });
+        const newRefreshToken = generateRefreshToken({ auth_id: admin._id, role: admin.role, token_id: newTokenId, type: TOKEN_TYPES.REFRESH, path: decoded.path });
         const newAccessToken = generateAccessToken({ auth_id: admin._id, role: admin.role, type: TOKEN_TYPES.ACCESS });
 
         await setCache(REFRESH_KEY(admin._id, newTokenId), "valid", REFRESH_TOKEN_EXPIRY);

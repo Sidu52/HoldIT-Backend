@@ -235,7 +235,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
     try {
         decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
     } catch (jwtErr) {
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/store/auth/refresh");
         if (jwtErr.name === "TokenExpiredError") {
             return sendError(res, "Session expired. Please log in again.", STATUS_CODES.UNAUTHORIZED);
         }
@@ -251,7 +251,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
     if (!exists) {
         await delByPattern(`refresh:${decoded.auth_id}:*`);
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/store/auth/refresh");
         return sendError(
             res,
             "Session invalid. All sessions have been revoked for security.",
@@ -266,7 +266,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
     if (!store) {
         await del(redisKey);
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/store/auth/refresh");
         return sendError(res, "Store account not found", STATUS_CODES.UNAUTHORIZED);
     }
 
@@ -278,7 +278,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
             delByPattern(`refresh:${decoded.auth_id}:*`),
             delByPattern(`access:${decoded.auth_id}:*`),
         ]);
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/store/auth/refresh");
         return sendError(res, storeCheck.message, storeCheck.code);
     }
 
@@ -292,7 +292,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
     }).catch((err) => logger.error("Failed to update store last_active_at:", err));
 
     // Set cookies
-    setAuthCookies(res, accessToken, refreshToken, "/api/v1/store/auth/refresh");
+    setAuthCookies(res, accessToken, newRefreshToken, "/api/v1/store/auth/refresh");
 
     return sendResponse({
         res,
@@ -302,7 +302,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
 // LOGOUT
 export const logout = asyncHandler(async (req, res) => {
-    const token = req.cookies?.refreshToken;
+    const { token } = extractRefreshToken(req);
 
     if (token) {
         const decoded = jwt.decode(token);
@@ -311,6 +311,6 @@ export const logout = asyncHandler(async (req, res) => {
             await del(`access:${decoded.auth_id}:${decoded.token_id}`);
         }
     }
-    clearAuthCookies(res);
+    clearAuthCookies(res, "/api/v1/store/auth/refresh");
     return sendResponse({ res, message: "Logged out successfully" });
 });

@@ -5,7 +5,7 @@ import Store from "../../models/Store.js";
 import User from "../../models/User.js";
 import { del, delByPattern } from "../../services/redisService.js";
 import { addJobToQueue } from "../../services/jobService.js";
-import { checkServiceability } from "../../helpers/user/addressHelper.js";
+import { checkServiceability } from "./addressHelper.js";
 import { ACCOUNT_STATUS, BOOKING_STATUS, JOB_QUEUES } from "../../utils/constants.js";
 import {
     STORE_SEARCH,

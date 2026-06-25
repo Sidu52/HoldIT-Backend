@@ -38,7 +38,8 @@ const ownerCacheKey = (id) => `store_owners:${id}`;
 
 // Shared OTP dispatch helper
 async function dispatchOTP(res, phone) {
-    const isRateLimited = await checkOTPRateLimit(phone);
+    const normalizedPhone = String(phone).replace(/[^0-9+]/g, "");
+    const isRateLimited = await checkOTPRateLimit(normalizedPhone);
     if (isRateLimited) {
         return {
             limited: true,
@@ -50,7 +51,7 @@ async function dispatchOTP(res, phone) {
         };
     }
 
-    const cooldownKey = `otp_cooldown:${phone}`;
+    const cooldownKey = `otp_cooldown:${normalizedPhone}`;
     const cooldownExists = await getCache(cooldownKey);
     if (cooldownExists) {
         return {
@@ -63,9 +64,9 @@ async function dispatchOTP(res, phone) {
         };
     }
 
-    const otp = await generateAndStoreOTP(phone);
+    const otp = await generateAndStoreOTP(normalizedPhone);
     await setCache(cooldownKey, "1", OTP_COOLDOWN);
-    await NotificationService.sendOTP(phone, otp);
+    await NotificationService.sendOTP(normalizedPhone, otp);
 
     return { limited: false };
 }
@@ -330,7 +331,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
 // LOGOUT
 export const logout = asyncHandler(async (req, res) => {
-    const token = req.cookies?.refreshToken;
+    const { token } = extractRefreshToken(req);
 
     if (token) {
         const decoded = jwt.decode(token);

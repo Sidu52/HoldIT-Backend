@@ -64,6 +64,8 @@ app.use(
             const allowedOrigins = [
                 "http://localhost:4000",
                 "http://localhost:4001",
+                "http://localhost:3000",
+                "http://localhost:3001",
                 process.env.CLIENT_URL
             ].filter(Boolean);
 
