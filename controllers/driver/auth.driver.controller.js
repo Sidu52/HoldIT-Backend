@@ -21,6 +21,7 @@ import {
     UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
+import { setAuthCookies } from "../../utils/helper.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
@@ -284,6 +285,8 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         "/api/v1/driver/auth/refresh"
     );
 
+    setAuthCookies(res, accessToken, refreshToken, "/api/v1/driver/auth/refresh");
+
     const now = new Date();
     // FIX: Check verification_status instead of is_verified
     const isFirstLogin = driver.verification_status !== VERIFICATION_STATUS.VERIFIED;
@@ -348,7 +351,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
     try {
         decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
     } catch (jwtErr) {
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/driver/auth/refresh");
 
         if (jwtErr.name === "TokenExpiredError") {
             return sendError(
@@ -377,7 +380,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
     if (!exists) {
         await delByPattern(`refresh:${decoded.auth_id}:*`);
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
             "Session invalid. All sessions have been revoked for security.",
@@ -390,7 +393,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
     if (!driver) {
         await del(redisKey);
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
             "Account not found",
@@ -400,7 +403,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
     if (driver.account_status === ACCOUNT_STATUS.BLOCKED) {
         await del(redisKey);
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
             "Your account has been suspended.",
@@ -410,7 +413,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
     if (driver.verification_status !== VERIFICATION_STATUS.VERIFIED) {
         await del(redisKey);
-        clearAuthCookies(res);
+        clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
             "Account verification required.",
@@ -422,6 +425,8 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
     const { accessToken, refreshToken: newRefreshToken } =
         await generateTokenPair(decoded.auth_id, "driver", "/api/v1/driver/auth/refresh");
+
+    setAuthCookies(res, accessToken, newRefreshToken, "/api/v1/driver/auth/refresh");
 
     Driver.findByIdAndUpdate(decoded.auth_id, {
         last_active_at: new Date(),
@@ -621,7 +626,7 @@ export const updateDriverDetails = asyncHandler(async (req, res) => {
 
 //LOGOUT
 export const logout = asyncHandler(async (req, res) => {
-    const token = req.cookies?.refreshToken;
+    const { token } = extractRefreshToken(req);
 
     if (token) {
         try {
@@ -635,7 +640,7 @@ export const logout = asyncHandler(async (req, res) => {
         }
     }
 
-    clearAuthCookies(res);
+    clearAuthCookies(res, "/api/v1/driver/auth/refresh");
 
     return sendResponse({
         res,

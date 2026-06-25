@@ -1,5 +1,5 @@
 import { get, set, update, exists, del, delMany, delByPattern } from "../services/redisService.js";
-import logger from "../utils/logger.js";
+import logger from "./logger.js";
 
 export const buildCacheKey = (prefix, params = {}) =>
     [prefix, ...Object.entries(params)
@@ -99,4 +99,4 @@ export const invalidateCache = async (patternOrPrefix, id) => {
 
 // ── Aliases for backward compatibility (previously lived in utils/cacheHelper.js) ──
 export const getCachedData = getCache;
-export const setCacheData  = setCache;
+export const setCacheData = setCache;

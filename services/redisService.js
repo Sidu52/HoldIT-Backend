@@ -115,6 +115,11 @@ export const initRedis = async () => {
 };
 
 // BASIC OPERATIONS
+const normalizeTTL = (ttl) => {
+    const parsed = Number(ttl);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
 export const get = async (key) => {
     if (!key) throw new Error("Redis GET: key is required");
     return redis.get(key);
@@ -124,7 +129,8 @@ export const set = async (key, value, ttl = null) => {
     if (!key || value === undefined || value === null) {
         throw new Error("Redis SET: key and value are required");
     }
-    return ttl ? redis.set(key, value, "EX", ttl) : redis.set(key, value);
+    const expireSeconds = normalizeTTL(ttl);
+    return expireSeconds ? redis.set(key, value, "EX", expireSeconds) : redis.set(key, value);
 };
 
 export const update = async (key, value, ttl = null) => {

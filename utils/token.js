@@ -43,13 +43,14 @@ export const generateAccessToken = ({ auth_id, role, type }) => {
   return jwt.sign({ auth_id, role, type: type || "access" }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRY });
 };
 
-export const generateRefreshToken = ({ auth_id, role, session_id, path }) => {
+export const generateRefreshToken = ({ auth_id, role, token_id, session_id, path }) => {
   if (!auth_id || !role) throw new Error("Missing required fields for refresh token");
-  const token_id = session_id || crypto.randomUUID();
+  // Accept either token_id (preferred) or session_id (legacy alias)
+  const resolvedTokenId = token_id || session_id || crypto.randomUUID();
   const payload = {
     auth_id,
     role,
-    token_id,
+    token_id: resolvedTokenId,
     type: "refresh",
   };
   if (path) {
@@ -93,16 +94,32 @@ export const generateTokenPair = (userOrAuth, session_id, path) => {
 // -------------------------
 // COOKIE OPERATIONS
 // -------------------------
+const getCookieNames = (path = "") => {
+  if (path.includes("/admin")) {
+    return { access: "admin_accessToken", refresh: "admin_refreshToken" };
+  }
+  return { access: "accessToken", refresh: "refreshToken" };
+};
+
 export const setAuthCookies = (res, accessToken, refreshToken, refreshCookiePath = "/") => {
-  res.cookie("accessToken", accessToken, ACCESS_COOKIE_OPTIONS);
+  const names = getCookieNames(refreshCookiePath);
+
+  res.cookie(names.access, accessToken, ACCESS_COOKIE_OPTIONS);
   res.cookie(
-    "refreshToken",
+    names.refresh,
     refreshToken,
     {
       ...REFRESH_COOKIE_OPTIONS,
       path: refreshCookiePath,
     }
   );
+
+  const hasSessionName = refreshCookiePath.includes("/admin") ? "admin_hasSession" : "hasSession";
+  res.cookie(hasSessionName, "true", {
+    ...ACCESS_COOKIE_OPTIONS,
+    httpOnly: false,
+    maxAge: REFRESH_COOKIE_OPTIONS.maxAge,
+  });
 };
 
 export const clearAuthCookies = (res, refreshCookiePath = "/") => {
@@ -118,10 +135,13 @@ export const clearAuthCookies = (res, refreshCookiePath = "/") => {
 
   res.clearCookie("accessToken", { ...BASE_COOKIE_OPTIONS, path: "/" });
   res.clearCookie("admin_accessToken", { ...BASE_COOKIE_OPTIONS, path: "/" });
+  res.clearCookie("hasSession", { ...BASE_COOKIE_OPTIONS, path: "/" });
+  res.clearCookie("admin_hasSession", { ...BASE_COOKIE_OPTIONS, path: "/" });
+
   refreshPaths.forEach((path) => {
     res.clearCookie("refreshToken", { ...BASE_COOKIE_OPTIONS, path });
+    res.clearCookie("admin_refreshToken", { ...BASE_COOKIE_OPTIONS, path });
   });
-  res.clearCookie("admin_refreshToken", { ...BASE_COOKIE_OPTIONS, path: "/api/v1/admin/auth/refresh" });
 };
 
 // // Example user object for Admin
