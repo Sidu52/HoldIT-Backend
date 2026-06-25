@@ -59,6 +59,7 @@ app.use(
 app.use(
     cors({
         origin: function (origin, callback) {
+            console.log("Incoming origin:", origin, "| Allowed:", process.env.CLIENT_URL);
             if (!origin) return callback(null, true);
 
             const allowedOrigins = [
@@ -115,7 +116,7 @@ const PORT = process.env.PORT || 3000;
 const start = async () => {
     await initRedis();
     await connectMongo();
-    
+
     // BullMQ workers
     initializeWorkers();
 
