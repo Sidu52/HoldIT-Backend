@@ -4,15 +4,29 @@ import { addDriverToRedis, removeDriverFromRedis } from "../../services/driverGe
 import logger from "../../utils/logger.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import { STATUS_CODES } from "../../utils/constants.js";
+import { STATUS_CODES, ACCOUNT_STATUS } from "../../utils/constants.js";
+import { getIO } from "../../src/socket/index.js";
+import {
+  emitAdminDriverLocationUpdated,
+  emitAdminDriverStatusChanged,
+} from "../../src/socket/emitters/driver.emitter.js";
+
+const safeGetIO = () => {
+  try {
+    return getIO();
+  } catch {
+    return null;
+  }
+};
 
 // Get Driver Profile
 export const getDriverProfile = asyncHandler(async (req, res) => {
   const driverId = req.user.auth_id;
+  console.log("driverId", driverId);
   const driver = await Driver.findById(driverId)
     .select("-password_hash -__v")
     .lean();
-
+  console.log("driver", driver);
   if (!driver) {
     return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
   }
@@ -95,6 +109,20 @@ export const updateDriverStatus = asyncHandler(async (req, res) => {
     await removeDriverFromRedis(driverId);
   }
   await driver.save();
+
+  const io = safeGetIO();
+  if (io) {
+    const [longitude, latitude] = driver.currentLocation?.coordinates || [];
+    emitAdminDriverStatusChanged(
+      io,
+      driverId,
+      `${driver.first_name || ""} ${driver.last_name || ""}`.trim(),
+      driver.is_online,
+      driver.is_on_trip,
+      longitude != null && latitude != null ? { lat: latitude, lng: longitude } : null
+    );
+  }
+
   return sendResponse({ res, message: "Driver status updated", data: { is_online } });
 });
 
@@ -103,11 +131,21 @@ export const updateDriverLocation = asyncHandler(async (req, res) => {
   const driverId = req.user.auth_id;
   const { lng, lat } = req.body;
 
-  if (!lng || !lat) {
+  if (lng == null || lat == null) {
     return sendError(res, "Coordinates required", STATUS_CODES.BAD_REQUEST);
   }
 
-  if (lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+  const longitude = Number(lng);
+  const latitude = Number(lat);
+
+  if (
+    Number.isNaN(longitude) ||
+    Number.isNaN(latitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    latitude < -90 ||
+    latitude > 90
+  ) {
     return sendError(res, "Invalid coordinates", STATUS_CODES.BAD_REQUEST);
   }
 
@@ -121,12 +159,23 @@ export const updateDriverLocation = asyncHandler(async (req, res) => {
     return sendError(res, "Driver not eligible", STATUS_CODES.FORBIDDEN);
   }
 
+  const updatedAt = new Date();
   driver.currentLocation = {
     type: "Point",
-    coordinates: [lng, lat],
+    coordinates: [longitude, latitude],
+    updatedAt,
   };
-  driver.last_active_at = new Date();
+  driver.last_active_at = updatedAt;
   await driver.save();
+
+  const io = safeGetIO();
+  if (io) {
+    emitAdminDriverLocationUpdated(io, driverId, {
+      lat: latitude,
+      lng: longitude,
+      updatedAt: updatedAt.getTime(),
+    });
+  }
 
   return sendResponse({
     res,

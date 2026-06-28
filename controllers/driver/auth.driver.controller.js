@@ -245,12 +245,19 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         );
     }
 
-    const savedOTP = await get(`otp:${sanitizedPhone}`);
+    let savedOTP = await get(`otp:${sanitizedPhone}`);
+    if (savedOTP) {
+        try {
+            savedOTP = JSON.parse(savedOTP);
+        } catch (_) {
+            // Keep as string if not JSON
+        }
+    }
 
     const isOtpValid =
         savedOTP &&
-        savedOTP.length === sanitizedOtp.length &&
-        timingSafeEqual(savedOTP, sanitizedOtp);
+        String(savedOTP).length === sanitizedOtp.length &&
+        timingSafeEqual(String(savedOTP), sanitizedOtp);
 
     if (!isOtpValid) {
         await redis

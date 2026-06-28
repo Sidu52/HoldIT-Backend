@@ -36,7 +36,7 @@ import {
 import { autoCancelBooking } from "../../helpers/user/bookingHelper.js";
 import { getIO } from "../../src/socket/index.js";
 import { emitBookingDriverSearching, emitBookingNoDriverAvailable } from "../../src/socket/emitters/booking.emitter.js";
-import { emitAdminAlertNoDriver, emitDriverNewOffer } from "../../src/socket/emitters/driver.emitter.js";
+import { emitAdminAlertNoDriver, emitDriverNewOffer, emitDriverOfferRemoved } from "../../src/socket/emitters/driver.emitter.js";
 import logger from "../../utils/logger.js";
 
 /** Safely get the Socket.IO instance; returns null if not initialized. */
@@ -380,6 +380,10 @@ async function handleOfferTimeout(job) {
 
 async function handleDriverTimeout(bookingId, type, driverId, attemptNumber) {
     await clearOffer(bookingId, driverId);
+    emitDriverOfferRemoved(safeGetIO(), driverId, {
+        bookingId,
+        reason: "timeout",
+    });
     await markDriverTried(bookingId, driverId);
 
     const remaining = await getRemainingCandidateCount(bookingId);

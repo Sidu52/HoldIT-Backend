@@ -60,7 +60,10 @@ app.use(
     cors({
         origin: function (origin, callback) {
             console.log("Incoming origin:", origin, "| Allowed:", process.env.CLIENT_URL);
-            if (!origin) return callback(null, true);
+            // If origin is undefined (e.g. mobile app, server-to-server, or tool), allow it
+            if (!origin || origin === "undefined") {
+                return callback(null, true);
+            }
 
             const allowedOrigins = [
                 "http://localhost:4000",
