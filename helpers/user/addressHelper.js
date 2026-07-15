@@ -119,6 +119,7 @@ export const formatAddressString = (address) => {
 // Build address object
 export const buildAddressObject = async (body) => {
     const address = {
+        type: (body.type || body.address_type || "Other").trim(),
         street: body.street.trim(),
         city: body.city.trim(),
         state: body.state.trim(),

@@ -20,6 +20,7 @@ import {
     processArriveAtStore,
     buildPagination,
     processDriverCancelRide,
+    processArriveAtStoreForReturn,
     processArriveAtUserReturn,
     processCompleteDelivery,
 } from "../../helpers/driver/driverRideHelper.js";
@@ -440,6 +441,49 @@ export const arriveAtStoreController = async (req, res) => {
     } catch (err) {
         logger.error("Arrive At Store Error:", err);
         return sendError(res, "Failed to update store arrival.");
+    }
+};
+
+// ARRIVE AT STORE FOR RETURN — driver reached the store to collect return luggage
+export const arriveAtStoreForReturnController = async (req, res) => {
+    try {
+        const driverId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        const booking = await processArriveAtStoreForReturn(booking_id, driverId);
+
+        if (!booking) {
+            return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        }
+
+        await Promise.all([
+            invalidateDriverRideCache(driverId, booking_id),
+            invalidateBookingCache(booking.userId.toString(), booking_id),
+        ]);
+
+        // Emit socket event if needed or store status update
+        try {
+            const io = safeGetIO();
+            if (io) {
+                // Inform store that return driver has arrived
+                io.to(`store:${booking.storeId}`).emit("store:driver_arrived_for_return", {
+                    bookingId: booking._id,
+                    driverId,
+                    arrivedAt: new Date(),
+                });
+            }
+        } catch (socketErr) {
+            logger.debug(`[ArriveStoreForReturn:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
+        return sendResponse({
+            res,
+            message: "Arrived at store for return luggage pickup.",
+            data: { bookingId: booking._id, status: booking.status },
+        });
+    } catch (err) {
+        logger.error("Arrive At Store For Return Error:", err);
+        return sendError(res, "Failed to update store arrival for return.");
     }
 };
 

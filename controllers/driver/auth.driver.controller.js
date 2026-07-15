@@ -582,9 +582,9 @@ export const updateDriverDetails = asyncHandler(async (req, res) => {
     }
 
     if (date_of_birth) {
-        const date_of_birth = new Date(date_of_birth);
-        if (!isNaN(date_of_birth.getTime())) {
-            updateData.date_of_birth = date_of_birth;
+        const dob = new Date(date_of_birth);
+        if (!isNaN(dob.getTime())) {
+            updateData.date_of_birth = dob;
         }
     }
 

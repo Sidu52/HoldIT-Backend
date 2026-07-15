@@ -416,7 +416,14 @@ export const updateAddress = asyncHandler(
             coordinates,
             is_default,
             label,
+            type,
+            address_type,
         } = req.body;
+
+        const resolvedType = type || address_type;
+        if (sanitizeString(resolvedType)) {
+            address.type = sanitizeString(resolvedType);
+        }
 
         if (sanitizeString(street)) {
             address.street =

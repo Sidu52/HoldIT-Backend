@@ -54,12 +54,12 @@ export const completeRideSchema = {
     }),
     body: Joi.object({
         otp: Joi.string()
-            .length(6)
-            .pattern(/^[0-9]{6}$/)
+            .length(4)
+            .pattern(/^[0-9]{4}$/)
             .required()
             .messages({
-                "string.length": "OTP must be exactly 6 characters.",
-                "string.pattern.base": "OTP must be a 6-digit numeric code.",
+                "string.length": "OTP must be exactly 4 characters.",
+                "string.pattern.base": "OTP must be a 4-digit numeric code.",
                 "any.required": "Verification OTP is required.",
             }),
     }),

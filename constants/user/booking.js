@@ -133,7 +133,7 @@ export const DEFAULT_JOB_OPTIONS = {
 
 // MONGOOSE SELECT STRINGS
 export const BOOKING_SELECT = {
-    LIST: "bookingCode status pickupLocation luggage pickup storage delivery pricing payment timeline createdAt",
+    LIST: "bookingCode status pickupLocation deliveryLocation luggage pickup storage delivery pricing payment timeline createdAt",
     DETAIL: "-__v",
     CANCEL: "status cancelledAt cancelledBy cancelReason timeline",
     RETURN: "status delivery deliveryLocation timeline",

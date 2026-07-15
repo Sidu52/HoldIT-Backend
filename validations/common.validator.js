@@ -13,11 +13,11 @@ export const loginByPhone = (label = "Phone", required = true) => Joi.object({
 export const verifyOTP = (label = "OTP") => Joi.object({
     phone: phoneField,
     otp: Joi.string()
-        .length(6)
-        .pattern(/^[0-9]{6}$/)
+        .length(4)
+        .pattern(/^[0-9]{4}$/)
         .required()
         .messages({
-            "string.length": "OTP must be exactly 6 digits",
+            "string.length": "OTP must be exactly 4 digits",
             "string.pattern.base": "OTP must contain only digits",
             "any.required": "OTP is required",
         }),

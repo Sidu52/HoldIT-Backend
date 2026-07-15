@@ -1,6 +1,6 @@
 import redis, { del } from "../../services/redisService.js";
 import Driver from "../../models/Driver.js";
-import { addDriverToRedis, removeDriverFromRedis } from "../../services/driverGeoService.js";
+import { addDriverToRedis, removeDriverFromRedis, updateDriverLocation as updateRedisLocation } from "../../services/driverGeoService.js";
 import logger from "../../utils/logger.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
@@ -167,6 +167,9 @@ export const updateDriverLocation = asyncHandler(async (req, res) => {
   };
   driver.last_active_at = updatedAt;
   await driver.save();
+
+  // Update location in Redis geo indexes (global & service-area specific)
+  await updateRedisLocation(driverId, longitude, latitude, driver.service_area_id);
 
   const io = safeGetIO();
   if (io) {

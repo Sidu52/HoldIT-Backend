@@ -121,11 +121,10 @@ export const removeDriverFromRedis = async (driverId, serviceAreaId = null) => {
 };
 
 // UPDATE LOCATION
-// Called on every driver location ping updates geo position only,
-// does not touch meta fields like is_on_trip.
+// Called on every driver location ping — updates geo position and ensures
+// meta hash stays healthy (rebuilds it if it was deleted by a race condition).
 
 export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = null) => {
-    console.log(`[DriverGeo] updateDriverLocation for ${driverId}: [${lng}, ${lat}]`);
     if (!driverId || lng == null || lat == null) return false;
 
     if (
@@ -139,6 +138,9 @@ export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = n
     const driverIdStr = driverId.toString();
 
     try {
+        // Check if meta hash exists; if not, rebuild it (handles race with removeDriverFromRedis)
+        const metaExists = await redis.exists(`driver:meta:${driverIdStr}`);
+
         const pipeline = redis.pipeline();
 
         if (serviceAreaId) {
@@ -146,7 +148,22 @@ export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = n
         }
 
         pipeline.geoadd("drivers:global", lng, lat, driverIdStr);
-        pipeline.hset(`driver:meta:${driverIdStr}`, { updated_at: Date.now().toString() });
+
+        if (!metaExists) {
+            // Meta was deleted (race condition) — rebuild full meta so eligibility checks pass
+            logger.info(`[DriverGeo] Rebuilding meta for ${driverIdStr} (was deleted)`);
+            pipeline.hset(`driver:meta:${driverIdStr}`, {
+                is_online: "true",
+                is_on_trip: "false",
+                service_area_id: serviceAreaId?.toString() ?? "",
+                updated_at: Date.now().toString(),
+            });
+        } else {
+            pipeline.hset(`driver:meta:${driverIdStr}`, { updated_at: Date.now().toString() });
+        }
+
+        // Refresh TTL on every ping — driver stays active as long as they're sending updates
+        pipeline.expire(`driver:meta:${driverIdStr}`, 3600);
 
         await pipeline.exec();
         return true;

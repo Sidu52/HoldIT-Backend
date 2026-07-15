@@ -10,6 +10,7 @@ import {
     arriveAtPickupController,
     completePickupController,
     arriveAtStoreController,
+    arriveAtStoreForReturnController,
     cancelRideController,
     getPendingOfferController,
     arriveAtUserReturnController,
@@ -34,7 +35,6 @@ router.get("/active", apiLimiter, getActiveRideController);
 
 router.get("/history", apiLimiter, getRideHistoryController);
 router.get("/:booking_id", apiLimiter, getRideDetailsController);
-router.get("/:booking_id", apiLimiter, getRideDetailsController);
 
 // OFFER
 router.post("/:booking_id/accept", apiLimiter, acceptRideController);
@@ -50,6 +50,7 @@ router.put(
     completePickupController
 );
 router.put("/:booking_id/arrive-store", apiLimiter, arriveAtStoreController);
+router.put("/:booking_id/arrive-store-return", apiLimiter, arriveAtStoreForReturnController);
 
 // CANCELLATION 
 router.post(
