@@ -51,8 +51,9 @@ export const listQuerySchema = Joi.object({
   search: Joi.string().trim().max(100).allow(""),
   account_status: Joi.string()
     .valid(...Object.values(ACCOUNT_STATUS))
+    .allow("", null)
     .messages({
-      "any.only": `account_status must be one of: ${Object.values(ACCOUNT_STATUS).join(", ")}`,
+      "any.only": `account_status must be empty or one of: ${Object.values(ACCOUNT_STATUS).join(", ")}`,
     }),
   verification_status: Joi.string()
     .valid(...Object.values(VERIFICATION_STATUS))

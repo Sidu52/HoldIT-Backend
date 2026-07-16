@@ -6,8 +6,6 @@ import {
     getCache,
     setCache,
     updateCache,
-    incrementCache,
-    deleteCache,
     deleteManyCache,
     deleteByPattern,
 } from "../../utils/cache.js";
@@ -45,9 +43,17 @@ export const createAdminInvite = async (req, res) => {
         }
 
         const token = crypto.randomBytes(32).toString("hex");
-        await setCache(cacheKey, { email, role, inviterId }, CACHE_TTL.DAY);
+        await setCache(adminsListPattern, { email, role, inviterId }, CACHE_TTL.DAY);
 
         const inviteLink = `${process.env.CLIENT_URL}/signup?token=${token}`;
+
+        await Admin.create({
+            email, role,
+            invited_by: inviterId,
+        });
+
+        await setCache(`admin:invite:token:${token}`, { email, role, inviterId }, CACHE_TTL.DAY);
+        await updateCache(adminsListPattern, { email, role, inviterId });
 
         sendEmail({
             to: email,
@@ -66,6 +72,83 @@ export const createAdminInvite = async (req, res) => {
     } catch (err) {
         logger.error("[createAdminInvite] Error:", err);
         return sendError(res, "Failed to send invite");
+    }
+};
+
+// RESEND INVITE
+export const resendInvite = async (req, res) => {
+    try {
+        const { id: memberId } = req.params;
+        const { auth_id: inviterId } = req.user;
+
+
+        const memberData = await Admin.findById(memberId)
+            .select("_id verification_status email role")
+            .lean();
+
+        if (!memberData) {
+            return sendError(res, "Account not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        if (memberData.verification_status === VERIFICATION_STATUS.VERIFIED) {
+            return sendError(
+                res,
+                "An active account already exists with this email",
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        const email = memberData.email;
+
+        const cacheKey = buildCacheKey("admin:invite", { email });
+
+        if (await isKeyExist(cacheKey)) {
+            return sendError(
+                res,
+                "An invite has already been sent to this email",
+                STATUS_CODES.CONFLICT
+            );
+        }
+
+        const token = crypto.randomBytes(32).toString("hex");
+
+        await setCache(
+            `admin:invite:token:${token}`,
+            {
+                token,
+                email,
+                role: memberData.role,
+                inviterId,
+            },
+            CACHE_TTL.DAY
+        );
+
+        const inviteLink = `${process.env.CLIENT_URL}/signup?token=${token}`;
+
+        sendEmail({
+            to: email,
+            subject: "Invitation to Join Holdit",
+            template: "invite-email.html",
+            data: {
+                first_name: "Team Member",
+                invitation_link: inviteLink,
+            },
+            rawFields: ["invitation_link"],
+        }).catch((err) =>
+            logger.error("Failed to send invite email:", err.message)
+        );
+
+        return sendResponse({
+            res,
+            statusCode: STATUS_CODES.CREATED,
+            message: "Invite sent successfully",
+            ...(process.env.NODE_ENV === "development" && {
+                data: { inviteLink },
+            }),
+        });
+    } catch (err) {
+        logger.error("[resendInvite] Error:", err);
+        return sendError(res, "Failed to resend invite");
     }
 };
 
@@ -153,7 +236,9 @@ export const getTeamsMember = async (req, res) => {
         if (cached) return sendResponse({ res, message: "Team members fetched successfully", data: cached });
 
         const filter = { _id: { $ne: auth_id } };
-        if (account_status) filter.account_status = account_status;
+        if (account_status !== undefined && account_status !== "") {
+            filter.account_status = account_status;
+        }
         if (role) filter.role = role;
         if (search) {
             const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

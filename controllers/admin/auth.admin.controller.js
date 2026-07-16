@@ -25,7 +25,6 @@ const FORGOT_EMAIL_KEY = (email) => `admin:forgot:email:${email}`;
 export const verifyAdminInviteToken = async (req, res) => {
     try {
         const { token } = req.query;
-
         const invite = await getCache(INVITE_TOKEN_KEY(token));
         if (!invite) return sendError(res, "Invalid or expired invite token", STATUS_CODES.BAD_REQUEST);
 
@@ -52,9 +51,7 @@ export const signUp = async (req, res) => {
             return sendError(res, "Account has already been verified", STATUS_CODES.CONFLICT);
         }
 
-        await Admin.create({
-            email, role,
-            invited_by: inviterId,
+        await Admin.findByIdAndUpdate(existing._id, {
             first_name, last_name, phone, address, date_of_birth, gender,
             password_hash: await bcrypt.hash(password, BCRYPT_SALT_ROUNDS),
             verification_status: VERIFICATION_STATUS.VERIFIED,

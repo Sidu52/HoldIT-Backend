@@ -120,10 +120,7 @@ export const removeDriverFromRedis = async (driverId, serviceAreaId = null) => {
     }
 };
 
-// UPDATE LOCATION
-// Called on every driver location ping — updates geo position and ensures
-// meta hash stays healthy (rebuilds it if it was deleted by a race condition).
-
+// UPDATE LOCATION000`
 export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = null) => {
     if (!driverId || lng == null || lat == null) return false;
 
@@ -208,3 +205,4 @@ export const markDriverAvailable = async (driverId) => {
         return false;
     }
 };
+

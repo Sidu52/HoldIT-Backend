@@ -21,9 +21,7 @@ const LIST_CACHE_TTL = CACHE_TTL.LIST;
 const DETAIL_CACHE_TTL = CACHE_TTL.DETAIL;
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// -------------------------
-// Helpers
-// -------------------------
+
 const bookingCacheKey = (id) => buildCacheKey("booking", { id: String(id) });
 const bookingListPattern = "bookings:*";
 
