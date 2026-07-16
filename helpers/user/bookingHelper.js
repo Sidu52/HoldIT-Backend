@@ -14,6 +14,7 @@ import {
     BOOKING_LIMITS,
     REDIS_KEYS,
 } from "../../constants/user/booking.js";
+import { DRIVER_RIDE_CACHE } from "../../constants/driver/driver.ride.js";
 import { safeAbortSession } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 
@@ -186,9 +187,30 @@ export const releaseStoreCapacity = async (storeId, session = null) => {
     }
 };
 
+export const releaseDriver = async (driverId) => {
+    if (!driverId) return;
+    try {
+        const driver = await Driver.findByIdAndUpdate(
+            driverId,
+            { $set: { is_on_trip: false, current_booking_id: null } },
+            { new: true }
+        );
+        if (driver) {
+            const { markDriverAvailable, addDriverToRedis } = await import("../../services/driverGeoService.js");
+            await addDriverToRedis(driver);
+            await markDriverAvailable(driverId.toString());
+        }
+    } catch (err) {
+        logger.error(`[ReleaseDriver] Failed for driver ${driverId}:`, err.message);
+    }
+};
+
 // ─── DRIVER SEARCH ────────────────────────────────────────────────────────────
 
 /**
+ * @deprecated This is dead code. The actual driver search algorithm runs 
+ * asynchronously inside `driverAssignHelper.js` utilizing Redis GEORADIUS indexes.
+ * 
  * Finds nearby available drivers by geo proximity.
  * Used by the async driver-search job — NOT called on the booking creation
  * hot path (that would introduce a TOCTOU race).
@@ -419,13 +441,33 @@ const queueCancellationNotification = async (booking) => {
  * never rejects, so the catch was dead code and individual failures were
  * silently swallowed. Now logs each rejected settlement individually.
  */
-export const invalidateBookingCache = async (userId, bookingId = null) => {
+export const invalidateBookingCache = async (userId, bookingId = null, storeId = null) => {
     if (!userId) return;
+
+    let resolvedStoreId = storeId;
+    let resolvedDriverIds = [];
+
+    if (bookingId) {
+        try {
+            const booking = await Booking.findById(bookingId)
+                .select("storeId pickup.assignment.driverId delivery.assignment.driverId")
+                .lean();
+            if (booking) {
+                if (booking.storeId) resolvedStoreId = booking.storeId.toString();
+                if (booking.pickup?.assignment?.driverId) resolvedDriverIds.push(booking.pickup.assignment.driverId.toString());
+                if (booking.delivery?.assignment?.driverId) resolvedDriverIds.push(booking.delivery.assignment.driverId.toString());
+            }
+        } catch (err) {
+            logger.error("[Cache] Error fetching booking for invalidation:", err.message);
+        }
+    }
 
     const ops = [
         { label: "list-pattern", fn: () => delByPattern(REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN(userId)) },
         { label: "active-key", fn: () => del(REDIS_KEYS.BOOKING_ACTIVE(userId)) },
         { label: "history-pattern", fn: () => delByPattern(REDIS_KEYS.BOOKING_HISTORY_PATTERN(userId)) },
+        { label: "admin-summary", fn: () => del("dashboard:summary") },
+        { label: "admin-charts", fn: () => delByPattern("dashboard:chart:*") },
     ];
 
     if (bookingId) {
@@ -434,6 +476,32 @@ export const invalidateBookingCache = async (userId, bookingId = null) => {
             fn: () => del(REDIS_KEYS.BOOKING_CACHE_DETAIL(userId, bookingId)),
         });
     }
+
+    if (resolvedStoreId) {
+        ops.push({
+            label: "store-dashboard",
+            fn: () => del(`store:dashboard:${resolvedStoreId.toString()}`),
+        });
+    }
+
+    resolvedDriverIds.forEach((driverId) => {
+        ops.push({
+            label: `driver-assigned-${driverId}`,
+            fn: () => del(DRIVER_RIDE_CACHE.ASSIGNED_KEY(driverId)),
+        });
+        ops.push({
+            label: `driver-active-${driverId}`,
+            fn: () => del(DRIVER_RIDE_CACHE.ACTIVE_KEY(driverId)),
+        });
+        ops.push({
+            label: `driver-detail-${driverId}`,
+            fn: () => del(DRIVER_RIDE_CACHE.RIDE_DETAIL_KEY(driverId, bookingId)),
+        });
+        ops.push({
+            label: `driver-history-${driverId}`,
+            fn: () => delByPattern(`driver:ride_history:${driverId}:*`),
+        });
+    });
 
     const results = await Promise.allSettled(ops.map((o) => o.fn()));
 

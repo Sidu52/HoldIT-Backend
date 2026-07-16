@@ -23,9 +23,11 @@ export const coordinatesSchema = Joi.array()
     });
 
 export const addAddressSchema = Joi.object({
-    type: Joi.string().trim().valid("Home", "Office", "Other").required().messages({
-        "any.required": "Type is required",
-        "any.only": `Type must be one of: ${Object.values(ADDRESS_TYPE_OPTIONS).join(", ")}`,
+    type: Joi.string().trim().valid("Home", "Office", "Other").optional().messages({
+        "any.only": "Type must be one of: Home, Office, Other",
+    }),
+    address_type: Joi.string().trim().valid("Home", "Office", "Other").optional().messages({
+        "any.only": "Address type must be one of: Home, Office, Other",
     }),
     street: Joi.string().trim().required().messages({
         "string.empty": "Street is required",
@@ -44,6 +46,8 @@ export const addAddressSchema = Joi.object({
     }),
     coordinates: coordinatesSchema.optional(),
     is_default: Joi.boolean().optional(),
+}).or("type", "address_type").messages({
+    "object.missing": "Either type or address_type is required",
 });
 
 export const updateAddressSchema = Joi.object({
@@ -53,8 +57,9 @@ export const updateAddressSchema = Joi.object({
     postal_code: Joi.string().trim().optional(),
     country: Joi.string().trim().optional(),
     coordinates: coordinatesSchema.optional(),
-    is_default: Joi.bool().optional(),
+    is_default: Joi.boolean().optional(),
     type: Joi.string().trim().optional(),
+    address_type: Joi.string().trim().optional(),
 }).min(1).messages({
     "object.min": "At least one field must be provided for update",
 });

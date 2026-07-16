@@ -36,7 +36,7 @@ import {
 import { autoCancelBooking } from "../../helpers/user/bookingHelper.js";
 import { getIO } from "../../src/socket/index.js";
 import { emitBookingDriverSearching, emitBookingNoDriverAvailable } from "../../src/socket/emitters/booking.emitter.js";
-import { emitAdminAlertNoDriver, emitDriverNewOffer } from "../../src/socket/emitters/driver.emitter.js";
+import { emitAdminAlertNoDriver, emitDriverNewOffer, emitDriverOfferRemoved } from "../../src/socket/emitters/driver.emitter.js";
 import logger from "../../utils/logger.js";
 
 /** Safely get the Socket.IO instance; returns null if not initialized. */
@@ -127,7 +127,10 @@ async function handleSearchDrivers(job) {
             ? booking.pickupLocation
             : booking.deliveryLocation;
 
+        console.log(`[DEBUG_WORKER_SEARCH] Location for job is:`, JSON.stringify(location));
+
         if (!location?.lat || !location?.lng) {
+            console.log(`[DEBUG_WORKER_SEARCH] Invalid coordinates found, cancelling. lat: ${location?.lat}, lng: ${location?.lng}`);
             const failReason = AUTO_CANCEL_REASONS.INVALID_LOCATION;
             if (type === "RETURN") {
                 await handleReturnDriverNotFound(bookingId, failReason);
@@ -139,6 +142,7 @@ async function handleSearchDrivers(job) {
         }
 
         const geoKeys = await getDriverGeoKeys(booking.serviceAreaId);
+        console.log(`[DEBUG_WORKER_SEARCH] GeoKeys resolved from service area:`, JSON.stringify(geoKeys));
 
         const nearbyDrivers = await searchNearbyDrivers(
             geoKeys,
@@ -146,8 +150,10 @@ async function handleSearchDrivers(job) {
             location.lat,   // ← lat second
             bookingId
         );
+        console.log(`[DEBUG_WORKER_SEARCH] Nearby drivers search returned:`, JSON.stringify(nearbyDrivers));
 
         if (nearbyDrivers.length === 0) {
+            console.log(`[DEBUG_WORKER_SEARCH] No drivers found nearby. Cancelling booking: ${bookingId}`);
             const failReason = AUTO_CANCEL_REASONS.NO_DRIVER_FOUND;
             if (type === "RETURN") {
                 await handleReturnDriverNotFound(bookingId, failReason);
@@ -160,11 +166,13 @@ async function handleSearchDrivers(job) {
 
         const driverIds = nearbyDrivers.map((d) => d.driverId);
         const verifiedDrivers = await verifyDriversInDB(driverIds);
+        console.log(`[DEBUG_WORKER_SEARCH] Verified drivers in DB:`, JSON.stringify(verifiedDrivers));
 
         const verifiedSet = new Set(verifiedDrivers.map((d) => d._id.toString()));
         const staleIds = driverIds.filter((id) => !verifiedSet.has(id));
 
         if (staleIds.length > 0) {
+            console.log(`[DEBUG_WORKER_SEARCH] Cleaning stale driver Redis keys:`, JSON.stringify(staleIds));
             await cleanStaleDrivers(geoKeys, staleIds);
         }
 
@@ -172,7 +180,10 @@ async function handleSearchDrivers(job) {
             .filter((d) => verifiedSet.has(d.driverId))
             .slice(0, DRIVER_ASSIGNMENT.MAX_OFFER_ATTEMPTS);
 
+        console.log(`[DEBUG_WORKER_SEARCH] Valid candidates subset:`, JSON.stringify(validCandidates));
+
         if (validCandidates.length === 0) {
+            console.log(`[DEBUG_WORKER_SEARCH] No valid verified candidates, cancelling booking: ${bookingId}`);
             const failReason = AUTO_CANCEL_REASONS.NO_DRIVER_FOUND;
             if (type === "RETURN") {
                 await handleReturnDriverNotFound(bookingId, failReason);
@@ -183,6 +194,7 @@ async function handleSearchDrivers(job) {
             return { success: false, reason: "no_verified_drivers" };
         }
 
+        console.log(`[DEBUG_WORKER_SEARCH] Storing candidates in Redis list and scheduling first offer.`);
         await storeCandidates(bookingId, validCandidates.map((d) => d.driverId));
         await scheduleOfferNextDriver(bookingId, type, 1);
         logger.info(`[Search] ✅ Search complete — ${validCandidates.length} candidate(s) queued`);
@@ -197,12 +209,14 @@ async function handleSearchDrivers(job) {
 async function handleOfferNextDriver(job) {
     try {
         const { bookingId, type, attemptNumber } = job.data;
+        console.log(`[DEBUG_WORKER_OFFER] Starting offer attempt ${attemptNumber} for booking ${bookingId} (${type})`);
         logger.info(
             `\n[Offer] ── Attempt #${attemptNumber} for ${bookingId} ──`
         );
 
         // Pre-check booking
         const { awaiting, reason } = await isBookingAwaitingDriver(bookingId);
+        console.log(`[DEBUG_WORKER_OFFER] Booking ${bookingId} awaiting driver status: ${awaiting}, Reason: ${reason}`);
 
         if (!awaiting) {
             await cleanupBookingRedisKeys(bookingId);
@@ -211,8 +225,10 @@ async function handleOfferNextDriver(job) {
 
         // Pop next candidate
         const nextDriverId = await popNextCandidate(bookingId);
+        console.log(`[DEBUG_WORKER_OFFER] Popped candidate driver: ${nextDriverId}`);
 
         if (!nextDriverId) {
+            console.log(`[DEBUG_WORKER_OFFER] No candidate drivers remaining in list, auto cancelling.`);
             // ALL CANDIDATES EXHAUSTED  AUTO CANCEL
             await autoCancelBooking(bookingId, AUTO_CANCEL_REASONS.ALL_DRIVERS_EXHAUSTED);
             return { success: false, reason: "all_exhausted" };
@@ -221,12 +237,14 @@ async function handleOfferNextDriver(job) {
         // Quick Redis re-check
         const metaKey = REDIS_KEYS.DRIVER_META(nextDriverId);
         const meta = await redis.hgetall(metaKey);
+        console.log(`[DEBUG_WORKER_OFFER] Redis meta check for driver ${nextDriverId}:`, JSON.stringify(meta));
 
         const isUnavailable =
             meta?.is_on_trip === "true" ||
             meta?.is_online !== "true";
 
         if (isUnavailable) {
+            console.log(`[DEBUG_WORKER_OFFER] Driver ${nextDriverId} is busy or offline, skipping to next.`);
             await markDriverTried(bookingId, nextDriverId);
             return tryNextDriver(bookingId, type, attemptNumber);
         }
@@ -234,8 +252,10 @@ async function handleOfferNextDriver(job) {
         // Check if driver has pending offer from another booking
         const driverLockKey = REDIS_KEYS.DRIVER_OFFERED(nextDriverId);
         const existingLock = await redis.get(driverLockKey);
+        console.log(`[DEBUG_WORKER_OFFER] Lock key check for driver ${nextDriverId}:`, existingLock);
 
         if (existingLock && existingLock !== bookingId) {
+            console.log(`[DEBUG_WORKER_OFFER] Driver ${nextDriverId} already locked with offer for ${existingLock}. Skipping.`);
             await markDriverTried(bookingId, nextDriverId);
             return tryNextDriver(bookingId, type, attemptNumber);
         }
@@ -380,6 +400,10 @@ async function handleOfferTimeout(job) {
 
 async function handleDriverTimeout(bookingId, type, driverId, attemptNumber) {
     await clearOffer(bookingId, driverId);
+    emitDriverOfferRemoved(safeGetIO(), driverId, {
+        bookingId,
+        reason: "timeout",
+    });
     await markDriverTried(bookingId, driverId);
 
     const remaining = await getRemainingCandidateCount(bookingId);

@@ -62,7 +62,7 @@ export const socketAuthMiddleware = async (socket, next) => {
             socket.join(rooms.driver(id));
         } else if (role === USER_ROLES.STORE_OWNER || role === USER_ROLES.STORE) {
             socket.join(rooms.store(id));
-        } else if (role === USER_ROLES.SUPER_ADMIN || role === USER_ROLES.OPERATION_MANAGER) {
+        } else if (role === USER_ROLES.ADMIN || role === USER_ROLES.SUPER_ADMIN || role === USER_ROLES.OPERATION_MANAGER) {
             socket.join(rooms.adminDashboard());
         }
 

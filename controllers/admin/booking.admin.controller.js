@@ -3,7 +3,7 @@ import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
 import User from "../../models/User.js";
 import mongoose from "mongoose";
-import { assignStoreToBooking } from "../../helpers/user/bookingHelper.js";
+import { assignStoreToBooking, releaseDriver } from "../../helpers/user/bookingHelper.js";
 import logger from "../../utils/logger.js";
 import { getIO } from "../../src/socket/index.js";
 import { getCache, setCache, deleteCache, deleteByPattern, buildCacheKey } from "../../utils/cache.js";
@@ -243,6 +243,13 @@ export const cancelBooking = (req, res) => withSession(res, "cancelBooking", asy
     await session.commitTransaction();
     session.endSession();
 
+    const driverId = booking.pickup?.assignment?.driverId || booking.delivery?.assignment?.driverId;
+    if (driverId) {
+        await releaseDriver(driverId).catch((err) =>
+            logger.warn("[cancelBooking] Failed to release driver:", err.message)
+        );
+    }
+
     await invalidateBookingCache(id, booking.userId);
     await tryEmit(BOOKING_STATUS.CANCELLED, id, booking, {
         driverId: booking.pickup?.assignment?.driverId || booking.delivery?.assignment?.driverId || null,
@@ -391,7 +398,9 @@ const createStatusProgressController = ({ toStatus, successMessage, timelineMess
         const { id } = req.params;
         const { auth_id } = req.user;
 
-        const booking = await Booking.findById(id).select("status userId").session(session).lean();
+        const booking = await Booking.findById(id)
+            .select("status userId storeId pickup.assignment.driverId delivery.assignment.driverId")
+            .session(session).lean();
         if (!booking) {
             await safeAbortSession(session);
             return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Booking not found" });
@@ -408,6 +417,23 @@ const createStatusProgressController = ({ toStatus, successMessage, timelineMess
 
         await session.commitTransaction();
         session.endSession();
+
+        // Release driver if transitioning to a status where driver's job is complete
+        if (toStatus === BOOKING_STATUS.STORED) {
+            const driverId = booking.pickup?.assignment?.driverId;
+            if (driverId) {
+                await releaseDriver(driverId).catch((err) =>
+                    logger.warn("[markStored] Failed to release pickup driver:", err.message)
+                );
+            }
+        } else if (toStatus === BOOKING_STATUS.DELIVERED) {
+            const driverId = booking.delivery?.assignment?.driverId;
+            if (driverId) {
+                await releaseDriver(driverId).catch((err) =>
+                    logger.warn("[markDelivered] Failed to release delivery driver:", err.message)
+                );
+            }
+        }
 
         await invalidateBookingCache(id, booking.userId);
         await tryEmit(toStatus, id, booking);

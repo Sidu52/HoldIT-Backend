@@ -170,6 +170,10 @@ const BookingSchema = new mongoose.Schema(
             enum: ["USER", "DRIVER", "ADMIN", "SYSTEM"],
         },
         cancelReason: { type: String, maxlength: 500 },
+
+        // Derived field — kept in sync with status via pre-save and pre-update hooks.
+        // true for every non-terminal status, false for delivered/cancelled.
+        isActive: { type: Boolean, default: true, index: true },
     },
     {
         timestamps: true,
@@ -213,8 +217,9 @@ BookingSchema.pre("save", function () {
     }
 });
 
-// terminal status guard
-// Prevents moving a booking out of a terminal status via findOneAndUpdate / updateOne.
+// terminal status guard + isActive sync
+// Prevents moving a booking out of a terminal status via findOneAndUpdate / updateOne,
+// AND keeps isActive in sync so query filters work correctly.
 BookingSchema.pre(
     ["updateOne", "findOneAndUpdate", "findByIdAndUpdate"],
     async function () {
@@ -230,6 +235,12 @@ BookingSchema.pre(
                 `Cannot transition booking from terminal status '${doc.status}' to '${newStatus}'.`
             );
         }
+
+        // Keep isActive in sync for update operations (pre-save only fires on .save())
+        const isActive = !TERMINAL_STATUSES.has(newStatus);
+        if (!update.$set) update.$set = {};
+        update.$set.isActive = isActive;
+        update.$set.lastStatusUpdatedAt = new Date();
     }
 );
 

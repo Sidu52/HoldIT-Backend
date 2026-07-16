@@ -164,21 +164,19 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
     lng = parseFloat(lng);
     lat = parseFloat(lat);
 
-    // logger.info(`\n[GeoSearch] ═══════════════════════════════`);
-    // logger.info(`[GeoSearch] bookingId : ${bookingId}`);
-    // logger.info(`[GeoSearch] lng=${lng}, lat=${lat}`);
-    // logger.info(`[GeoSearch] geoKeys   : ${JSON.stringify(geoKeys)}`);
-    // logger.info(`[GeoSearch] radii     : ${JSON.stringify(DRIVER_ASSIGNMENT.SEARCH_RADII_KM)}`);
+    console.log(`[DEBUG_GEO_SEARCH] Starting nearby driver query. BookingId: ${bookingId}, Search Origin: [lng: ${lng}, lat: ${lat}]`);
+    logger.info(`[GeoSearch] Starting search: lng=${lng}, lat=${lat}, bookingId=${bookingId}`);
 
     for (const radius of DRIVER_ASSIGNMENT.SEARCH_RADII_KM) {
-        // logger.info(`\n[GeoSearch] ── Trying radius ${radius}km ──`);
+        console.log(`[DEBUG_GEO_SEARCH] Querying drivers within radius: ${radius} km`);
         for (const geoKey of geoKeys) {
             try {
                 const keyExists = await redis.exists(geoKey);
+                console.log(`[DEBUG_GEO_SEARCH] Checking Redis Key: "${geoKey}". Exists: ${keyExists}`);
                 if (!keyExists) continue;
 
                 const results = await redis.call(
-                    "GEORADIUS",
+                     "GEORADIUS",
                     geoKey,
                     lng.toFixed(6),
                     lat.toFixed(6),
@@ -191,14 +189,28 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
                     DRIVER_ASSIGNMENT.MAX_CANDIDATES_PER_SEARCH.toString()
                 );
 
+                console.log(`[DEBUG_GEO_SEARCH] GEORADIUS result count for Key "${geoKey}": ${results?.length || 0}`);
+                logger.info(`[GeoSearch] key="${geoKey}" radius=${radius}km → ${results?.length || 0} result(s)`);
                 if (!results?.length) continue;
 
                 for (const result of results) {
-                    const [driverId, distance] = result;
-                    if (!driverId || seenIds.has(driverId)) continue;
+                    const [driverId, distance, coords] = result;
+                    console.log(`[DEBUG_GEO_SEARCH] Found DriverId: ${driverId}, Distance: ${distance} km, Coordinates: [${coords?.[0]}, ${coords?.[1]}]`);
+                    if (!driverId || seenIds.has(driverId)) {
+                        console.log(`[DEBUG_GEO_SEARCH] Skipping DriverId: ${driverId} (duplicate or empty)`);
+                        continue;
+                    }
                     seenIds.add(driverId);
 
+                    const meta = await redis.hgetall(REDIS_KEYS.DRIVER_META(driverId));
+                    const tried = await wasDriverTried(bookingId, driverId);
+                    const pendingOffer = await redis.get(REDIS_KEYS.DRIVER_OFFERED(driverId));
+                    
+                    console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} Redis Meta:`, JSON.stringify(meta));
+                    console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} already tried: ${tried}, pendingOffer key status: ${pendingOffer}`);
+
                     const eligible = await isDriverEligibleInRedis(driverId, bookingId);
+                    console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} Eligibility: ${eligible}`);
                     if (!eligible) continue;
 
                     allDrivers.push({
@@ -207,20 +219,23 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
                     });
                 }
             } catch (err) {
+                console.error(`[DEBUG_GEO_SEARCH] Error querying Key "${geoKey}":`, err);
                 logger.error(`[GeoSearch] ERROR key="${geoKey}" radius=${radius}km:`, err.message);
             }
         }
 
         if (allDrivers.length > 0) {
-            // logger.info(`[GeoSearch] Found ${allDrivers.length} driver(s) within ${radius}km`);
+            console.log(`[DEBUG_GEO_SEARCH] Found ${allDrivers.length} eligible driver(s) within ${radius} km radius:`, JSON.stringify(allDrivers));
+            logger.info(`[GeoSearch] Found ${allDrivers.length} driver(s) within ${radius}km`);
             break;
         }
 
-        // logger.info(`[GeoSearch] 0 drivers found within ${radius}km — expanding`);
+        console.log(`[DEBUG_GEO_SEARCH] No eligible drivers found within ${radius} km`);
+        logger.info(`[GeoSearch] 0 drivers found within ${radius}km — expanding`);
     }
 
-    // logger.info(`[GeoSearch] Final result: ${allDrivers.length} driver(s)`);
-    // logger.info(`[GeoSearch] ═══════════════════════════════\n`);
+    console.log(`[DEBUG_GEO_SEARCH] Final driver discovery list:`, JSON.stringify(allDrivers));
+    logger.info(`[GeoSearch] Final result: ${allDrivers.length} driver(s)`);
 
     allDrivers.sort((a, b) => a.distanceKm - b.distanceKm);
     return allDrivers;
@@ -230,10 +245,16 @@ const isDriverEligibleInRedis = async (driverId, bookingId) => {
     try {
         const meta = await redis.hgetall(REDIS_KEYS.DRIVER_META(driverId));
 
+        // No meta at all → let DB verification handle it later
         if (!meta || Object.keys(meta).length === 0) return true;
 
+        // Explicitly on a trip → skip
         if (meta.is_on_trip === "true") return false;
-        if (meta.is_online !== "true") return false;
+
+        // If meta exists but is_online is NOT set (e.g. only updated_at exists
+        // from a partial rebuild), treat as eligible — DB verification downstream
+        // will do the final check. Only reject if is_online is explicitly "false".
+        if (meta.is_online === "false") return false;
 
         const [tried, pendingOffer] = await Promise.all([
             wasDriverTried(bookingId, driverId),

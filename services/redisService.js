@@ -48,11 +48,10 @@ const createRedisClient = (config, label = "Redis") => {
             lazyConnect: true,
             connectTimeout: 10000,
             retryStrategy(times) {
-                if (times > 10) {
-                    logger.error(`[${label}] Max reconnection attempts reached`);
-                    return null;
+                if (times % 10 === 0) {
+                    logger.warn(`[${label}] Reconnecting... Attempt #${times}`);
                 }
-                return Math.min(times * 200, 5000);
+                return Math.min(times * 500, 5000);
             },
         });
     } else {
@@ -61,11 +60,10 @@ const createRedisClient = (config, label = "Redis") => {
             lazyConnect: true,
             connectTimeout: 10000,
             retryStrategy(times) {
-                if (times > 10) {
-                    logger.error(`[${label}] Max reconnection attempts reached`);
-                    return null;
+                if (times % 10 === 0) {
+                    logger.warn(`[${label}] Reconnecting... Attempt #${times}`);
                 }
-                return Math.min(times * 200, 5000);
+                return Math.min(times * 500, 5000);
             },
         });
     }
@@ -114,6 +112,18 @@ export const initRedis = async () => {
     }
 };
 
+// Connection recovery helper
+const ensureConnected = async () => {
+    if (redis.status === "end") {
+        logger.warn("[Redis] Client was in 'end' state. Reconnecting...");
+        try {
+            await redis.connect();
+        } catch (err) {
+            logger.error("[Redis] Reconnect failed:", err.message);
+        }
+    }
+};
+
 // BASIC OPERATIONS
 const normalizeTTL = (ttl) => {
     const parsed = Number(ttl);
@@ -122,6 +132,7 @@ const normalizeTTL = (ttl) => {
 
 export const get = async (key) => {
     if (!key) throw new Error("Redis GET: key is required");
+    await ensureConnected();
     return redis.get(key);
 };
 
@@ -129,6 +140,7 @@ export const set = async (key, value, ttl = null) => {
     if (!key || value === undefined || value === null) {
         throw new Error("Redis SET: key and value are required");
     }
+    await ensureConnected();
     const expireSeconds = normalizeTTL(ttl);
     return expireSeconds ? redis.set(key, value, "EX", expireSeconds) : redis.set(key, value);
 };
@@ -139,11 +151,13 @@ export const update = async (key, value, ttl = null) => {
 
 export const exists = async (key) => {
     if (!key) throw new Error("Redis EXISTS: key is required");
+    await ensureConnected();
     return Boolean(await redis.exists(key));
 };
 
 export const del = async (key) => {
     if (!key) throw new Error("Redis DELETE: key is required");
+    await ensureConnected();
     return redis.del(key);
 };
 
@@ -151,6 +165,7 @@ export const delMany = async (keys = []) => {
     if (!Array.isArray(keys) || keys.length === 0) {
         throw new Error("Redis DEL_MANY: keys array is required");
     }
+    await ensureConnected();
     return redis.del(...keys);
 };
 
@@ -160,6 +175,7 @@ export const delMany = async (keys = []) => {
 export const delByPattern = async (pattern) => {
     if (!pattern) throw new Error("Redis DEL_PATTERN: pattern is required");
 
+    await ensureConnected();
     const keys = [];
     let cursor = "0";
 

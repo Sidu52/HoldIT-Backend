@@ -117,8 +117,8 @@ export const getDashboardSummary = async (req, res) => {
                 $facet: {
                     total: [{ $count: "count" }],
                     verificationPending: [{ $match: { verification_status: VERIFICATION_STATUS.PENDING } }, { $count: "count" }],
-                    online: [{ $match: { is_Online: true } }, { $count: "count" }],
-                    offline: [{ $match: { is_Online: false } }, { $count: "count" }],
+                    online: [{ $match: { is_online: true } }, { $count: "count" }],
+                    offline: [{ $match: { is_online: { $ne: true } } }, { $count: "count" }],
                     newToday: [{ $match: todayFilter }, { $count: "count" }],
                 }
             }]),

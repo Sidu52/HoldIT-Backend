@@ -20,6 +20,7 @@ import {
     processArriveAtStore,
     buildPagination,
     processDriverCancelRide,
+    processArriveAtStoreForReturn,
     processArriveAtUserReturn,
     processCompleteDelivery,
 } from "../../helpers/driver/driverRideHelper.js";
@@ -44,6 +45,7 @@ import {
     emitBookingReturnDriverAssigned,
     emitBookingArrivedForDelivery,
 } from "../../src/socket/emitters/booking.emitter.js";
+import { emitDriverOfferRemoved } from "../../src/socket/emitters/driver.emitter.js";
 
 
 /** Safely get Socket.IO instance; returns null if not initialized */
@@ -247,6 +249,11 @@ export const acceptRideController = async (req, res) => {
             invalidateDriverRideCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
+        emitDriverOfferRemoved(safeGetIO(), driverId, {
+            bookingId: booking_id,
+            reason: "accepted",
+        });
+
 
         // Emit socket event: driver assigned
         try {
@@ -297,6 +304,10 @@ export const rejectRideController = async (req, res) => {
         }
 
         await processRideReject(booking_id, driverId);
+        emitDriverOfferRemoved(safeGetIO(), driverId, {
+            bookingId: booking_id,
+            reason: "rejected",
+        });
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.RIDE_REJECTED });
     } catch (err) {
@@ -321,6 +332,7 @@ export const arriveAtPickupController = async (req, res) => {
             invalidateDriverRideCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
+
 
         // Emit socket event: driver arrived at pickup
         try {
@@ -366,6 +378,7 @@ export const completePickupController = async (req, res) => {
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
+
         // Emit socket event: luggage picked up
         try {
             const io = safeGetIO();
@@ -409,6 +422,7 @@ export const arriveAtStoreController = async (req, res) => {
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
+
         // Emit socket event: arrived at store
         try {
             const io = safeGetIO();
@@ -430,6 +444,49 @@ export const arriveAtStoreController = async (req, res) => {
     }
 };
 
+// ARRIVE AT STORE FOR RETURN — driver reached the store to collect return luggage
+export const arriveAtStoreForReturnController = async (req, res) => {
+    try {
+        const driverId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        const booking = await processArriveAtStoreForReturn(booking_id, driverId);
+
+        if (!booking) {
+            return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        }
+
+        await Promise.all([
+            invalidateDriverRideCache(driverId, booking_id),
+            invalidateBookingCache(booking.userId.toString(), booking_id),
+        ]);
+
+        // Emit socket event if needed or store status update
+        try {
+            const io = safeGetIO();
+            if (io) {
+                // Inform store that return driver has arrived
+                io.to(`store:${booking.storeId}`).emit("store:driver_arrived_for_return", {
+                    bookingId: booking._id,
+                    driverId,
+                    arrivedAt: new Date(),
+                });
+            }
+        } catch (socketErr) {
+            logger.debug(`[ArriveStoreForReturn:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
+        return sendResponse({
+            res,
+            message: "Arrived at store for return luggage pickup.",
+            data: { bookingId: booking._id, status: booking.status },
+        });
+    } catch (err) {
+        logger.error("Arrive At Store For Return Error:", err);
+        return sendError(res, "Failed to update store arrival for return.");
+    }
+};
+
 // ARRIVE AT USER FOR RETURN Delivery — driver signals they've reached the user for return
 export const arriveAtUserReturnController = async (req, res) => {
     try {
@@ -446,6 +503,7 @@ export const arriveAtUserReturnController = async (req, res) => {
             invalidateDriverRideCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
+
 
         // Emit socket event: driver arrived for return delivery
         try {
@@ -525,6 +583,7 @@ export const completeDeliveryController = async (req, res) => {
             invalidateDriverRideCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
+
 
         // Emit socket event: delivery completed
         try {

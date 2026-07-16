@@ -4,9 +4,11 @@ import Driver from "../../models/Driver.js";
 import redis, { get, set, del, delByPattern } from "../../services/redisService.js";
 import { markDriverOnTrip, markDriverAvailable } from "../../services/driverGeoService.js";
 import { BOOKING_STATUS } from "../../utils/constants.js";
+import { generateOTP } from "../../utils/otp.js";
 import {
     DRIVER_VISIBLE_STATUSES,
     DRIVER_HISTORY_STATUSES,
+    DRIVER_RIDE_CACHE,
 } from "../../constants/driver/driver.ride.js";
 import {
     REDIS_KEYS,
@@ -22,6 +24,7 @@ import {
 } from "../user/driverAssignHelper.js";
 import { invalidateBookingCache } from "../user/bookingHelper.js";
 import logger from "../../utils/logger.js";
+
 
 
 // CACHE
@@ -131,7 +134,7 @@ export const processRideAccept = async (bookingId, driverId) => {
     const now = new Date();
     const objDriverId = new mongoose.Types.ObjectId(driverId);
 
-    const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+
 
     let booking = await Booking.findOneAndUpdate(
         {
@@ -147,7 +150,7 @@ export const processRideAccept = async (bookingId, driverId) => {
                     driverId: objDriverId,
                     assignedAt: now,
                     acceptedAt: now,
-                    otp: generateOtp(), // User -> Driver
+                    otp: generateOTP(), // User -> Driver
                 },
             },
             $push: {
@@ -178,8 +181,8 @@ export const processRideAccept = async (bookingId, driverId) => {
                         driverId: objDriverId,
                         assignedAt: now,
                         acceptedAt: now,
-                        returnOtp: generateOtp(), // Store -> Driver
-                        otp: generateOtp(),       // User -> Driver (Final)
+                        returnOtp: generateOTP(), // Store -> Driver
+                        otp: generateOTP(),       // User -> Driver (Final)
                     },
                 },
                 $push: {
@@ -336,6 +339,31 @@ export const processArriveAtStore = async (bookingId, driverId) => {
         { returnDocument: "after" }
     );
 };
+
+export const processArriveAtStoreForReturn = async (bookingId, driverId) => {
+    const now = new Date();
+
+    return Booking.findOneAndUpdate(
+        {
+            _id: bookingId,
+            status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+            "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+        },
+        {
+            $push: {
+                timeline: {
+                    status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                    note: "Driver arrived at store to pickup return luggage",
+                    updatedBy: new mongoose.Types.ObjectId(driverId),
+                    updatedByModel: "Driver",
+                    createdAt: now,
+                },
+            },
+        },
+        { returnDocument: "after" }
+    );
+};
+
 
 // ARRIVE AT USER FOR RETURN Delivery
 export const processArriveAtUserReturn = async (bookingId, driverId) => {

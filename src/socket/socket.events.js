@@ -31,6 +31,7 @@ export const SOCKET_EVENTS = {
     DRIVER_GO_OFFLINE: "driver:go_offline",
     DRIVER_STATUS_CHANGED: "driver:status:changed",
     DRIVER_NEW_OFFER: "driver:new_offer",
+    DRIVER_OFFER_REMOVED: "driver:offer_removed",
 
     DRIVER_BOOKING_ACCEPT: "driver:booking:accept",
     DRIVER_BOOKING_ACCEPTED: "driver:booking:accepted",

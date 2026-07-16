@@ -47,7 +47,7 @@ export const getIncomingBookings = async (req, res) => {
             },
             isActive: true,
         })
-            .select("bookingCode status pickupLocation luggage pickup storage pricing userId createdAt")
+            .select("bookingCode status pickupLocation deliveryLocation luggage pickup storage pricing userId createdAt")
             .populate("userId", "first_name last_name phone")
             .sort({ createdAt: 1 })
             .lean();
@@ -87,7 +87,7 @@ export const getActiveBookings = async (req, res) => {
 
         const [bookings, total] = await Promise.all([
             Booking.find(filter)
-                .select("bookingCode status pickupLocation luggage storage pricing payment userId createdAt")
+                .select("bookingCode status pickupLocation deliveryLocation luggage storage pricing payment userId pickup delivery createdAt")
                 .populate("userId", "first_name last_name phone")
                 .sort({ "storage.storedAt": -1 })
                 .skip(skip)
@@ -275,7 +275,7 @@ export const getBookingHistory = async (req, res) => {
 
         const [bookings, total] = await Promise.all([
             Booking.find(filter)
-                .select("bookingCode status pickupLocation luggage pricing payment storage createdAt cancelledAt cancelReason")
+                .select("bookingCode status pickupLocation deliveryLocation luggage pricing payment storage createdAt cancelledAt cancelReason")
                 .populate("userId", "first_name last_name phone")
                 .sort({ createdAt: sortDir })
                 .skip(skip)

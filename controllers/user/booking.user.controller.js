@@ -31,6 +31,7 @@ import {
     createTimelineEntry,
     queueBookingJob,
     releaseStoreCapacity,
+    releaseDriver,
     findNearestAvailableStore,
     findNearbyDrivers,
     assignStoreToBooking,
@@ -43,6 +44,7 @@ import { safeAbortSession } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 import { getIO } from "../../src/socket/index.js";
 import { emitBookingCreated, emitBookingStoreAssigned, emitStoreIncomingBooking, emitBookingReturnRequested } from "../../src/socket/emitters/booking.emitter.js";
+import { checkServiceability } from "../../helpers/user/addressHelper.js";
 
 // ─── SCHEDULE PICKUP ──────────────────────────────────────────────────────────
 /**
@@ -95,10 +97,11 @@ export const schedulePickup = async (req, res) => {
         }
 
         // ── 2. Serviceability check ───────────────────────────────────────────
-        const serviceabilityResult = await verifyServiceability(
-            pickupLocation.lat,
-            pickupLocation.lng
+        const serviceabilityResult = await checkServiceability(
+            pickupLocation.lng,
+            pickupLocation.lat
         );
+        console.log("Serviceability Result:", pickupLocation);
         if (!serviceabilityResult.isServiceable) {
             await safeAbortSession(session);
             return sendError(
@@ -374,7 +377,7 @@ export const cancelBooking = async (req, res) => {
         // Explicit select — never concatenate projection strings (fragile + silent bugs)
         // __v is REQUIRED for optimistic concurrency (optimisticConcurrency: true on schema)
         const booking = await Booking.findOne({ _id: booking_id, userId })
-            .select("status isActive storeId payment pricing timeline cancelledAt cancelledBy cancelReason __v")
+            .select("status isActive storeId payment pricing timeline cancelledAt cancelledBy cancelReason pickup.assignment.driverId delivery.assignment.driverId __v")
             .session(session);
 
         if (!booking) {
@@ -416,6 +419,14 @@ export const cancelBooking = async (req, res) => {
 
         await session.commitTransaction();
         session.endSession();
+
+        // Release driver if assigned
+        const driverId = booking.pickup?.assignment?.driverId || booking.delivery?.assignment?.driverId;
+        if (driverId) {
+            await releaseDriver(driverId).catch((err) =>
+                logger.warn("[cancelBooking] Failed to release driver:", err.message)
+            );
+        }
 
         // Cache bust + job dispatch are post-commit best-effort
         await invalidateBookingCache(userId, booking_id).catch((err) =>

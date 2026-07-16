@@ -245,12 +245,19 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         );
     }
 
-    const savedOTP = await get(`otp:${sanitizedPhone}`);
+    let savedOTP = await get(`otp:${sanitizedPhone}`);
+    if (savedOTP) {
+        try {
+            savedOTP = JSON.parse(savedOTP);
+        } catch (_) {
+            // Keep as string if not JSON
+        }
+    }
 
     const isOtpValid =
         savedOTP &&
-        savedOTP.length === sanitizedOtp.length &&
-        timingSafeEqual(savedOTP, sanitizedOtp);
+        String(savedOTP).length === sanitizedOtp.length &&
+        timingSafeEqual(String(savedOTP), sanitizedOtp);
 
     if (!isOtpValid) {
         await redis
@@ -575,9 +582,9 @@ export const updateDriverDetails = asyncHandler(async (req, res) => {
     }
 
     if (date_of_birth) {
-        const date_of_birth = new Date(date_of_birth);
-        if (!isNaN(date_of_birth.getTime())) {
-            updateData.date_of_birth = date_of_birth;
+        const dob = new Date(date_of_birth);
+        if (!isNaN(dob.getTime())) {
+            updateData.date_of_birth = dob;
         }
     }
 

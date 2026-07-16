@@ -24,6 +24,13 @@ export const emitAdminDriverStatusChanged = (io, driverId, name, is_online, is_o
     });
 };
 
+export const emitAdminDriverLocationUpdated = (io, driverId, location) => {
+    safeEmit(io, rooms.adminDashboard(), SOCKET_EVENTS.DRIVER_LOCATION_UPDATED, {
+        driverId,
+        ...location,
+    });
+};
+
 export const emitAdminBookingStatusChanged = (io, bookingId, oldStatus, newStatus, changedAt, changedBy) => {
     safeEmit(io, rooms.adminDashboard(), SOCKET_EVENTS.ADMIN_BOOKING_STATUS, {
         bookingId,
@@ -46,4 +53,8 @@ export const emitAdminAlertNoDriver = (io, bookingId, userId, pickupLocation, at
 
 export const emitDriverNewOffer = (io, driverId, offerData) => {
     safeEmit(io, rooms.driver(driverId), SOCKET_EVENTS.DRIVER_NEW_OFFER, offerData);
+};
+
+export const emitDriverOfferRemoved = (io, driverId, payload) => {
+    safeEmit(io, rooms.driver(driverId), SOCKET_EVENTS.DRIVER_OFFER_REMOVED, payload);
 };
