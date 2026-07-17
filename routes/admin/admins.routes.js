@@ -13,7 +13,8 @@ import {
   getTeamsMember,
   getTeamMemberById,
   bulkDeactivateAdmins,
-  updateTeamMember
+  updateTeamMember,
+  resendInvite
 } from "../../controllers/admin/admin.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -107,6 +108,14 @@ router.post(
   createAdminInvite
 );
 
+// Resend Invite
+router.put(
+  "/resend-invite/:id",
+  apiLimiter,
+  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+  validate(userIdSchema, "params"),
+  resendInvite
+);
 
 // Update account status (block/unblock/etc.)
 router.put(

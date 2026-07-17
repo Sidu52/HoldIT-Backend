@@ -22,6 +22,7 @@ import { connectMongo, disconnectMongo } from "./services/mongoService.js";
 import { initRedis } from "./services/redisService.js";
 import { initSocket, closeSocket } from "./src/socket/index.js";
 import { initializeWorkers, closeAllWorkers } from "./workers/initializeWorkers.js";
+import { initCronJobs, stopCronJobs } from "./services/cronJobs.js";
 import { syncStoresToRedis } from "./services/storeSync.js";
 import { syncDriversToRedis } from "./services/driverSync.js";
 import { closeQueues } from "./services/jobService.js";
@@ -122,6 +123,9 @@ const start = async () => {
     // BullMQ workers
     initializeWorkers();
 
+    // Cron jobs (nightly drivers + stores offline)
+    initCronJobs();
+
     // Sync warm caches
     await syncStoresToRedis();
     await syncDriversToRedis();
@@ -139,6 +143,7 @@ const start = async () => {
         logger.info(`[Server] Received ${signal}. Shutting down gracefully...`);
         server.close(async () => {
             closeSocket();
+            stopCronJobs();
             await Promise.allSettled([
                 closeAllWorkers(),
                 closeQueues(),
