@@ -322,7 +322,7 @@ export const arriveAtPickupController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
 
-        const booking = await processArriveAtPickup(booking_id, driverId);
+        const booking = await processAr+-riveAtPickup(booking_id, driverId);
 
         if (!booking) {
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);

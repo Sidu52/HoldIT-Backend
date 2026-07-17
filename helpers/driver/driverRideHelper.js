@@ -150,7 +150,6 @@ export const processRideAccept = async (bookingId, driverId) => {
                     driverId: objDriverId,
                     assignedAt: now,
                     acceptedAt: now,
-                    otp: generateOTP(), // User -> Driver
                 },
             },
             $push: {
@@ -181,8 +180,6 @@ export const processRideAccept = async (bookingId, driverId) => {
                         driverId: objDriverId,
                         assignedAt: now,
                         acceptedAt: now,
-                        returnOtp: generateOTP(), // Store -> Driver
-                        otp: generateOTP(),       // User -> Driver (Final)
                     },
                 },
                 $push: {
@@ -242,7 +239,10 @@ export const processArriveAtPickup = async (bookingId, driverId) => {
             $set: {
                 status: BOOKING_STATUS.DRIVER_ARRIVED,
                 lastStatusUpdatedAt: now,
-                "pickup.assignment.startedAt": now,
+                "pickup.assignment": {
+                    startedAt: now,
+                    otp: generateOTP(), // User -> Driver
+                },
             },
             $push: {
                 timeline: {
@@ -325,6 +325,9 @@ export const processArriveAtStore = async (bookingId, driverId) => {
             $set: {
                 status: BOOKING_STATUS.AT_STORE,
                 lastStatusUpdatedAt: now,
+                "pickup.assignment": {
+                    storageOtp: generateOTP(), // Store -> Driver
+                },
             },
             $push: {
                 timeline: {
@@ -349,6 +352,7 @@ export const processArriveAtStoreForReturn = async (bookingId, driverId) => {
             status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
             "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
         },
+        { $set: { "delivery.assignment.storageReturnOtp": generateOTP() } },
         {
             $push: {
                 timeline: {
@@ -379,7 +383,10 @@ export const processArriveAtUserReturn = async (bookingId, driverId) => {
             $set: {
                 status: BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
                 lastStatusUpdatedAt: now,
-                "delivery.assignment.startedAt": now,
+                "delivery.assignment": {
+                    startedAt: now,
+                    returnOtp: generateOTP(), // User -> Driver
+                },
             },
             $push: {
                 timeline: {

@@ -171,9 +171,6 @@ export const updateDriverLocation = async (driverId, lng, lat, serviceAreaId = n
 };
 
 // TRIP STATE
-// These keep Redis meta in sync when a driver starts/finishes a trip.
-// Always call these alongside the MongoDB update, not instead of it.
-
 export const markDriverOnTrip = async (driverId, bookingId) => {
     if (!driverId) return false;
 

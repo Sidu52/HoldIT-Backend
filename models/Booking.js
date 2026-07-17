@@ -16,7 +16,9 @@ const DriverAssignmentSchema = new mongoose.Schema(
     {
         driverId: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" },
         returnOtp: { type: String, sparse: true },
-        otp: { type: String, sparse: true },
+        storageOtp: { type: String, sparse: true },
+        storageReturnOtp: { type: String, sparse: true },
+        otp: { type: String, sparse: true, },
         assignedAt: Date,
         acceptedAt: Date,
         startedAt: Date,

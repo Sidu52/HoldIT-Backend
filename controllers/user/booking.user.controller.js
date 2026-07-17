@@ -46,23 +46,6 @@ import { getIO } from "../../src/socket/index.js";
 import { emitBookingCreated, emitBookingStoreAssigned, emitStoreIncomingBooking, emitBookingReturnRequested } from "../../src/socket/emitters/booking.emitter.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 
-// ─── SCHEDULE PICKUP ──────────────────────────────────────────────────────────
-/**
- * Creates a new pickup booking inside a transaction.
- * Order of operations:
- *   1. Verify user is active
- *   2. Verify pickup location is serviceable
- *   3. Enforce max-active-bookings limit
- *   4. Find + atomically reserve nearest store capacity
- *   5. Create the booking document
- *   6. Commit — then dispatch driver-search job outside the transaction
- *
- * Driver availability is intentionally NOT a hard gate here.
- * We create the booking and let the async driver-search job handle assignment.
- * Checking "are there drivers nearby?" before committing creates a TOCTOU race
- * (drivers go offline between the check and job dispatch) and adds latency to
- * the hot path. The job will handle the no-driver case and notify the user.
- */
 export const schedulePickup = async (req, res) => {
     const session = await mongoose.startSession();
     try {
@@ -81,7 +64,7 @@ export const schedulePickup = async (req, res) => {
         // userInfo is optional — guests may not supply it
         const { firstName = "", lastName = "", phone = "" } = userInfo ?? {};
 
-        // ── 1. Verify user ────────────────────────────────────────────────────
+        //S Verify user
         const { valid, errorType } = await verifyUserForBooking(userId, session);
         if (!valid) {
             await safeAbortSession(session);
@@ -96,12 +79,12 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
-        // ── 2. Serviceability check ───────────────────────────────────────────
+        //S Serviceability
         const serviceabilityResult = await checkServiceability(
             pickupLocation.lng,
             pickupLocation.lat
         );
-        console.log("Serviceability Result:", pickupLocation);
+
         if (!serviceabilityResult.isServiceable) {
             await safeAbortSession(session);
             return sendError(
@@ -116,7 +99,7 @@ export const schedulePickup = async (req, res) => {
         }
         const { serviceAreaId } = serviceabilityResult;
 
-        // ── 3. Active booking limit ───────────────────────────────────────────
+        // Active booking limit
         const { hasReachedLimit } = await checkActiveBookingLimit(userId, session);
         if (hasReachedLimit) {
             await safeAbortSession(session);
@@ -127,7 +110,7 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
-        // ── 4. Find + reserve store ───────────────────────────────────────────
+        // 4. Find + reserve store
         const { store, error: storeError } = await findNearestAvailableStore(
             pickupLocation.lat,
             pickupLocation.lng,
@@ -152,7 +135,7 @@ export const schedulePickup = async (req, res) => {
             return sendError(res, BOOKING_MESSAGES.STORE_AT_CAPACITY, STATUS_CODES.CONFLICT);
         }
 
-        // ── 5. Create booking ─────────────────────────────────────────────────
+        //  5. Create booking
         const totalCount = calculateTotalLuggage(luggage);
 
         const [booking] = await Booking.create(
@@ -192,7 +175,7 @@ export const schedulePickup = async (req, res) => {
             { session }
         );
 
-        // ── 6. Commit ─────────────────────────────────────────────────────────
+        // 6. Commit
         await session.commitTransaction();
         session.endSession();
 
@@ -213,7 +196,7 @@ export const schedulePickup = async (req, res) => {
             logger.warn("[schedulePickup] Socket notify failed:", socketErr.message);
         }
 
-        // ── Post-commit: dispatch driver-search job ───────────────────────────
+        //  Post-commit: dispatch driver-search job
         // Errors here are non-fatal — log and alert; booking already exists.
         try {
             await addJobToQueue(
@@ -278,7 +261,7 @@ export const schedulePickup = async (req, res) => {
     }
 };
 
-// ─── GET MY BOOKINGS ──────────────────────────────────────────────────────────
+// GET MY BOOKINGS
 export const getMyBookings = async (req, res) => {
     try {
         const userId = req.user.auth_id;
@@ -332,7 +315,7 @@ export const getMyBookings = async (req, res) => {
     }
 };
 
-// ─── GET BOOKING BY ID ────────────────────────────────────────────────────────
+// GET BOOKING BY ID
 export const getBookingById = async (req, res) => {
     try {
         const userId = req.user.auth_id;
@@ -359,12 +342,7 @@ export const getBookingById = async (req, res) => {
     }
 };
 
-// ─── CANCEL BOOKING ───────────────────────────────────────────────────────────
-/**
- * Uses a transaction + optimistic concurrency (__v) to safely cancel.
- * The select projection explicitly includes all fields needed plus __v
- * so Mongoose's optimistic concurrency check works correctly.
- */
+// CANCEL BOOKING
 export const cancelBooking = async (req, res) => {
     const session = await mongoose.startSession();
     try {
@@ -480,7 +458,7 @@ export const cancelBooking = async (req, res) => {
     }
 };
 
-// ─── GET ACTIVE BOOKINGS ──────────────────────────────────────────────────────
+// GET ACTIVE BOOKINGS
 export const getActiveBookings = async (req, res) => {
     try {
         const userId = req.user.auth_id;
@@ -510,7 +488,7 @@ export const getActiveBookings = async (req, res) => {
     }
 };
 
-// ─── GET BOOKING HISTORY ──────────────────────────────────────────────────────
+// GET BOOKING HISTORY
 export const getBookingHistory = async (req, res) => {
     try {
         const userId = req.user.auth_id;
@@ -567,7 +545,7 @@ export const getBookingHistory = async (req, res) => {
     }
 };
 
-// ─── REQUEST RETURN ───────────────────────────────────────────────────────────
+// REQUEST RETURN
 /**
  * Wrapped in a transaction so the status update + timeline push are atomic.
  * The job is dispatched post-commit (same pattern as schedulePickup).
