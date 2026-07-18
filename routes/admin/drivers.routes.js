@@ -11,6 +11,7 @@ import {
   bulkDeactivateDrivers,
   updateDriverStatus,
   driverLocation,
+  updateDriverDuty,
 } from "../../controllers/admin/driver.admin.controller.js";
 import {
   listDriversSchema,
@@ -90,6 +91,14 @@ router.patch(
   validate(driverIdSchema, "params"),
   validate(updateDriverAccountSchema, "body"),
   updateDriverStatus
+);
+
+router.patch(
+  "/:driver_id/duty",
+  apiLimiter,
+  roleMiddleware(...DRIVER_MODIFY_ROLES),
+  validate(driverIdSchema, "params"),
+  updateDriverDuty
 );
 
 

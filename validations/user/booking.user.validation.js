@@ -123,11 +123,6 @@ export const requestReturnSchema = {
         returnLocation: locationSchema.required().messages({
             "any.required": "Return location is required",
         }),
-        returnScheduledAt: Joi.date().iso().greater("now").required().messages({
-            "date.greater": "Return time must be in the future",
-            "date.format": "Return time must be a valid ISO 8601 date",
-            "any.required": "Return scheduled time is required",
-        }),
 
         notes: Joi.string().trim().max(500).optional().allow(""),
     }),

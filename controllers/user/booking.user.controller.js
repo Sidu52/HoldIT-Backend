@@ -23,7 +23,6 @@ import {
     verifyUserForBooking,
     verifyServiceability,
     checkActiveBookingLimit,
-    validateScheduledTime,
     calculateTotalLuggage,
     findUserBooking,
     findMutableUserBooking,
@@ -37,6 +36,7 @@ import {
     assignStoreToBooking,
     findStore,
     findDriver,
+    processReturnBooking,
 } from "../../helpers/user/bookingHelper.js";
 import { STORE_MESSAGES } from "../../constants/user/store.js";
 import { DRIVER_MESSAGES } from "../../constants/user/driver.js";
@@ -46,6 +46,17 @@ import { getIO } from "../../src/socket/index.js";
 import { emitBookingCreated, emitBookingStoreAssigned, emitStoreIncomingBooking, emitBookingReturnRequested } from "../../src/socket/emitters/booking.emitter.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 
+/*
+* Schedule a pickup for a user
+. Verify User is Valid
+. Location is Serviceable
+. Check Active Booking Limit
+. Find Nearest Store
+. Assign Store and increment Booking Count
+. Create Booking
+. Dispatch Driver-Search Job
+
+ */
 export const schedulePickup = async (req, res) => {
     const session = await mongoose.startSession();
     try {
@@ -64,7 +75,7 @@ export const schedulePickup = async (req, res) => {
         // userInfo is optional — guests may not supply it
         const { firstName = "", lastName = "", phone = "" } = userInfo ?? {};
 
-        //S Verify user
+        // Step:1 Verify user
         const { valid, errorType } = await verifyUserForBooking(userId, session);
         if (!valid) {
             await safeAbortSession(session);
@@ -79,7 +90,7 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
-        //S Serviceability
+        // Step:2 Serviceability
         const serviceabilityResult = await checkServiceability(
             pickupLocation.lng,
             pickupLocation.lat
@@ -99,7 +110,7 @@ export const schedulePickup = async (req, res) => {
         }
         const { serviceAreaId } = serviceabilityResult;
 
-        // Active booking limit
+        // Step:3 Active booking limit
         const { hasReachedLimit } = await checkActiveBookingLimit(userId, session);
         if (hasReachedLimit) {
             await safeAbortSession(session);
@@ -110,7 +121,7 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
-        // 4. Find + reserve store
+        // Step:4 Find + reserve store
         const { store, error: storeError } = await findNearestAvailableStore(
             pickupLocation.lat,
             pickupLocation.lng,
@@ -129,13 +140,14 @@ export const schedulePickup = async (req, res) => {
             );
         }
 
+        // Step:5 Assign Store and increment Booking Count
         const { success: storeAssigned } = await assignStoreToBooking(store._id, session);
         if (!storeAssigned) {
             await safeAbortSession(session);
             return sendError(res, BOOKING_MESSAGES.STORE_AT_CAPACITY, STATUS_CODES.CONFLICT);
         }
 
-        //  5. Create booking
+        // Step:6 Create booking
         const totalCount = calculateTotalLuggage(luggage);
 
         const [booking] = await Booking.create(
@@ -148,14 +160,23 @@ export const schedulePickup = async (req, res) => {
                     tipAmount,
                     coupenCode,
                     userInfo: { firstName, lastName, phone },
+                    isActive: true,
                     pickupLocation: {
                         lat: pickupLocation.lat,
                         lng: pickupLocation.lng,
                         address: pickupLocation.address ?? "",
                     },
+                    // Store location
+                    storageLocation: {
+                        lat: store.location.coordinates[1],
+                        lng: store.location.coordinates[0],
+                        address: store.location.address || "",
+                    },
                     luggage: { ...luggage, totalCount },
-                    notes: notes ?? "",
-                    pickup: { scheduledAt: new Date() }, // use Date not Date.now() for Mongoose Date fields
+                    pickup: {
+                        scheduledAt: new Date(),
+                        notes: notes ?? "",
+                    },
                     timeline: [
                         createTimelineEntry(
                             BOOKING_STATUS.CREATED,
@@ -175,7 +196,7 @@ export const schedulePickup = async (req, res) => {
             { session }
         );
 
-        // 6. Commit
+        // Commit
         await session.commitTransaction();
         session.endSession();
 
@@ -196,8 +217,7 @@ export const schedulePickup = async (req, res) => {
             logger.warn("[schedulePickup] Socket notify failed:", socketErr.message);
         }
 
-        //  Post-commit: dispatch driver-search job
-        // Errors here are non-fatal — log and alert; booking already exists.
+        // Step:7 Dispatch driver-search job
         try {
             await addJobToQueue(
                 DRIVER_ASSIGN_QUEUE,
@@ -222,10 +242,9 @@ export const schedulePickup = async (req, res) => {
                 `[schedulePickup] Driver search job failed for booking ${booking._id}. ` +
                 `Booking created but driver search not started. Error: ${jobErr.message}`
             );
-            // TODO: push an alert / dead-letter so ops can manually trigger the search
         }
 
-        // Cache invalidation is best-effort — never block the response
+        // Cache invalidation
         invalidateBookingCache(userId).catch((err) =>
             logger.warn("[schedulePickup] Cache invalidation failed:", err.message)
         );
@@ -352,8 +371,6 @@ export const cancelBooking = async (req, res) => {
         const { booking_id } = req.params;
         const { reason } = req.body;
 
-        // Explicit select — never concatenate projection strings (fragile + silent bugs)
-        // __v is REQUIRED for optimistic concurrency (optimisticConcurrency: true on schema)
         const booking = await Booking.findOne({ _id: booking_id, userId })
             .select("status isActive storeId payment pricing timeline cancelledAt cancelledBy cancelReason pickup.assignment.driverId delivery.assignment.driverId __v")
             .session(session);
@@ -378,7 +395,6 @@ export const cancelBooking = async (req, res) => {
         booking.cancelledAt = now;
         booking.cancelledBy = "USER";
         booking.cancelReason = reason;
-        booking.payment.status = "pending"; // will be updated by payment job
 
         booking.timeline.push(
             createTimelineEntry(
@@ -406,7 +422,7 @@ export const cancelBooking = async (req, res) => {
             );
         }
 
-        // Cache bust + job dispatch are post-commit best-effort
+        // Cache bust job dispatch are post-commit best-effort
         await invalidateBookingCache(userId, booking_id).catch((err) =>
             logger.warn("[cancelBooking] Cache invalidation failed:", err.message)
         );
@@ -546,100 +562,38 @@ export const getBookingHistory = async (req, res) => {
 };
 
 // REQUEST RETURN
-/**
- * Wrapped in a transaction so the status update + timeline push are atomic.
- * The job is dispatched post-commit (same pattern as schedulePickup).
- */
 export const requestReturn = async (req, res) => {
-    const session = await mongoose.startSession();
     try {
-        session.startTransaction();
-
         const userId = req.user.auth_id;
         const { booking_id } = req.params;
-        const { returnLocation, returnScheduledAt, notes } = req.body;
+        const { returnLocation, notes } = req.body;
 
-        // findMutableUserBooking returns a Mongoose document (needed for .save())
-        const booking = await findMutableUserBooking(
-            booking_id,
-            userId,
-            // Ensure __v is selected for optimistic concurrency
-            `${BOOKING_SELECT.RETURN} __v`,
-            session
-        );
-
-        if (!booking) {
-            await safeAbortSession(session);
-            return sendError(res, BOOKING_MESSAGES.BOOKING_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        if (!mongoose.isValidObjectId(booking_id)) {
+            return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
         }
 
-        if (!RETURN_REQUESTABLE_STATUSES.includes(booking.status)) {
-            await safeAbortSession(session);
+        // Validate Location under 5km from store
+        const store = await Store.findById(booking.storeId).select("location");
+        const distanceKm = parseFloat((store.location.coordinates[0] - returnLocation.lng) ** 2 + (store.location.coordinates[1] - returnLocation.lat) ** 2);
+        if (distanceKm > 5000) {
             return sendError(
                 res,
-                BOOKING_MESSAGES.CANNOT_RETURN(booking.status),
-                STATUS_CODES.CONFLICT
-            );
-        }
-
-        const { valid: timeValid, scheduledTime: returnTime } = validateScheduledTime(
-            returnScheduledAt,
-            BOOKING_LIMITS.MIN_RETURN_LEAD_MINUTES
-        );
-
-        if (!timeValid) {
-            await safeAbortSession(session);
-            return sendError(
-                res,
-                BOOKING_MESSAGES.RETURN_TOO_SOON(BOOKING_LIMITS.MIN_RETURN_LEAD_MINUTES),
+                BOOKING_MESSAGES.RETURN_TOO_FAR(5),
                 STATUS_CODES.BAD_REQUEST
             );
         }
 
-        booking.status = BOOKING_STATUS.RETURN_REQUESTED;
-        booking.deliveryLocation = {
-            lat: returnLocation.lat,
-            lng: returnLocation.lng,
-            address: returnLocation.address ?? "",
-        };
-        booking.delivery = {
-            ...booking.delivery,
-            requestedAt: new Date(),
-            scheduledAt: returnTime,
-        };
-
-        booking.timeline.push(
-            createTimelineEntry(
-                BOOKING_STATUS.RETURN_REQUESTED,
-                notes ? `Return requested by user: ${notes}` : "Return requested by user",
-                userId,
-                "User"
-            )
+        const booking = await processReturnBooking(
+            booking_id,
+            userId,
+            returnLocation,
+            notes
         );
 
-        await booking.save({ session });
-        await session.commitTransaction();
-        session.endSession();
-
-        // Post-commit: cache bust + job dispatch
-        await invalidateBookingCache(userId, booking_id).catch((err) =>
-            logger.warn("[requestReturn] Cache invalidation failed:", err.message)
-        );
-
-        try {
-            await queueBookingJob(
-                JOB_QUEUES.RETURN_PROCESS,
-                BOOKING_JOB_NAMES.PROCESS_RETURN,
-                { bookingId: booking_id }
-            );
-        } catch (jobErr) {
-            logger.error(
-                `[requestReturn] Failed to queue return job for booking ${booking_id}:`,
-                jobErr.message
-            );
+        if (!booking) {
+            return sendError(res, BOOKING_MESSAGES.BOOKING_NOT_FOUND, STATUS_CODES.NOT_FOUND);
         }
 
-        // Emit socket event: return requested
         try {
             const io = (() => { try { return getIO(); } catch { return null; } })();
             if (io) {
@@ -656,28 +610,23 @@ export const requestReturn = async (req, res) => {
             logger.debug(`[requestReturn:Socket] Emission skipped: ${socketErr.message}`);
         }
 
+        // Re Assign Driver
+
         return sendResponse({
             res,
             message: BOOKING_MESSAGES.RETURN_REQUESTED,
             data: {
                 bookingId: booking._id,
                 status: booking.status,
-                returnScheduledAt: returnTime,
             },
         });
     } catch (err) {
-        await safeAbortSession(session);
-        logger.error("[requestReturn] Error:", err);
+        logger.error("[requestReturnV2] Error:", err);
         return sendError(res, BOOKING_MESSAGES.RETURN_FAILED);
     }
 };
 
-// ─── GET ASSIGNED DRIVER ──────────────────────────────────────────────────────
-/**
- * Read-only endpoint — use findUserBooking (lean) not findMutableUserBooking.
- * Delivery driver takes precedence over pickup driver when both exist,
- * since that reflects the most current assignment.
- */
+// GET ASSIGNED DRIVER
 export const getAssignDriver = async (req, res) => {
     try {
         const userId = req.user.auth_id;
@@ -694,7 +643,6 @@ export const getAssignDriver = async (req, res) => {
             return sendError(res, BOOKING_MESSAGES.BOOKING_NOT_FOUND, STATUS_CODES.NOT_FOUND);
         }
 
-        // Delivery driver takes precedence (most recent assignment)
         const deliveryDriverId = booking.delivery?.assignment?.driverId;
         const pickupDriverId = booking.pickup?.assignment?.driverId;
         const driverId = deliveryDriverId ?? pickupDriverId;
@@ -740,13 +688,13 @@ export const getAssignDriver = async (req, res) => {
     }
 };
 
-// ─── GET ASSIGNED STORE ───────────────────────────────────────────────────────
+// GET ASSIGNED STORE
 export const getAssignStore = async (req, res) => {
     try {
         const userId = req.user.auth_id;
         const { booking_id } = req.params;
 
-        // Lean read — no mutation
+        // Lean read no mutation
         const booking = await findUserBooking(
             booking_id,
             userId,

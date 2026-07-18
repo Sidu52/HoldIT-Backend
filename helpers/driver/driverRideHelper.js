@@ -239,10 +239,8 @@ export const processArriveAtPickup = async (bookingId, driverId) => {
             $set: {
                 status: BOOKING_STATUS.DRIVER_ARRIVED,
                 lastStatusUpdatedAt: now,
-                "pickup.assignment": {
-                    startedAt: now,
-                    otp: generateOTP(), // User -> Driver
-                },
+                "pickup.assignment.startedAt": now,
+                "pickup.assignment.otp": generateOTP(), // User -> Driver
             },
             $push: {
                 timeline: {
@@ -310,6 +308,57 @@ export const processCompletePickup = async (bookingId, driverId, otp, photos = [
     );
 };
 
+export const processCompletePickupAtStore = async (bookingId, driverId, otp, photos = []) => {
+    const now = new Date();
+
+    const booking = await Booking.findOne({
+        _id: bookingId,
+        status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+        "pickup.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+    })
+
+    if (!booking) return null;
+
+    // OTP Rate limiting check
+    const rateLimitKey = `rate_limit:otp:${driverId}:${bookingId}`;
+    const failedAttempts = parseInt(await redis.get(rateLimitKey) || "0", 10);
+    if (failedAttempts >= 5) {
+        throw new Error("Too many failed attempts. Locked out for 15 minutes.");
+    }
+
+    // OTP Verification
+    if (booking.delivery.assignment.storageReturnOtp !== otp) {
+        const fails = await redis.incr(rateLimitKey);
+        if (fails === 1) await redis.expire(rateLimitKey, 15 * 60);
+        throw new Error("Invalid pickup OTP");
+    }
+
+    await redis.del(rateLimitKey); // clear on success
+
+    return Booking.findByIdAndUpdate(
+        bookingId,
+        {
+            $set: {
+                status: BOOKING_STATUS.OUT_FOR_RETURN,
+                lastStatusUpdatedAt: now,
+                "delivery.returnOtp": generateOTP(), // User -> Driver
+                "luggagePhotos.delivery": photos,
+               
+            },
+            $push: {
+                timeline: {
+                    status: BOOKING_STATUS.OUT_FOR_RETURN,
+                    note: "Luggage handed over to return driver by store",
+                    updatedBy: new mongoose.Types.ObjectId(driverId),
+                    updatedByModel: "Driver"
+                    
+                },
+            },
+        },
+        { returnDocument: "after" }
+    );
+};
+
 // ARRIVE AT STORE driver reached the store with luggage
 
 export const processArriveAtStore = async (bookingId, driverId) => {
@@ -325,9 +374,7 @@ export const processArriveAtStore = async (bookingId, driverId) => {
             $set: {
                 status: BOOKING_STATUS.AT_STORE,
                 lastStatusUpdatedAt: now,
-                "pickup.assignment": {
-                    storageOtp: generateOTP(), // Store -> Driver
-                },
+                "pickup.assignment.storageOtp": generateOTP(), // Store -> Driver
             },
             $push: {
                 timeline: {
@@ -383,10 +430,8 @@ export const processArriveAtUserReturn = async (bookingId, driverId) => {
             $set: {
                 status: BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
                 lastStatusUpdatedAt: now,
-                "delivery.assignment": {
-                    startedAt: now,
-                    returnOtp: generateOTP(), // User -> Driver
-                },
+                "delivery.assignment.startedAt": now, 
+                "delivery.assignment.returnOtp": generateOTP(), // User -> Driver
             },
             $push: {
                 timeline: {
@@ -536,11 +581,12 @@ async function flagCriticalCancellation(bookingId, driverId, status, reason) {
 export const processCompleteDelivery = async (bookingId, driverId, otp, photos = []) => {
     const now = new Date();
 
+    // add . selected
     const booking = await Booking.findOne({
         _id: bookingId,
         status: { $in: [BOOKING_STATUS.OUT_FOR_RETURN, BOOKING_STATUS.ARRIVED_FOR_DELIVERY] },
         "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
-    }).select("delivery.assignment.otp");
+    })
 
     if (!booking) return null;
 
@@ -552,7 +598,7 @@ export const processCompleteDelivery = async (bookingId, driverId, otp, photos =
     }
 
     // OTP Verification
-    if (booking.delivery.assignment.otp !== otp) {
+    if (booking.delivery.assignment.returnOtp !== otp) {
         const fails = await redis.incr(rateLimitKey);
         if (fails === 1) await redis.expire(rateLimitKey, 15 * 60);
         throw new Error("Invalid delivery OTP");
@@ -567,7 +613,6 @@ export const processCompleteDelivery = async (bookingId, driverId, otp, photos =
                 status: BOOKING_STATUS.DELIVERED,
                 lastStatusUpdatedAt: now,
                 "delivery.assignment.completedAt": now,
-                "delivery.assignment.otp": null, // Clear used OTP
                 "luggagePhotos.delivery": photos,
                 "payment.status": "paid", // usually completed at this point
             },

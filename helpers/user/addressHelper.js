@@ -14,7 +14,7 @@ export const checkServiceability = async (lng, lat) => {
         lat < -90 || lat > 90 ||
         lng < -180 || lng > 180
     ) {
-        logger.warn(`[Serviceability] Invalid coordinates: lat=${lat}, lng=${lng}`);
+        logger.warn(`Serviceability Invalid coordinates: lat=${lat}, lng=${lng}`);
         return { isServiceable: false, serviceAreaId: null, error: "INVALID_COORDS" };
     }
 

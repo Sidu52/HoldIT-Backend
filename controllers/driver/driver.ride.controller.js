@@ -23,6 +23,7 @@ import {
     processArriveAtStoreForReturn,
     processArriveAtUserReturn,
     processCompleteDelivery,
+    processCompletePickupAtStore,
 } from "../../helpers/driver/driverRideHelper.js";
 
 
@@ -322,7 +323,7 @@ export const arriveAtPickupController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
 
-        const booking = await processAr+-riveAtPickup(booking_id, driverId);
+        const booking = await processArriveAtPickup(booking_id, driverId);
 
         if (!booking) {
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
@@ -484,6 +485,56 @@ export const arriveAtStoreForReturnController = async (req, res) => {
     } catch (err) {
         logger.error("Arrive At Store For Return Error:", err);
         return sendError(res, "Failed to update store arrival for return.");
+    }
+};
+
+// COMPLETE PICKUP luggage collected, heading to store
+export const completePickupAtStoreController = async (req, res) => {
+    try {
+        const driverId = req.user.auth_id;
+        const { booking_id } = req.params;
+        const { otp } = req.body || {};
+        const photos = req.files ? req.files.map(f => `/uploads/pickup/${f.filename}`) : [];
+
+        if (!otp) {
+            return sendError(res, "Pickup OTP is required.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const booking = await processCompletePickupAtStore(booking_id, driverId, otp, photos);
+
+        if (!booking) {
+            return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        }
+
+        await Promise.all([
+            invalidateDriverRideCache(driverId, booking_id),
+            invalidateBookingCache(booking.userId.toString(), booking_id),
+        ]);
+
+
+        // Emit socket event: luggage picked up
+        try {
+            const io = safeGetIO();
+            if (io) {
+                const driver = await Driver.findById(driverId).select("first_name last_name").lean();
+                const driverName = driver ? `${driver.first_name} ${driver.last_name}`.trim() : "Driver";
+                emitBookingPickedUp(io, booking_id, booking.userId.toString(), booking.storeId?.toString(), new Date(), driverName);
+            }
+        } catch (socketErr) {
+            logger.debug(`[CompletePickup:Socket] Emission skipped: ${socketErr.message}`);
+        }
+
+        return sendResponse({
+            res,
+            message: DRIVER_RIDE_MESSAGES.PICKUP_COMPLETED,
+            data: { bookingId: booking._id, status: booking.status },
+        });
+    } catch (err) {
+        if (err.message === "Invalid pickup OTP") {
+            return sendError(res, err.message, STATUS_CODES.BAD_REQUEST);
+        }
+        logger.error("Complete Pickup Error:", err);
+        return sendError(res, DRIVER_RIDE_MESSAGES.COMPLETE_PICKUP_FAILED);
     }
 };
 

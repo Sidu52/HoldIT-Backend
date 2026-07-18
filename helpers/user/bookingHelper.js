@@ -13,31 +13,13 @@ import {
     DEFAULT_JOB_OPTIONS,
     BOOKING_LIMITS,
     REDIS_KEYS,
+    BOOKING_JOB_NAMES,
 } from "../../constants/user/booking.js";
 import { DRIVER_RIDE_CACHE } from "../../constants/driver/driver.ride.js";
 import { safeAbortSession } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 
-// ─── SCHEDULING ───────────────────────────────────────────────────────────────
-
-/**
- * Returns whether a proposed scheduled time satisfies the minimum lead-time
- * requirement, plus the parsed Date for use in the controller.
- */
-export const validateScheduledTime = (scheduledAt, minLeadMinutes) => {
-    const scheduledTime = new Date(scheduledAt);
-    const minTime = new Date(Date.now() + minLeadMinutes * 60 * 1000);
-    return {
-        valid: scheduledTime >= minTime,
-        scheduledTime,
-    };
-};
-
-// ─── USER VERIFICATION ────────────────────────────────────────────────────────
-
-/**
- * Confirms the user exists and their account is active before allowing a booking.
- */
+// USER VERIFICATION
 export const verifyUserForBooking = async (userId, session = null) => {
     const query = User.findById(userId).select("account_status").lean();
     if (session) query.session(session);
@@ -63,8 +45,7 @@ export const verifyUserForBooking = async (userId, session = null) => {
  */
 export const verifyServiceability = checkServiceability;
 
-// ─── ACTIVE BOOKING LIMIT ─────────────────────────────────────────────────────
-
+//  ACTIVE BOOKING LIMIT
 export const checkActiveBookingLimit = async (userId, session = null) => {
     const query = Booking.countDocuments({
         userId,
@@ -79,12 +60,7 @@ export const checkActiveBookingLimit = async (userId, session = null) => {
     };
 };
 
-// ─── STORE SEARCH & ASSIGNMENT ────────────────────────────────────────────────
-
-/**
- * Finds the nearest available store using a $geoNear aggregation.
- * Prioritises distance then remaining capacity.
- */
+// STORE SEARCH & ASSIGNMENT
 export const findNearestAvailableStore = async (lat, lng, session = null) => {
     try {
         const pipeline = [
@@ -140,10 +116,7 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
     }
 };
 
-/**
- * Atomically increments the store's booking count, guarded by a capacity check.
- * Returns { success: false } if the store is full (race condition protection).
- */
+// Atomically increments the store's booking count, guarded by a capacity check.
 export const assignStoreToBooking = async (storeId, session) => {
     try {
         const updatedStore = await Store.findOneAndUpdate(
@@ -166,6 +139,32 @@ export const assignStoreToBooking = async (storeId, session) => {
     }
 };
 
+// LUGGAGE
+export const calculateTotalLuggage = (luggage) => {
+    const { small = 0, medium = 0, large = 0, other = 0 } = luggage;
+    return small + medium + large + other;
+};
+
+// RELEASE DRIVER
+export const releaseDriver = async (driverId) => {
+    if (!driverId) return;
+    try {
+        const driver = await Driver.findByIdAndUpdate(
+            driverId,
+            { $set: { is_on_trip: false, current_booking_id: null } },
+            { new: true }
+        );
+        if (driver) {
+            const { markDriverAvailable, addDriverToRedis } = await import("../../services/driverGeoService.js");
+            await addDriverToRedis(driver);
+            await markDriverAvailable(driverId.toString());
+        }
+    } catch (err) {
+        logger.error(`[ReleaseDriver] Failed for driver ${driverId}:`, err.message);
+    }
+};
+
+
 /**
  * Decrements the store's booking count, guarded against going below zero.
  * Safe to call even if storeId is null/undefined (no-op).
@@ -187,23 +186,7 @@ export const releaseStoreCapacity = async (storeId, session = null) => {
     }
 };
 
-export const releaseDriver = async (driverId) => {
-    if (!driverId) return;
-    try {
-        const driver = await Driver.findByIdAndUpdate(
-            driverId,
-            { $set: { is_on_trip: false, current_booking_id: null } },
-            { new: true }
-        );
-        if (driver) {
-            const { markDriverAvailable, addDriverToRedis } = await import("../../services/driverGeoService.js");
-            await addDriverToRedis(driver);
-            await markDriverAvailable(driverId.toString());
-        }
-    } catch (err) {
-        logger.error(`[ReleaseDriver] Failed for driver ${driverId}:`, err.message);
-    }
-};
+
 
 // ─── DRIVER SEARCH ────────────────────────────────────────────────────────────
 
@@ -572,12 +555,6 @@ export const createTimelineEntry = (
     return entry;
 };
 
-// ─── LUGGAGE ──────────────────────────────────────────────────────────────────
-
-export const calculateTotalLuggage = (luggage) => {
-    const { small = 0, medium = 0, large = 0, other = 0 } = luggage;
-    return small + medium + large + other;
-};
 
 // ─── JOB HELPER ───────────────────────────────────────────────────────────────
 
@@ -599,4 +576,80 @@ export const queueBookingJob = async (queueName, jobName, data, extraOptions = {
         { name: jobName, data },
         { jobId, ...DEFAULT_JOB_OPTIONS, ...extraOptions }
     );
+};
+
+// booking
+export const processReturnBooking = async (bookingId, userId, returnLocation, notes) => {
+    const now = new Date();
+
+    const booking = await Booking.findOneAndUpdate(
+        {
+            _id: bookingId,
+            userId: new mongoose.Types.ObjectId(userId),
+            status: { $in: [BOOKING_STATUS.STORED] },
+        },
+        {
+            $set: {
+                status: BOOKING_STATUS.RETURN_REQUESTED,
+                deliveryLocation: {
+                    lat: returnLocation.lat,
+                    lng: returnLocation.lng,
+                    address: returnLocation.address ?? "",
+                },
+                "delivery.requestedAt": now,
+                lastStatusUpdatedAt: now,
+            },
+            $push: {
+                timeline: {
+                    status: BOOKING_STATUS.RETURN_REQUESTED,
+                    note: notes ? `Return requested by user: ${notes}` : "Return requested by user",
+                    updatedBy: new mongoose.Types.ObjectId(userId),
+                    updatedByModel: "User",
+                    createdAt: now,
+                },
+            },
+        },
+        { returnDocument: "after" }
+    );
+
+    if (!booking) return null;
+
+    const { cleanupBookingRedisKeys } = await import("./driverAssignHelper.js");
+
+    const tasks = [
+        { label: "cleanupRedisKeys", promise: cleanupBookingRedisKeys(bookingId) },
+        {
+            label: "queueReturnJob",
+            promise: queueBookingJob(
+                JOB_QUEUES.RETURN_PROCESS,
+                BOOKING_JOB_NAMES.PROCESS_RETURN,
+                { bookingId }
+            ),
+        },
+        {
+            label: "queueNoDriverRevertCheck",
+            promise: queueBookingJob(
+                JOB_QUEUES.RETURN_PROCESS,
+                BOOKING_JOB_NAMES.REVERT_IF_NO_DRIVER,
+                { bookingId },
+                {
+                    jobId: `revert-return-${bookingId}`, 
+                    delay: 2000,
+                }
+            ),
+        },
+        { label: "invalidateCache", promise: invalidateBookingCache(userId, bookingId) },
+    ];
+    const results = await Promise.allSettled(tasks.map((t) => t.promise));
+
+    results.forEach((result, i) => {
+        if (result.status === "rejected") {
+            logger.error(
+                `[processReturnBooking] Post-commit step '${tasks[i].label}' failed for booking ${bookingId}:`,
+                result.reason?.message
+            );
+        }
+    });
+
+    return booking;
 };

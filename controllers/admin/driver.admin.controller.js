@@ -290,3 +290,42 @@ export const bulkDeactivateDrivers = async (req, res) => {
         return sendError(res, "Failed to deactivate drivers");
     }
 };
+
+// Update Drive is_on_duty or is_online and online offline
+export const updateDriverDuty = async (req, res) => {
+    try {
+        const { driver_id } = req.params;
+        const { auth_id } = req.user;
+        const { is_on_duty, is_online } = req.body;
+
+        const driver = await Driver.findById(driver_id).select("_id account_status is_on_trip").lean();
+        if (!driver) return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
+        if (driver.account_status !== ACCOUNT_STATUS.ACTIVE) {
+            return sendError(res, "Driver account is not active", STATUS_CODES.FORBIDDEN);
+        }
+
+        const isDeactivating = driver.is_on_trip;
+        if (isDeactivating && is_on_duty) {
+            return sendError(res, "Cannot deactivate a driver who is currently on a trip", STATUS_CODES.CONFLICT);
+        }
+
+        const updatedDriver = await Driver.findByIdAndUpdate(driver_id, {
+            $set: {
+                is_on_duty,
+                is_online,
+                updated_by: auth_id,
+                ...(isDeactivating && { is_on_trip: false }),
+            },
+        }, { new: true, runValidators: true }).select("_id is_on_duty is_online updated_by").lean();
+
+        await Promise.all([
+            deleteCache(driverKey(driver_id)),
+            deleteByPattern(driverListPattern),
+        ]);
+
+        return sendResponse({ res, message: "Driver duty updated successfully", data: updatedDriver });
+    } catch (err) {
+        logger.error("[updateDriverDuty] Error:", err);
+        return sendError(res, "Failed to update driver duty");
+    }
+};

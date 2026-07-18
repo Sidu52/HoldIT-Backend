@@ -79,13 +79,6 @@ export const incrementCache = async (key, ttl = 60) => {
     }
 };
 
-/**
- * Invalidate (delete) one or more cache keys by pattern.
- *
- * Supports two call signatures used across the codebase:
- *   invalidateCache("refresh:userId:*")          — raw pattern string
- *   invalidateCache("store_owner", userId)        — prefix + id  → "store_owner:userId*"
- */
 export const invalidateCache = async (patternOrPrefix, id) => {
     const pattern = id !== undefined
         ? `${patternOrPrefix}:${id}*`
@@ -97,6 +90,5 @@ export const invalidateCache = async (patternOrPrefix, id) => {
     }
 };
 
-// ── Aliases for backward compatibility (previously lived in utils/cacheHelper.js) ──
 export const getCachedData = getCache;
 export const setCacheData = setCache;

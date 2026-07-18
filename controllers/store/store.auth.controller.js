@@ -67,13 +67,13 @@ export const loginStore = asyncHandler(async (req, res) => {
     const cooldownKey = `otp_cooldown:${phone}`;
     const cooldownExists = await get(cooldownKey);
 
-    if (cooldownExists) {
-        return sendError(
-            res,
-            "Please wait before requesting another OTP.",
-            STATUS_CODES.TOO_MANY_REQUESTS
-        );
-    }
+    // if (cooldownExists) {
+    //     return sendError(
+    //         res,
+    //         "Please wait before requesting another OTP.",
+    //         STATUS_CODES.TOO_MANY_REQUESTS
+    //     );
+    // }
 
     // Generate OTP
     const otp = await generateAndStoreOTP(phone);

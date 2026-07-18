@@ -15,6 +15,7 @@ import {
     getPendingOfferController,
     arriveAtUserReturnController,
     completeDeliveryController,
+    completePickupAtStoreController,
 } from "../../controllers/driver/driver.ride.controller.js";
 
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
@@ -49,6 +50,8 @@ router.put(
     validate(completeRideSchema),
     completePickupController
 );
+router.put("/:booking_id/complete-pickup-at-store", apiLimiter, completePickupAtStoreController);
+
 router.put("/:booking_id/arrive-store", apiLimiter, arriveAtStoreController);
 router.put("/:booking_id/arrive-store-return", apiLimiter, arriveAtStoreForReturnController);
 

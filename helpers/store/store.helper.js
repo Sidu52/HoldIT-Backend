@@ -3,6 +3,7 @@ import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
 import { markDriverAvailable } from "../../services/driverGeoService.js";
 import { ACCOUNT_STATUS, BOOKING_STATUS, STATUS_CODES } from "../../utils/constants.js";
+import logger from "../../utils/logger.js";
 
 // VERIFY STORE
 export const verifyStore = (store, owner = null) => {
@@ -48,6 +49,7 @@ export const processMarkStored = async (bookingId, storeId, notes) => {
                 status: BOOKING_STATUS.STORED,
                 lastStatusUpdatedAt: now,
                 "storage.storedAt": now,
+                "storage.notes": notes,
             },
             $push: {
                 timeline: {
@@ -66,13 +68,26 @@ export const processMarkStored = async (bookingId, storeId, notes) => {
 
     if (!booking) return null;
 
-    // Driver is now free
-    await Promise.all([
-        markDriverAvailable(booking.pickup.assignment.driverId),
-        Driver.findByIdAndUpdate(booking.pickup.assignment.driverId, {
-            $set: { is_on_trip: false, current_booking_id: null },
-        }),
-    ]);
+    const driverId = booking.pickup?.assignment?.driverId;
+
+    // Release driver, if one was assigned
+    if (driverId) {
+        try {
+            const driver = await Driver.findById(driverId);
+            if (driver) {
+                driver.is_on_trip = false;
+                driver.current_booking_id = null;
+                await driver.save();
+
+                // Re-sync geo index BEFORE marking available, or the driver
+                // won't be discoverable for new nearby-driver queries
+                await addDriverToRedis(driver);
+                await markDriverAvailable(driverId);
+            }
+        } catch (err) {
+            logger.error(`[processMarkStored] Driver release/sync failed for ${driverId}:`, err);
+        }
+    }
 
     return booking;
 };

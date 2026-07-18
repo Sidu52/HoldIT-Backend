@@ -165,6 +165,7 @@ export const BOOKING_MESSAGES = {
     MAX_ACTIVE_REACHED: (max) => `You can have maximum ${max} active booking(s).`,
     PICKUP_TOO_SOON: (mins) => `Pickup must be scheduled at least ${mins} minutes from now.`,
     RETURN_TOO_SOON: (mins) => `Return must be scheduled at least ${mins} minutes from now.`,
+    RETURN_TOO_FAR: (maxKm) => `Return location must be at most ${maxKm} km from store.`,
     CANNOT_CANCEL: (status) => `Booking cannot be cancelled in "${status}" status.`,
     CANNOT_RETURN: (status) => `Return cannot be requested in "${status}" status.`,
 

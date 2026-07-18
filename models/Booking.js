@@ -15,16 +15,17 @@ const LocationSchema = new mongoose.Schema(
 const DriverAssignmentSchema = new mongoose.Schema(
     {
         driverId: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" },
-        returnOtp: { type: String, sparse: true },
-        storageOtp: { type: String, sparse: true },
-        storageReturnOtp: { type: String, sparse: true },
-        otp: { type: String, sparse: true, },
+        returnOtp: { type: String, sparse: true }, // Pickup Return OTP
+        storageOtp: { type: String, sparse: true }, // Store Conform OTP
+        storageReturnOtp: { type: String, sparse: true }, // Pickup Return OTP
+        otp: { type: String, sparse: true, }, // Pickup OTP
         assignedAt: Date,
         acceptedAt: Date,
         startedAt: Date,
         completedAt: Date,
         cancelledAt: Date,
         cancelReason: String,
+        notes: { type: String, maxlength: 500, default: "" },
     },
     { _id: false }
 );
@@ -114,9 +115,8 @@ const BookingSchema = new mongoose.Schema(
             delivery: [{ type: String, maxlength: 500 }],
         },
 
-        notes: { type: String, maxlength: 500, default: "" },
-
         pickupLocation: { type: LocationSchema, required: true },
+        storageLocation: { type: LocationSchema, required: true },
         deliveryLocation: { type: LocationSchema, default: null },
 
         pickup: {
@@ -135,7 +135,6 @@ const BookingSchema = new mongoose.Schema(
 
         delivery: {
             requestedAt: Date,
-            scheduledAt: Date,
             assignment: DriverAssignmentSchema,
         },
 
@@ -172,9 +171,6 @@ const BookingSchema = new mongoose.Schema(
             enum: ["USER", "DRIVER", "ADMIN", "SYSTEM"],
         },
         cancelReason: { type: String, maxlength: 500 },
-
-        // Derived field — kept in sync with status via pre-save and pre-update hooks.
-        // true for every non-terminal status, false for delivered/cancelled.
         isActive: { type: Boolean, default: true, index: true },
     },
     {

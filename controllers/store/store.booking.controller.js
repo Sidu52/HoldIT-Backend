@@ -14,6 +14,7 @@ import {
     emitBookingOutForReturn
 } from "../../src/socket/emitters/booking.emitter.js";
 import logger from "../../utils/logger.js";
+import { processMarkStored } from "../../helpers/store/store.helper.js";
 
 const safeGetIO = () => {
     try { return getIO(); } catch { return null; }
@@ -149,8 +150,8 @@ export const confirmStored = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
         const { booking_id } = req.params;
-        const { notes = "" } = req.body || {};
-
+        const { notes = "", otp } = req.body || {};
+       
         if (!mongoose.isValidObjectId(booking_id)) {
             return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
         }
@@ -159,7 +160,7 @@ export const confirmStored = async (req, res) => {
             _id: booking_id,
             storeId: new mongoose.Types.ObjectId(storeId),
         })
-            .select("status userId storage pickup.assignment.driverId")
+            .select("status userId storage pickup.assignment")
             .lean();
 
         if (!booking) {
@@ -174,58 +175,37 @@ export const confirmStored = async (req, res) => {
             );
         }
 
-        const now = new Date();
-
-        const updated = await Booking.findByIdAndUpdate(
-            booking_id,
-            {
-                $set: {
-                    status: BOOKING_STATUS.STORED,
-                    "storage.storedAt": now,
-                    "storage.notes": notes,
-                    lastStatusUpdatedAt: now,
-                },
-                $push: {
-                    timeline: {
-                        status: BOOKING_STATUS.STORED,
-                        note: notes || "Luggage confirmed as stored by store",
-                        updatedBy: new mongoose.Types.ObjectId(storeId),
-                        updatedByModel: "Store",
-                        createdAt: now,
-                    },
-                },
-            },
-            { new: true }
-        ).select("_id bookingCode status storage userId pickup");
-
-        const userId = updated.userId.toString();
-        const driverId = updated.pickup?.assignment?.driverId?.toString();
-
-        // 1. Increment Store Capacity
-        await incrementStoreCapacity(storeId);
-
-        // 2. RELEASE DRIVER (If assigned)
-        if (driverId) {
-            try {
-                const driver = await Driver.findById(driverId);
-                if (driver) {
-                    driver.is_on_trip = false;
-                    driver.current_booking_id = null;
-                    await driver.save();
-
-                    // Re-sync to Redis (update Geo index and metadata)
-                    await addDriverToRedis(driver);
-                    await markDriverAvailable(driverId);
-                }
-            } catch (err) {
-                logger.error(`[ConfirmStored] Driver release/sync failed for ${driverId}:`, err);
-            }
+        if (!otp) {
+            return sendError(res, "OTP is required.", STATUS_CODES.BAD_REQUEST);
         }
 
-        // 3. Clear cache
+        const storageOtp = booking.pickup?.assignment?.storageOtp;
+
+        const isValid =
+            storageOtp &&
+            storageOtp.length === otp.toString().length &&
+            timingSafeEqual(storageOtp, otp.toString());
+
+        if (!isValid) {
+            return sendError(res, "Invalid or expired OTP.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const updated = await processMarkStored(booking_id, storeId, notes);
+
+        if (!updated) {
+            // Status likely changed between the read above and the atomic update
+            return sendError(res, "Booking is no longer eligible for this action.", STATUS_CODES.CONFLICT);
+        }
+
+        const userId = updated.userId.toString();
+
+        // Store capacity
+        await incrementStoreCapacity(storeId);
+
+        // Clear cache
         await invalidateBookingCache(userId, booking_id).catch(() => { });
 
-        // 4. Emit Socket Event
+        // Emit socket event
         try {
             const io = safeGetIO();
             if (io) {
@@ -234,7 +214,7 @@ export const confirmStored = async (req, res) => {
                     booking_id,
                     userId,
                     updated.storage?.storedAt,
-                    "Your Store" // Could fetch actual name if needed
+                    "Your Store"
                 );
             }
         } catch (socketErr) {
