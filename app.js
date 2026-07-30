@@ -70,7 +70,8 @@ app.use(
                 "http://localhost:4001",
                 "http://localhost:3000",
                 "http://localhost:3001",
-                process.env.CLIENT_URL
+                process.env.ADMIN_URL,
+                process.env.STORE_URL,
             ].filter(Boolean);
 
             if (allowedOrigins.includes(origin)) {
