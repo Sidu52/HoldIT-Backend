@@ -5,6 +5,8 @@ import { BOOKING_STATUS } from "../../../utils/constants.js";
 import logger from "../../../utils/logger.js";
 import { SOCKET_EVENTS } from "../socket.events.js";
 import { rooms } from "../socket.rooms.js";
+import { BookingKeys, BookingTTL } from "../../../constants/redis/booking.keys.js";
+import { DriverKeys, DriverTTL } from "../../../constants/redis/driver.keys.js";
 
 const TTL_5_MINS = 5 * 60; // 5 minutes in seconds
 
@@ -34,7 +36,7 @@ export const locationService = {
 
         // 2. Verify driver owns booking & active status (Redis First)
         let isValid = false;
-        const authCacheKey = `booking:active_driver:${bookingId}`;
+        const authCacheKey = BookingKeys.activeDriver(bookingId);
         const cachedDriverId = await redis.get(authCacheKey);
 
         if (cachedDriverId === driverId) {
@@ -52,7 +54,7 @@ export const locationService = {
 
             if (booking) {
                 isValid = true;
-                await redis.setex(authCacheKey, 6 * 60 * 60, driverId); // Cache for 6 hours
+                await redis.setex(authCacheKey, BookingTTL.ACTIVE_DRIVER, driverId);
             }
         }
 
@@ -65,8 +67,8 @@ export const locationService = {
 
         // 3. Store in Redis
         await Promise.all([
-            redis.setex(`driver:location:${driverId}`, TTL_5_MINS, JSON.stringify(locationData)),
-            redis.setex(`booking:driver:${bookingId}`, 24 * 60 * 60, driverId)
+            redis.setex(DriverKeys.location(driverId), DriverTTL.LOCATION, JSON.stringify(locationData)),
+            redis.setex(BookingKeys.driverForBooking(bookingId), BookingTTL.DRIVER_FOR_BOOKING, driverId)
         ]);
 
         // 4. Broadcast to location room
@@ -89,10 +91,10 @@ export const locationService = {
      * Never hits MongoDB.
      */
     async getLocationForBooking(bookingId) {
-        const driverId = await redis.get(`booking:driver:${bookingId}`);
+        const driverId = await redis.get(BookingKeys.driverForBooking(bookingId));
         if (!driverId) return null;
 
-        const locationRaw = await redis.get(`driver:location:${driverId}`);
+        const locationRaw = await redis.get(DriverKeys.location(driverId));
         if (!locationRaw) return null;
 
         return JSON.parse(locationRaw);
@@ -102,7 +104,7 @@ export const locationService = {
      * Clear driver location (When going offline)
      */
     async clearDriverLocation(driverId) {
-        await redis.del(`driver:location:${driverId}`);
+        await redis.del(DriverKeys.location(driverId));
     }
 };
 
@@ -137,7 +139,7 @@ export const startLocationMonitor = (io) => {
                 const bookingId = b._id.toString();
                 
                 // TTL check
-                const ttl = await redis.ttl(`driver:location:${driverIdStr}`);
+                const ttl = await redis.ttl(DriverKeys.location(driverIdStr));
                 
                 // If key is expired (-2) or doesn't exist
                 if (ttl < 0) {

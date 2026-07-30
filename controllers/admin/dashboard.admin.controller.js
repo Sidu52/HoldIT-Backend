@@ -4,10 +4,10 @@ import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { getDateRange } from "../../utils/helper.js";
-import { getCache, setCache } from "../../utils/cache.js";
 import { ACCOUNT_STATUS, STATUS_CODES, VERIFICATION_STATUS, BOOKING_STATUS } from "../../utils/constants.js";
-import { CACHE_TTL } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
+import { cacheAside } from "../../constants/redis/redisOperation.js";
+import { AdminKeys, AdminTTL } from "../../constants/redis/admin.keys.js";
 
 // Constants
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -91,56 +91,49 @@ const normalizeChartData = (data, range) => {
 // DASHBOARD SUMMARY
 export const getDashboardSummary = async (req, res) => {
     try {
-        const cacheKey = "dashboard:summary";
-        const cached = await getCache(cacheKey);
-        if (cached) return sendResponse({ res, message: "Dashboard summary fetched successfully", data: cached });
-
-        const { start, end } = todayRange();
-        const todayFilter = { createdAt: { $gte: start, $lte: end } };
-
-        const [bookingStats, userStats, driverStats, storeStats] = await Promise.all([
-            Booking.aggregate([{
-                $facet: {
-                    total: [{ $count: "count" }],
-                    totalToday: [{ $match: todayFilter }, { $count: "count" }],
-                    statusWise: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
-                }
-            }]),
-            User.aggregate([{
-                $facet: {
-                    total: [{ $count: "count" }],
-                    newToday: [{ $match: todayFilter }, { $count: "count" }],
-                    active: [{ $match: { account_status: ACCOUNT_STATUS.ACTIVE } }, { $count: "count" }],
-                }
-            }]),
-            Driver.aggregate([{
-                $facet: {
-                    total: [{ $count: "count" }],
-                    verificationPending: [{ $match: { verification_status: VERIFICATION_STATUS.PENDING } }, { $count: "count" }],
-                    online: [{ $match: { is_online: true } }, { $count: "count" }],
-                    offline: [{ $match: { is_online: { $ne: true } } }, { $count: "count" }],
-                    newToday: [{ $match: todayFilter }, { $count: "count" }],
-                }
-            }]),
-            Store.aggregate([{
-                $facet: {
-                    total: [{ $count: "count" }],
-                    online: [{ $match: { account_status: ACCOUNT_STATUS.ACTIVE } }, { $count: "count" }],
-                    offline: [{ $match: { account_status: ACCOUNT_STATUS.INACTIVE } }, { $count: "count" }],
-                }
-            }]),
-        ]);
-
-        const b = bookingStats[0], u = userStats[0], d = driverStats[0], s = storeStats[0];
-
-        const responseData = {
-            bookings: { total: extractCount(b.total), totalToday: extractCount(b.totalToday), statusWise: formatStatusWise(b.statusWise) },
-            users: { total: extractCount(u.total), newToday: extractCount(u.newToday), active: extractCount(u.active) },
-            drivers: { total: extractCount(d.total), verificationPending: extractCount(d.verificationPending), online: extractCount(d.online), offline: extractCount(d.offline), newToday: extractCount(d.newToday) },
-            stores: { total: extractCount(s.total), online: extractCount(s.online), offline: extractCount(s.offline) },
-        };
-
-        await setCache(cacheKey, responseData, CACHE_TTL.SUMMARY);
+        const responseData = await cacheAside(AdminKeys.dashboardSummary(), AdminTTL.SUMMARY, async () => {
+            const { start, end } = todayRange();
+            const todayFilter = { createdAt: { $gte: start, $lte: end } };
+            const [bookingStats, userStats, driverStats, storeStats] = await Promise.all([
+                Booking.aggregate([{
+                    $facet: {
+                        total: [{ $count: "count" }],
+                        totalToday: [{ $match: todayFilter }, { $count: "count" }],
+                        statusWise: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
+                    }
+                }]),
+                User.aggregate([{
+                    $facet: {
+                        total: [{ $count: "count" }],
+                        newToday: [{ $match: todayFilter }, { $count: "count" }],
+                        active: [{ $match: { account_status: ACCOUNT_STATUS.ACTIVE } }, { $count: "count" }],
+                    }
+                }]),
+                Driver.aggregate([{
+                    $facet: {
+                        total: [{ $count: "count" }],
+                        verificationPending: [{ $match: { verification_status: VERIFICATION_STATUS.PENDING } }, { $count: "count" }],
+                        online: [{ $match: { is_online: true } }, { $count: "count" }],
+                        offline: [{ $match: { is_online: { $ne: true } } }, { $count: "count" }],
+                        newToday: [{ $match: todayFilter }, { $count: "count" }],
+                    }
+                }]),
+                Store.aggregate([{
+                    $facet: {
+                        total: [{ $count: "count" }],
+                        online: [{ $match: { account_status: ACCOUNT_STATUS.ACTIVE } }, { $count: "count" }],
+                        offline: [{ $match: { account_status: ACCOUNT_STATUS.INACTIVE } }, { $count: "count" }],
+                    }
+                }]),
+            ]);
+            const b = bookingStats[0], u = userStats[0], d = driverStats[0], s = storeStats[0];
+            return {
+                bookings: { total: extractCount(b.total), totalToday: extractCount(b.totalToday), statusWise: formatStatusWise(b.statusWise) },
+                users: { total: extractCount(u.total), newToday: extractCount(u.newToday), active: extractCount(u.active) },
+                drivers: { total: extractCount(d.total), verificationPending: extractCount(d.verificationPending), online: extractCount(d.online), offline: extractCount(d.offline), newToday: extractCount(d.newToday) },
+                stores: { total: extractCount(s.total), online: extractCount(s.online), offline: extractCount(s.offline) },
+            };
+        });
         return sendResponse({ res, message: "Dashboard summary fetched successfully", data: responseData });
     } catch (err) {
         logger.error("[getDashboardSummary] Error:", err);
@@ -152,32 +145,33 @@ export const getDashboardSummary = async (req, res) => {
 export const getChartData = async (req, res) => {
     try {
         const { entity = "booking", range = "week", status } = req.query;
-
         const Model = ENTITY_MODEL_MAP[entity];
         if (!Model) return sendError(res, "Invalid entity type", STATUS_CODES.BAD_REQUEST);
 
-        const cacheKey = `dashboard:chart:${entity}:${range}:${status || "all"}`;
-        const cached = await getCache(cacheKey);
-        if (cached) return sendResponse({ res, message: "Chart data fetched successfully", data: cached });
+        const responseData = await cacheAside(
+            AdminKeys.dashboardChart(entity, range, status || "all"),
+            AdminTTL.CHART,
+            async () => {
+                const { start, end } = getDateRange(range);
+                const matchFilter = { createdAt: { $gte: start, $lte: end }, ...(status && { status }) };
 
-        const { start, end } = getDateRange(range);
-        const matchFilter = { createdAt: { $gte: start, $lte: end }, ...(status && { status }) };
+                const data = await Model.aggregate([
+                    { $match: matchFilter },
+                    { $group: { _id: buildGroupFormat(range), count: { $sum: 1 } } },
+                    { $sort: buildChartSort(range) },
+                ]);
 
-        const data = await Model.aggregate([
-            { $match: matchFilter },
-            { $group: { _id: buildGroupFormat(range), count: { $sum: 1 } } },
-            { $sort: buildChartSort(range) },
-        ]);
+                const chart = normalizeChartData(data, range);
+                return {
+                    entity,
+                    range,
+                    status: status || "all",
+                    total: chart.reduce((sum, item) => sum + item.value, 0),
+                    chart,
+                };
+            }
+        );
 
-        const chart = normalizeChartData(data, range);
-        const responseData = {
-            entity, range,
-            status: status || "all",
-            total: chart.reduce((sum, item) => sum + item.value, 0),
-            chart,
-        };
-
-        await setCache(cacheKey, responseData, CACHE_TTL.CHART);
         return sendResponse({ res, message: "Chart data fetched successfully", data: responseData });
     } catch (err) {
         logger.error("[getChartData] Error:", err);

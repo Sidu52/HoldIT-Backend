@@ -51,13 +51,10 @@ export const signupSchema = Joi.object({
 });
 
 export const forgotPasswordSchema = Joi.object({
-  email: emailField,
+  email: emailField.required(),
 });
 
 export const resetPasswordSchema = Joi.object({
-  token: Joi.string().required().messages({
-    "any.required": "Reset token is required",
-  }),
   password: passwordField("Password"),
   confirm_password: confirmPasswordField("password"),
 });

@@ -6,15 +6,13 @@ import { cancelJob } from "../../services/jobService.js";
 import { markDriverOnTrip } from "../../services/driverGeoService.js";
 import { BOOKING_STATUS, JOB_QUEUES } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
-import {
-    REDIS_KEYS,
-    REDIS_TTL,
-} from "../../constants/user/booking.js";
+import { BookingKeys } from "../../constants/redis/booking.keys.js";
+
 
 // GET PENDING OFFER FOR DRIVER
 export const getValidOfferForDriver = async (bookingId, driverId) => {
-    const offerKey = REDIS_KEYS.BOOKING_OFFER(bookingId);
-    const offer = await redis.hgetall(offerKey);
+    const offerKey = BookingKeys.offer(bookingId);
+    const offer = await redis.hgetall(offerKey); // { status, driverId, attemptNumber }
 
     if (!offer || !offer.driverId) {
         return { valid: false, reason: "OFFER_NOT_FOUND" };
@@ -142,16 +140,15 @@ export const acceptBookingOffer = async (bookingId, driverId) => {
     // Post-commit side effects
     // These run outside the transaction non-fatal if they fail
     await Promise.allSettled([
+
         // Mark offer accepted in Redis
-        redis.hset(REDIS_KEYS.BOOKING_OFFER(bookingId), "status", "accepted"),
-
-        // Remove driver's offered lock
-        redis.del(REDIS_KEYS.DRIVER_OFFERED(driverId)),
-
-        // Clean up candidate pipeline keys
-        redis.del(REDIS_KEYS.BOOKING_CANDIDATES(bookingId)),
-        redis.del(REDIS_KEYS.BOOKING_TRIED(bookingId)),
-        redis.del(REDIS_KEYS.BOOKING_SEARCH_ACTIVE(bookingId)),
+        redis.hset(BookingKeys.offer(bookingId), "status", "accepted"),
+        redis.del(BookingKeys.candidates(bookingId)),
+        redis.del(BookingKeys.tried(bookingId)),
+        redis.del(BookingKeys.searchActive(bookingId)),
+        redis.del(BookingKeys.activeDriver(bookingId)),
+        redis.del(BookingKeys.driverForBooking(bookingId)),
+        
 
         // Mark driver as on trip in Redis meta
         markDriverOnTrip(driverId, bookingId),
@@ -200,10 +197,7 @@ export const rejectBookingOffer = async (bookingId, driverId, reason = "") => {
     }
 
     // Clear offer and driver lock from Redis
-    await Promise.allSettled([
-        redis.del(REDIS_KEYS.BOOKING_OFFER(bookingId)),
-        redis.del(REDIS_KEYS.DRIVER_OFFERED(driverId)),
-    ]);
+    await Promise.allSettled([redis.del(BookingKeys.offer(bookingId)), redis.del(BookingKeys.driverForBooking(bookingId))]);
 
     logger.info(
         `[DriverBooking] Driver ${driverId} rejected booking ${bookingId}: ${reason}`

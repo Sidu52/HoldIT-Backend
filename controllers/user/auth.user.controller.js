@@ -1,18 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../../models/User.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import redis, { set, get, del, delByPattern } from "../../services/redisService.js";
-import {
-    STATUS_CODES,
-    ACCOUNT_STATUS,
-    OTP_LENGTH,
-    OTP_MAX_ATTEMPTS,
-    OTP_COOLDOWN,
-    TOKEN_TYPES,
-    OTP_FAIL_WINDOW_SECONDS,
-    VERIFICATION_STATUS,
-    REDIS_TTL,
-} from "../../utils/constants.js";
+import { STATUS_CODES, ACCOUNT_STATUS, VERIFICATION_STATUS, OTP_LENGTH, TOKEN_TYPES } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import {
@@ -20,35 +9,36 @@ import {
     timingSafeEqual,
     generateTokenPair,
     checkOTPRateLimit,
+    generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
-import { deleteUserProfileCache } from "./cache.js";
 import { setAuthCookies } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 import NotificationService from "../../services/NotificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { generateOTP } from "../../utils/otp.js";
+import { getCache, setCache, deleteCache, deleteByPattern, isKeyExist, incrementCache } from "../../constants/redis/redisOperation.js";
+import { AuthKeys, AuthTTL } from "../../constants/redis/auth.keys.js";
+import { UserKeys, UserTTL } from "../../constants/redis/user.keys.js";
 
 // Helpers
 async function issueOTP(phone) {
     const otp = generateOTP();
-
-    await redis
-        .multi()
-        .del(`otp:${phone}`)
-        .del(`otp_fail:${phone}`)
-        .del(`otp_cooldown:${phone}`)
-        .del(`otp_rate:${phone}`)
-        .set(`otp:${phone}`, otp, "EX", REDIS_TTL.OTP)
-        .exec();
+    await Promise.all([
+        deleteCache(AuthKeys.otp("user", phone)),
+        deleteCache(AuthKeys.otpFail("user", phone)),
+        deleteCache(AuthKeys.otpCooldown("user", phone)),
+        deleteCache(AuthKeys.otpRate("user", phone)),
+        setCache(AuthKeys.otp("user", phone), otp, AuthTTL.OTP)
+    ]);
 
     return otp;
 }
 
 async function getPendingUser(phone) {
-    const raw = await get(`pending_user:${phone}`);
+    const raw = await getCache(AuthKeys.pendingUser(phone));
     if (!raw) return null;
     try {
-        return JSON.parse(raw);
+        return typeof raw === "string" ? JSON.parse(raw) : raw;
     } catch {
         return null;
     }
@@ -80,7 +70,8 @@ export const authUser = asyncHandler(async (req, res) => {
         .lean();
 
     if (existingUser) {
-        if (existingUser.account_status === ACCOUNT_STATUS.BLOCKED) {
+        if (existingUser.account_status === ACCOUNT_STATUS.BLOCKED ||
+            existingUser.account_status === ACCOUNT_STATUS.INACTIVE) {
             return sendError(
                 res,
                 "Your account has been suspended. Please contact support.",
@@ -89,10 +80,10 @@ export const authUser = asyncHandler(async (req, res) => {
         }
     } else {
         const pendingPayload = JSON.stringify({ phone, createdAt: Date.now() });
-        await set(`pending_user:${phone}`, pendingPayload, "EX", REDIS_TTL.PENDING_USER);
+        await setCache(AuthKeys.pendingUser(phone), pendingPayload, AuthTTL.PENDING_USER);
     }
 
-    const isRateLimited = await checkOTPRateLimit(phone);
+    const isRateLimited = await checkOTPRateLimit("user", phone);
     if (isRateLimited) {
         return sendError(
             res,
@@ -145,7 +136,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
         }
     }
 
-    const isRateLimited = await checkOTPRateLimit(phone);
+    const isRateLimited = await checkOTPRateLimit("user", phone);
     if (isRateLimited) {
         return sendError(
             res,
@@ -155,7 +146,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
     }
 
     // Prevent rapid resends (cooldown gate)
-    const cooldownExists = await get(`otp_cooldown:${phone}`);
+    const cooldownExists =  await isKeyExist(AuthKeys.otpCooldown("user", phone));
     if (cooldownExists) {
         return sendError(
             res,
@@ -167,7 +158,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
     const otp = await issueOTP(phone);
 
     // Re-apply cooldown AFTER issueOTP
-    await set(`otp_cooldown:${phone}`, "1", "EX", OTP_COOLDOWN);
+    await setCache(AuthKeys.otpCooldown("user", phone), "1", AuthTTL.OTP_COOLDOWN);
 
     if (process.env.NODE_ENV === "development") {
         logger.info(`[DEV] OTP for ${phone}: ${otp}`);
@@ -193,11 +184,11 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     // Fail-attempt
-    const failKey = `otp_fail:${sanitizedPhone}`;
-    const failCount = await get(failKey);
+    const failKey =  AuthKeys.otpFail("user", sanitizedPhone);
+    const failCount = await getCache(failKey);
 
     if (failCount && parseInt(failCount, 10) >= OTP_MAX_ATTEMPTS) {
-        await del(`otp:${sanitizedPhone}`);
+        await deleteCache(AuthKeys.otp("user", sanitizedPhone));
         return sendError(
             res,
             "Too many failed attempts. Please request a new OTP.",
@@ -206,7 +197,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     // Fetch stored OTP
-    let savedOTP = await get(`otp:${sanitizedPhone}`);
+    let savedOTP = await getCache(AuthKeys.otp("user", sanitizedPhone));
     if (savedOTP) {
         try {
             savedOTP = JSON.parse(savedOTP);
@@ -221,11 +212,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         timingSafeEqual(String(savedOTP), sanitizedOtp);
 
     if (!isOtpValid) {
-        await redis
-            .multi()
-            .incr(failKey)
-            .expire(failKey, OTP_FAIL_WINDOW_SECONDS)
-            .exec();
+        await incrementCache(failKey, AuthTTL.OTP_FAIL_WINDOW);
 
         return sendError(res, "Invalid or expired OTP.", STATUS_CODES.UNAUTHORIZED);
     }
@@ -345,11 +332,11 @@ export const refreshToken = asyncHandler(async (req, res) => {
         return sendError(res, "Invalid token type.", STATUS_CODES.UNAUTHORIZED);
     }
 
-    const redisKey = `refresh:${decoded.auth_id}:${decoded.token_id}`;
-    const storedToken = await get(redisKey);
+    const redisKey = AuthKeys.refreshToken("user", decoded.auth_id, decoded.token_id);
+    const storedToken = await getCache(redisKey);
 
     if (!storedToken) {
-        await delByPattern(`refresh:${decoded.auth_id}:*`);
+        await deleteByPattern(AuthKeys.refreshTokenPattern("user", decoded.auth_id));
         clearAuthCookies(res, "/api/v1/user/auth/refresh");
         return sendError(
             res,
@@ -363,7 +350,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
         .lean();
 
     if (!user) {
-        await del(redisKey);
+        await deleteCache(redisKey);
         clearAuthCookies(res, "/api/v1/user/auth/refresh");
         return sendError(res, "Account not found.", STATUS_CODES.UNAUTHORIZED);
     }
@@ -372,11 +359,11 @@ export const refreshToken = asyncHandler(async (req, res) => {
         user.account_status === ACCOUNT_STATUS.INACTIVE ||
         user.account_status === ACCOUNT_STATUS.BLOCKED
     ) {
-        await del(redisKey);
+        await deleteCache(redisKey);
         clearAuthCookies(res, "/api/v1/user/auth/refresh");
         return sendError(res, "Your account has been suspended.", STATUS_CODES.FORBIDDEN);
     }
-    await del(redisKey);
+    await deleteCache(redisKey);
 
     const { accessToken, refreshToken: newRefreshToken } = await generateTokenPair(
         decoded.auth_id,
@@ -399,7 +386,8 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
 // COMPLETE PROFILE
 export const updateUserDetails = asyncHandler(async (req, res) => {
-    const { auth_id } = req.user;
+   try {
+     const { auth_id } = req.user;
     const { first_name, last_name, email, gender, date_of_birth, address, lat, lng } = req.body;
     const user = await User.findById(auth_id).select("account_status").lean();
 
@@ -407,81 +395,44 @@ export const updateUserDetails = asyncHandler(async (req, res) => {
         return sendError(res, "User not found.", STATUS_CODES.NOT_FOUND);
     }
 
-    if (
-        user.account_status === ACCOUNT_STATUS.BLOCKED ||
-        user.account_status === ACCOUNT_STATUS.INACTIVE
-    ) {
-        return sendError(res, "Your account has been suspended.", STATUS_CODES.FORBIDDEN);
-    }
-
-    // Email uniqueness check
-    const emailTaken = await User.findOne({
-        email: email.toLowerCase().trim(),
-        _id: { $ne: auth_id },
-    })
-        .select("_id")
-        .lean();
-
-    if (emailTaken) {
-        return sendError(
-            res,
-            "Email is already associated with another account.",
-            STATUS_CODES.CONFLICT
-        );
-    }
-
-    const { isServiceable, serviceAreaId } = await checkServiceability(lng, lat);
-
-    // Build the address subdocument
-    const addressDoc = {
-        street: address.trim(),
-        city: "",
-        state: "",
-        postal_code: "",
-        country: "",
-        coordinates: [lng, lat],
+    const updateFields = {
+        first_name: first_name.trim(),
+        last_name: last_name.trim(),
+        email: email.trim().toLowerCase(),
+        gender: gender.toLowerCase(),
+        date_of_birth: new Date(date_of_birth),
+        location: {
+            type: "Point",
+            coordinates: [lng, lat],
+            address: address.trim(),
+        },
         is_serviceable: isServiceable,
-        is_default: true,
+        service_area_id: serviceAreaId || null,
+        verification_status: VERIFICATION_STATUS.PROFILE_COMPLETE,
+        last_active_at: new Date(),
     };
 
-    const updatedUser = await User.findByIdAndUpdate(
-        auth_id,
-        {
-            $set: {
-                first_name: first_name.trim(),
-                last_name: last_name.trim(),
-                email: email.trim().toLowerCase(),
-                gender: gender.toLowerCase(),
-                date_of_birth: new Date(date_of_birth),
-                location: {
-                    type: "Point",
-                    coordinates: [lng, lat],
-                    address: address.trim(),
-                },
-                is_serviceable: isServiceable,
-                service_area_id: serviceAreaId || null,
-                verification_status: VERIFICATION_STATUS.PROFILE_COMPLETE,
-                last_active_at: new Date(),
-            },
-            // Push default address only if none exists
-            $push: {
-                addresses: {
-                    $each: [addressDoc],
-                    $slice: 10,
-                },
-            },
-        },
-        { new: true, runValidators: true }
-    )
-        .select("-__v")
-        .lean();
-
-    if (!updatedUser) {
-        return sendError(res, "Failed to update profile.", STATUS_CODES.INTERNAL_SERVER_ERROR);
+    if (Object.keys(updateFields).length === 1) {
+        return sendError(res, "No fields provided to update", STATUS_CODES.BAD_REQUEST);    
     }
 
+    let updatedUser;
+    try {
+        updatedUser = await User.findByIdAndUpdate(
+            auth_id, { $set: updateFields }, { new: true, runValidators: true }
+        ).select(ExcludedFields).lean();
+    } catch (err) {
+        if (err.code === 11000) {
+            const field = Object.keys(err.keyPattern || {})[0] ?? "field";
+            return sendError(res, `${field} already exists`, STATUS_CODES.CONFLICT);
+        }
+        throw err;
+    }
+
+    if (!updatedUser) return sendError(res, "Failed to update profile.", STATUS_CODES.INTERNAL_SERVER_ERROR);
+
     // Bust profile cache
-    await deleteUserProfileCache(auth_id);
+    await deleteCache(UserKeys.profile(auth_id));
 
     return sendResponse({
         res,
@@ -495,6 +446,92 @@ export const updateUserDetails = asyncHandler(async (req, res) => {
             }),
         },
     });
+   } catch (err) {
+        logger.error("[updateUserDetails] Error:", err);
+        return sendError(res, "Failed to update profile");
+   }
+
+    // Email uniqueness check
+    // const emailTaken = await User.findOne({
+    //     email: email.toLowerCase().trim(),
+    //     _id: { $ne: auth_id },
+    // })
+    //     .select("_id")
+    //     .lean();
+
+    // if (emailTaken) {
+    //     return sendError(
+    //         res,
+    //         "Email is already associated with another account.",
+    //         STATUS_CODES.CONFLICT
+    //     );
+    // }
+
+    // const { isServiceable, serviceAreaId } = await checkServiceability(lng, lat);
+
+    // // Build the address subdocument
+    // const addressDoc = {
+    //     street: address.trim(),
+    //     city: "",
+    //     state: "",
+    //     postal_code: "",
+    //     country: "",
+    //     coordinates: [lng, lat],
+    //     is_serviceable: isServiceable,
+    //     is_default: true,
+    // };
+
+    // const updatedUser = await User.findByIdAndUpdate(
+    //     auth_id,
+    //     {
+    //         $set: {
+    //             first_name: first_name.trim(),
+    //             last_name: last_name.trim(),
+    //             email: email.trim().toLowerCase(),
+    //             gender: gender.toLowerCase(),
+    //             date_of_birth: new Date(date_of_birth),
+    //             location: {
+    //                 type: "Point",
+    //                 coordinates: [lng, lat],
+    //                 address: address.trim(),
+    //             },
+    //             is_serviceable: isServiceable,
+    //             service_area_id: serviceAreaId || null,
+    //             verification_status: VERIFICATION_STATUS.PROFILE_COMPLETE,
+    //             last_active_at: new Date(),
+    //         },
+    //         // Push default address only if none exists
+    //         $push: {
+    //             addresses: {
+    //                 $each: [addressDoc],
+    //                 $slice: 10,
+    //             },
+    //         },
+    //     },
+    //     { new: true, runValidators: true }
+    // )
+    //     .select("-__v")
+    //     .lean();
+
+    // if (!updatedUser) {
+    //     return sendError(res, "Failed to update profile.", STATUS_CODES.INTERNAL_SERVER_ERROR);
+    // }
+
+    // // Bust profile cache
+    // await deleteUserProfileCache(auth_id);
+
+    // return sendResponse({
+    //     res,
+    //     message: "Profile completed successfully",
+    //     data: {
+    //         user: updatedUser,
+    //         isServiceable,
+    //         ...(!isServiceable && {
+    //             serviceMessage:
+    //                 "Your location is not in our service area yet. We'll notify you when we expand.",
+    //         }),
+    //     },
+    // });
 });
 
 // LOGOUT
@@ -505,7 +542,10 @@ export const logout = asyncHandler(async (req, res) => {
         try {
             const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
             if (decoded?.auth_id && decoded?.token_id) {
-                await del(`refresh:${decoded.auth_id}:${decoded.token_id}`);
+                await Promise.all([
+                    deleteCache(AuthKeys.refreshToken("user", decoded.auth_id, decoded.token_id)),
+                    deleteCache(AuthKeys.accessToken("user", decoded.auth_id, decoded.token_id)),
+                ]);
             }
         } catch { }
     }
@@ -517,10 +557,10 @@ export const logout = asyncHandler(async (req, res) => {
 // Private helpers
 async function cleanupOTPKeys(phone) {
     await Promise.all([
-        del(`otp:${phone}`),
-        del(`otp_fail:${phone}`),
-        del(`otp_cooldown:${phone}`),
-        del(`otp_rate:${phone}`),
-        del(`pending_user:${phone}`),
+        deleteCache(AuthKeys.otp("user", phone)),
+        deleteCache(AuthKeys.otpFail("user", phone)),
+        deleteCache(AuthKeys.otpCooldown("user", phone)),
+        deleteCache(AuthKeys.otpRate("user", phone)),
+        deleteCache(AuthKeys.pendingUser(phone)),
     ]);
 }

@@ -1,54 +1,6 @@
 import { BOOKING_STATUS, JOB_QUEUES, WORKER_CONFIG } from "../../utils/constants.js";
 
-// REDIS KEYS
-export const REDIS_KEYS = {
-    DRIVER_GEO: (serviceAreaId) => `drivers:${serviceAreaId}`,
-    DRIVER_GEO_GLOBAL: "drivers:global",
-    DRIVER_META: (driverId) => `driver:meta:${driverId}`,
-
-    BOOKING_OFFER: (bookingId) => `booking:offer:${bookingId}`,
-    DRIVER_OFFERED: (driverId) => `driver:offered:${driverId}`,
-
-    BOOKING_CANDIDATES: (bookingId) => `booking:candidates:${bookingId}`,
-    BOOKING_TRIED: (bookingId) => `booking:tried:${bookingId}`,
-
-    BOOKING_SEARCH_ACTIVE: (bookingId) => `booking:search:active:${bookingId}`,
-
-    BOOKING_CACHE_LIST: (userId, page, limit, status, sort) =>
-        `user_bookings:${userId}:${page}:${limit}:${status || "all"}:${sort}`,
-    BOOKING_CACHE_DETAIL: (userId, bookingId) => `booking:${userId}:${bookingId}`,
-    BOOKING_CACHE_LIST_PATTERN: (userId) => `user_bookings:${userId}:*`,
-    BOOKING_ACTIVE: (userId) => `user_active_bookings:${userId}`,
-    BOOKING_HISTORY: (userId, page, limit, sort) => `user_booking_history:${userId}:${page}:${limit}:${sort}`,
-    BOOKING_HISTORY_PATTERN: (userId) => `user_booking_history:${userId}:*`,
-};
-
-// CACHE CONFIG
-export const BOOKING_CACHE = {
-    LIST_KEY: REDIS_KEYS.BOOKING_CACHE_LIST,
-    DETAIL_KEY: REDIS_KEYS.BOOKING_CACHE_DETAIL,
-    LIST_PATTERN: REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN,
-    ACTIVE_KEY: REDIS_KEYS.BOOKING_ACTIVE,
-    HISTORY_KEY: REDIS_KEYS.BOOKING_HISTORY,
-    HISTORY_PATTERN: REDIS_KEYS.BOOKING_HISTORY_PATTERN,
-    LIST_TTL: 60,
-    DETAIL_TTL: 120,
-    ACTIVE_TTL: 60,
-    HISTORY_TTL: 120,
-};
-
-// REDIS TTL
-export const REDIS_TTL = {
-    OFFER: WORKER_CONFIG.DRIVER_OFFER_TIMEOUT_SECONDS + 10,       // 70s
-    DRIVER_OFFERED: WORKER_CONFIG.DRIVER_OFFER_TIMEOUT_SECONDS + 10, // 70s
-    CANDIDATES: 600,
-    TRIED_DRIVERS: 600,
-    SEARCH_ACTIVE: 600,
-    BOOKING_CACHE_LIST: 60,
-    BOOKING_CACHE_DETAIL: 120,
-    BOOKING_ACTIVE: 60,
-    BOOKING_HISTORY: 120,
-};
+// Removed REDIS_KEYS, BOOKING_CACHE, REDIS_TTL (Migrated to constants/redis/booking.keys.js)
 
 //  DRIVER ASSIGNMENT 
 // requirement of 1km → 3km → 5km expansion with 60s per state.
@@ -140,6 +92,20 @@ export const BOOKING_SELECT = {
     ASSIGN_DRIVER: "status pickup delivery storeId userId",
     ASSIGN_STORE: "status storeId userId",
 };
+
+// constants/user/booking.js — add this
+export const BOOKING_TRANSITIONS = Object.freeze({
+    [BOOKING_STATUS.CREATED]: [BOOKING_STATUS.STORE_ASSIGNED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.STORE_ASSIGNED]: [BOOKING_STATUS.DRIVER_ASSIGNED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.DRIVER_ASSIGNED]: [BOOKING_STATUS.DRIVER_ARRIVED, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.DRIVER_ARRIVED]: [BOOKING_STATUS.PICKED_UP, BOOKING_STATUS.CANCELLED],
+    [BOOKING_STATUS.PICKED_UP]: [BOOKING_STATUS.AT_STORE, BOOKING_STATUS.STORED],
+    [BOOKING_STATUS.STORED]: [BOOKING_STATUS.RETURN_REQUESTED],
+    [BOOKING_STATUS.RETURN_REQUESTED]: [BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, BOOKING_STATUS.STORED],
+    [BOOKING_STATUS.RETURN_DRIVER_ASSIGNED]: [BOOKING_STATUS.OUT_FOR_RETURN],
+    [BOOKING_STATUS.OUT_FOR_RETURN]: [BOOKING_STATUS.ARRIVED_FOR_DELIVERY],
+    [BOOKING_STATUS.ARRIVED_FOR_DELIVERY]: [BOOKING_STATUS.DELIVERED],
+});
 
 // API RESPONSE MESSAGES
 export const BOOKING_MESSAGES = {

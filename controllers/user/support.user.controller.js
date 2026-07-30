@@ -2,7 +2,6 @@ import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES, TICKET_STATUS } from "../../utils/constants.js";
 import SupportTicket from "../../models/SupportTicket.js";
 import {
-    SUPPORT_CACHE,
     SUPPORT_LIMITS,
     REPLYABLE_STATUSES,
     SUPPORT_SELECT,
@@ -11,8 +10,6 @@ import {
     SUPPORT_MESSAGES,
 } from "../../constants/user/support.js";
 import {
-    getCachedData,
-    setCacheData,
     invalidateTicketCache,
     checkOpenTicketLimit,
     verifyBookingOwnership,
@@ -26,6 +23,8 @@ import {
     queueSupportJob,
 } from "../../helpers/user/supportHelper.js";
 import logger from "../../utils/logger.js";
+import { getCache, setCache } from "../../constants/redis/redisOperation.js";
+import { SupportKeys, SupportTTL } from "../../constants/redis/support.keys.js";
 
 
 export const createTicket = async (req, res) => {
@@ -122,8 +121,8 @@ export const getUserTickets = async (req, res) => {
         const limitNum = Number(limit);
         const skip = (pageNum - 1) * limitNum;
         const sortDir = sort_order === "asc" ? 1 : -1;
-        const cacheKey = SUPPORT_CACHE.LIST_KEY(userId, pageNum, limitNum, status);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = SupportKeys.list(userId, pageNum, limitNum, status);
+        const cached = await getCache(cacheKey);
 
         if (cached) {
             return sendResponse({
@@ -152,7 +151,7 @@ export const getUserTickets = async (req, res) => {
             tickets: enrichedTickets,
             pagination: buildPagination(pageNum, limitNum, total),
         };
-        await setCacheData(cacheKey, responseData, SUPPORT_CACHE.LIST_TTL);
+        await setCache(cacheKey, responseData, SupportTTL.LIST);
 
         return sendResponse({
             res,
@@ -170,8 +169,8 @@ export const getTicketById = async (req, res) => {
     try {
         const userId = req.user.auth_id;
         const { id } = req.params;
-        const cacheKey = SUPPORT_CACHE.DETAIL_KEY(userId, id);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = SupportKeys.detail(userId, id);
+        const cached = await getCache(cacheKey);
 
         if (cached) {
             return sendResponse({
@@ -191,7 +190,7 @@ export const getTicketById = async (req, res) => {
         }
 
         markAdminMessagesAsRead(id, userId);
-        await setCacheData(cacheKey, ticket, SUPPORT_CACHE.DETAIL_TTL);
+        await setCache(cacheKey, ticket, SupportTTL.DETAIL);
 
         return sendResponse({
             res,

@@ -21,6 +21,7 @@ import {
     resendOTPSchema,
     updateUserDetailsSchema,
 } from "../../validations/user/auth.validation.js";
+import { checkUserAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
 const router = express.Router();
 
@@ -38,7 +39,7 @@ router.post("/verify-otp", otpLimiter, validate(verifyOTPSchema), verifyOTP);
 router.post("/refresh", refreshLimiter, refreshToken);
 
 // Protected routes
-router.use(authMiddleware);
+router.use(authMiddleware, checkUserAccountStatus);
 
 // Complete profile
 router.put(

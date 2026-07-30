@@ -9,23 +9,24 @@ import {
   getChartData,
 } from "../../controllers/admin/dashboard.admin.controller.js";
 import { dashboardChartSchema } from "../../validations/admin/dashboard.validation.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
 const router = express.Router();
 
-router.use(authMiddleware);
-
-// Roles that can view dashboard
-const DASHBOARD_ROLES = [
-  USER_ROLES.SUPER_ADMIN,
-  USER_ROLES.ADMIN,
-  USER_ROLES.OPERATION_MANAGER,
-];
+router.use(authMiddleware,
+   roleMiddleware(
+    USER_ROLES.SUPER_ADMIN,
+    USER_ROLES.ADMIN,
+    USER_ROLES.OPERATION_MANAGER,
+    USER_ROLES.CUSTOMER_SUPPORT
+  ),
+  checkAdminAccountStatus
+);
 
 // Dashboard summary
 router.get(
   "/summary",
   apiLimiter,
-  roleMiddleware(...DASHBOARD_ROLES),
   getDashboardSummary
 );
 
@@ -33,7 +34,6 @@ router.get(
 router.get(
   "/chart",
   apiLimiter,
-  roleMiddleware(...DASHBOARD_ROLES),
   validate(dashboardChartSchema, "query"),
   getChartData
 );

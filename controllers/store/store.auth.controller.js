@@ -1,8 +1,8 @@
 import jwt from "jsonwebtoken";
 import Store from "../../models/Store.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import { get, set, del, delByPattern } from "../../services/redisService.js";
-import redis from "../../services/redisService.js";
+import { getCache, setCache, deleteCache, deleteByPattern, incrementCache, isKeyExist } from "../../constants/redis/redisOperation.js";
+import { AuthKeys, AuthTTL } from "../../constants/redis/auth.keys.js";
 import { verifyStore } from "../../helpers/store/store.helper.js";
 import logger from "../../utils/logger.js";
 import { addJobToQueue, cancelJob } from "../../services/jobService.js";
@@ -11,10 +11,8 @@ import {
     ACCOUNT_STATUS,
     OTP_LENGTH,
     OTP_MAX_ATTEMPTS,
-    OTP_COOLDOWN,
     JOB_QUEUES,
     TOKEN_TYPES,
-    OTP_FAIL_WINDOW_SECONDS,
     UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS,
     VERIFICATION_STATUS,
 } from "../../utils/constants.js";
@@ -54,7 +52,7 @@ export const loginStore = asyncHandler(async (req, res) => {
     }
 
     // OTP rate limit
-    const isRateLimited = await checkOTPRateLimit(phone);
+    const isRateLimited = await checkOTPRateLimit("store", phone);
     if (isRateLimited) {
         return sendError(
             res,
@@ -64,29 +62,25 @@ export const loginStore = asyncHandler(async (req, res) => {
     }
 
     // Cooldown
-    const cooldownKey = `otp_cooldown:${phone}`;
-    const cooldownExists = await get(cooldownKey);
-
-    // if (cooldownExists) {
-    //     return sendError(
-    //         res,
-    //         "Please wait before requesting another OTP.",
-    //         STATUS_CODES.TOO_MANY_REQUESTS
-    //     );
-    // }
+    const cooldownExists = await isKeyExist(AuthKeys.otpCooldown("store", phone));
+    if (cooldownExists) {
+        return sendError(
+            res,
+            "Please wait before requesting another OTP.",
+            STATUS_CODES.TOO_MANY_REQUESTS
+        );
+    }
 
     // Generate OTP
-    const otp = await generateAndStoreOTP(phone);
-    await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
+    const otp = await generateAndStoreOTP("store", phone);
+    await setCache(AuthKeys.otpCooldown("store", phone), "1", AuthTTL.OTP_COOLDOWN);
 
     // Send SMS/Email via abstract service
     await NotificationService.sendOTP(phone, otp);
-    // TESTING
-    console.log("Store OTP sent successfully", otp)
+
     return sendResponse({
         res,
         message: "Login OTP sent successfully",
-        data: { otp },
     });
 });
 
@@ -105,26 +99,22 @@ export const sendOTP = asyncHandler(async (req, res) => {
         return sendError(res, storeCheck.message, storeCheck.code);
     }
 
-    const isRateLimited = await checkOTPRateLimit(phone);
+    const isRateLimited = await checkOTPRateLimit("store", phone);
     if (isRateLimited) {
         return sendError(res, "Too many OTP requests. Please try again later.", STATUS_CODES.TOO_MANY_REQUESTS);
     }
 
-    const cooldownKey = `otp_cooldown:${phone}`;
-    const cooldownExists = await get(cooldownKey);
+    const cooldownExists = await isKeyExist(AuthKeys.otpCooldown("store", phone));
     if (cooldownExists) {
         return sendError(res, "Please wait before requesting another OTP.", STATUS_CODES.TOO_MANY_REQUESTS);
     }
 
-    const otp = await generateAndStoreOTP(phone);
-    await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
+    const otp = await generateAndStoreOTP("store", phone);
+    await setCache(AuthKeys.otpCooldown("store", phone), "1", AuthTTL.OTP_COOLDOWN);
 
-    // Send SMS/Email via abstract service
     await NotificationService.sendOTP(phone, otp);
 
-    // TESTING
-    console.log("Store OTP sent successfully", otp)
-    return sendResponse({ res, message: "OTP sent successfully", data: { otp } });
+    return sendResponse({ res, message: "OTP sent successfully" });
 });
 
 // VERIFY OTP
@@ -148,10 +138,10 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         return sendError(res, `OTP must be ${OTP_LENGTH} digits`, STATUS_CODES.BAD_REQUEST);
     }
 
-    const failKey = `otp_fail:${sanitizedPhone}`;
-    const failCount = await get(failKey);
+    const failKey = AuthKeys.otpFail("store", sanitizedPhone);
+    const failCount = await getCache(failKey);
     if (failCount && parseInt(failCount, 10) >= OTP_MAX_ATTEMPTS) {
-        await del(`otp:${sanitizedPhone}`);
+        await deleteCache(AuthKeys.otp("store", sanitizedPhone));
         return sendError(
             res,
             "Too many failed attempts. Please request a new OTP.",
@@ -164,7 +154,6 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         .populate({ path: "store_owner_id", select: "account_status" })
         .lean();
 
-
     if (!store) {
         return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
     }
@@ -175,7 +164,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         return sendError(res, storeCheck.message, storeCheck.code);
     }
 
-    let savedOTP = await get(`otp:${sanitizedPhone}`);
+    let savedOTP = await getCache(AuthKeys.otp("store", sanitizedPhone));
     if (savedOTP) {
         try {
             savedOTP = JSON.parse(savedOTP);
@@ -190,20 +179,15 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         timingSafeEqual(String(savedOTP), sanitizedOtp);
 
     if (!isOtpValid) {
-        await redis
-            .multi()
-            .incr(failKey)
-            .expire(failKey, OTP_FAIL_WINDOW_SECONDS)
-            .exec();
-
+        await incrementCache(failKey, AuthTTL.OTP_FAIL_WINDOW);
         return sendError(res, "Invalid or expired OTP", STATUS_CODES.UNAUTHORIZED);
     }
 
     await Promise.all([
-        del(`otp:${sanitizedPhone}`),
-        del(failKey),
-        del(`otp_cooldown:${sanitizedPhone}`),
-        del(`otp_rate:${sanitizedPhone}`),
+        deleteCache(AuthKeys.otp("store", sanitizedPhone)),
+        deleteCache(failKey),
+        deleteCache(AuthKeys.otpCooldown("store", sanitizedPhone)),
+        deleteCache(AuthKeys.otpRate("store", sanitizedPhone)),
         cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_STORE, `delete-store-${sanitizedPhone}`),
     ]);
 
@@ -254,11 +238,11 @@ export const refreshToken = asyncHandler(async (req, res) => {
         return sendError(res, "Invalid token type", STATUS_CODES.UNAUTHORIZED);
     }
 
-    const redisKey = `refresh:${decoded.auth_id}:${decoded.token_id}`;
-    const exists = await get(redisKey);
+    const redisKey = AuthKeys.refreshToken("store", decoded.auth_id, decoded.token_id);
+    const exists = await getCache(redisKey);
 
     if (!exists) {
-        await delByPattern(`refresh:${decoded.auth_id}:*`);
+        await deleteByPattern(AuthKeys.refreshTokenPattern("store", decoded.auth_id));
         clearAuthCookies(res, "/api/v1/store/auth/refresh");
         return sendError(
             res,
@@ -273,7 +257,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
         .lean();
 
     if (!store) {
-        await del(redisKey);
+        await deleteCache(redisKey);
         clearAuthCookies(res, "/api/v1/store/auth/refresh");
         return sendError(res, "Store account not found", STATUS_CODES.UNAUTHORIZED);
     }
@@ -282,15 +266,15 @@ export const refreshToken = asyncHandler(async (req, res) => {
     const storeCheck = verifyStore(store, owner);
     if (!storeCheck.valid) {
         await Promise.allSettled([
-            del(redisKey),
-            delByPattern(`refresh:${decoded.auth_id}:*`),
-            delByPattern(`access:${decoded.auth_id}:*`),
+            deleteCache(redisKey),
+            deleteByPattern(AuthKeys.refreshTokenPattern("store", decoded.auth_id)),
+            deleteByPattern(AuthKeys.accessTokenPattern("store", decoded.auth_id)),
         ]);
         clearAuthCookies(res, "/api/v1/store/auth/refresh");
         return sendError(res, storeCheck.message, storeCheck.code);
     }
 
-    await del(redisKey);
+    await deleteCache(redisKey);
 
     const { accessToken, refreshToken: newRefreshToken } =
         await generateTokenPair(decoded.auth_id, "store", "/api/v1/store/auth/refresh");
@@ -315,8 +299,8 @@ export const logout = asyncHandler(async (req, res) => {
     if (token) {
         const decoded = jwt.decode(token);
         if (decoded?.auth_id && decoded?.token_id) {
-            await del(`refresh:${decoded.auth_id}:${decoded.token_id}`);
-            await del(`access:${decoded.auth_id}:${decoded.token_id}`);
+            await deleteCache(AuthKeys.refreshToken("store", decoded.auth_id, decoded.token_id));
+            await deleteCache(AuthKeys.accessToken("store", decoded.auth_id, decoded.token_id));
         }
     }
     clearAuthCookies(res, "/api/v1/store/auth/refresh");

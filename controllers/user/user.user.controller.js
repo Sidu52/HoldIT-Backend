@@ -7,22 +7,11 @@ import Store from "../../models/Store.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS, STATUS_CODES } from "../../utils/constants.js";
 
-import {
-    getUserProfileCache,
-    setUserProfileCache,
-    deleteUserProfileCache,
-    getUserAddressesCache,
-    setUserAddressesCache,
-    getUserAddressDetailCache,
-    setUserAddressDetailCache,
-    deleteUserAddressDetailCache,
-    getNearestStoreCache,
-    setNearestStoreCache,
-    getPublicStoreCache,
-    setPublicStoreCache,
-} from "./cache.js";
+import { getCache, setCache, deleteCache } from "../../constants/redis/redisOperation.js";
+import { UserKeys, UserTTL } from "../../constants/redis/user.keys.js";
+import { StoreKeys, StoreTTL } from "../../constants/redis/store.keys.js";
 
-import { ADDRESS_LIMITS, CACHE_TTL, ADDRESS_MESSAGES } from "../../constants/user/address.js";
+import { ADDRESS_LIMITS, ADDRESS_MESSAGES } from "../../constants/user/address.js";
 
 import { checkServiceability, invalidateAddressCache, syncUserLocationWithAddress, buildAddressObject } from "../../helpers/user/addressHelper.js";
 
@@ -61,7 +50,7 @@ const sanitizeString = (value) => {
 export const getProfile = asyncHandler(async (req, res) => {
     const userId = req.user.auth_id;
 
-    const cached = await getUserProfileCache(userId);
+    const cached = await getCache(UserKeys.profile(userId));
     if (cached) {
         return sendResponse({
             res,
@@ -82,7 +71,7 @@ export const getProfile = asyncHandler(async (req, res) => {
         );
     }
 
-    await setUserProfileCache(userId, user);
+    await setCache(UserKeys.profile(userId), user, UserTTL.PROFILE);
 
     return sendResponse({
         res,
@@ -170,7 +159,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
         );
     }
 
-    await deleteUserProfileCache(userId);
+    await deleteCache(UserKeys.profile(userId));
 
     return sendResponse({
         res,
@@ -183,7 +172,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
 export const getAddresses = asyncHandler(async (req, res) => {
     const userId = req.user.auth_id;
 
-    const cached = await getUserAddressesCache(userId);
+    const cached = await getCache(UserKeys.addressList(userId));
 
     if (cached) {
         return sendResponse({
@@ -224,7 +213,7 @@ export const getAddresses = asyncHandler(async (req, res) => {
         total: addresses.length,
     };
 
-    await setUserAddressesCache(userId, responseData);
+    await setCache(UserKeys.addressList(userId), responseData, UserTTL.ADDRESS_LIST);
 
     return sendResponse({
         res,
@@ -239,7 +228,7 @@ export const getAddressById = asyncHandler(
         const userId = req.user.auth_id;
         const { id } = req.params;
 
-        const cached = await getUserAddressDetailCache(userId, id);
+        const cached = await getCache(UserKeys.addressDetail(userId, id));
 
         if (cached) {
             return sendResponse({
@@ -274,7 +263,7 @@ export const getAddressById = asyncHandler(
             );
         }
 
-        await setUserAddressDetailCache(userId, id, address);
+        await setCache(UserKeys.addressDetail(userId, id), address, UserTTL.ADDRESS_DETAIL);
 
         return sendResponse({
             res,
@@ -356,7 +345,7 @@ export const addAddress = asyncHandler(async (req, res) => {
 
         await invalidateAddressCache(userId);
 
-        await deleteUserProfileCache(userId);
+        await deleteCache(UserKeys.profile(userId));
 
         return sendResponse({
             res,
@@ -507,8 +496,8 @@ export const updateAddress = asyncHandler(
         }
 
         await invalidateAddressCache(userId);
-        await deleteUserAddressDetailCache(userId, id);
-        await deleteUserProfileCache(userId);
+        await deleteCache(UserKeys.addressDetail(userId, id));
+        await deleteCache(UserKeys.profile(userId));
 
         return sendResponse({
             res,
@@ -588,9 +577,9 @@ export const deleteAddress = asyncHandler(
 
         await invalidateAddressCache(userId);
 
-        await deleteUserProfileCache(userId);
+        await deleteCache(UserKeys.profile(userId));
 
-        await deleteUserAddressDetailCache(userId, id);
+        await deleteCache(UserKeys.addressDetail(userId, id));
 
         return sendResponse({
             res,
@@ -686,7 +675,7 @@ export const updateLocation = asyncHandler(
 
         await invalidateAddressCache(userId);
 
-        await deleteUserProfileCache(userId);
+        await deleteCache(UserKeys.profile(userId));
 
         return sendResponse({
             res,
@@ -729,7 +718,7 @@ export const getNearestStore = asyncHandler(
             );
         }
 
-        const cached = await getNearestStoreCache(lat, lng);
+        const cached = await getCache(StoreKeys.nearest(lat, lng));
 
         if (cached) {
             return sendResponse({
@@ -824,7 +813,7 @@ export const getNearestStore = asyncHandler(
             total: stores.length,
         };
 
-        await setNearestStoreCache(lat, lng, responseData);
+        await setCache(StoreKeys.nearest(lat, lng), responseData, StoreTTL.NEAREST);
 
         return sendResponse({
             res,
@@ -840,7 +829,7 @@ export const getStoreById = asyncHandler(
     async (req, res) => {
         const { store_id } = req.params;
 
-        const cached = await getPublicStoreCache(store_id);
+        const cached = await getCache(StoreKeys.publicView(store_id));
 
         if (cached) {
             return sendResponse({
@@ -879,7 +868,7 @@ export const getStoreById = asyncHandler(
             );
         }
 
-        await setPublicStoreCache(store_id, store);
+        await setCache(StoreKeys.publicView(store_id), store, StoreTTL.PUBLIC_VIEW);
 
         return sendResponse({
             res,

@@ -1,13 +1,10 @@
 import ServiceableArea from "../../models/ServiceableArea.js";
 import User from "../../models/User.js";
-import { del } from "../../services/redisService.js";
-import { CACHE_KEYS } from "../../constants/user/address.js";
+import { invalidateUserCache } from "../../constants/redis/invalidate/user.invalidate.js";
 import logger from "../../utils/logger.js";
-
 
 // Check Serviceability
 export const checkServiceability = async (lng, lat) => {
-
     if (
         typeof lat !== "number" || typeof lng !== "number" ||
         isNaN(lat) || isNaN(lng) ||
@@ -22,36 +19,21 @@ export const checkServiceability = async (lng, lat) => {
         const results = await ServiceableArea.aggregate([
             {
                 $geoNear: {
-                    near: {
-                        type: "Point",
-                        coordinates: [lng, lat],
-                    },
+                    near: { type: "Point", coordinates: [lng, lat] },
                     distanceField: "distance",
                     spherical: true,
                     query: { is_active: true },
-                    maxDistance: 100 * 1000, // 100km hard cap
+                    maxDistance: 100 * 1000,
                 },
             },
             {
                 $match: {
-                    $expr: {
-                        $lte: [
-                            "$distance",
-                            { $multiply: ["$service_radius_km", 1000] },
-                        ],
-                    },
+                    $expr: { $lte: ["$distance", { $multiply: ["$service_radius_km", 1000] }] },
                 },
             },
             { $sort: { distance: 1 } },
             { $limit: 1 },
-            {
-                $project: {
-                    _id: 1,
-                    name: 1,
-                    service_radius_km: 1,
-                    distance: 1,
-                },
-            },
+            { $project: { _id: 1, name: 1, service_radius_km: 1, distance: 1 } },
         ]);
 
         if (results.length > 0) {
@@ -72,11 +54,7 @@ export const checkServiceability = async (lng, lat) => {
 
 // Invalidate user's address cache
 export const invalidateAddressCache = async (userId) => {
-    try {
-        await del(CACHE_KEYS.USER_ADDRESSES(userId));
-    } catch (err) {
-        logger.error("Cache invalidation error:", err);
-    }
+    await invalidateUserCache(userId);
 };
 
 // Update Location and Serviceability
@@ -89,11 +67,7 @@ export const syncUserLocationWithAddress = async (userId, address) => {
 
         updateData.is_serviceable = isServiceable;
         updateData.service_area_id = serviceAreaId;
-        updateData.location = {
-            type: "Point",
-            coordinates: [lng, lat],
-            address: formatAddressString(address),
-        };
+        updateData.location = { type: "Point", coordinates: [lng, lat], address: formatAddressString(address) };
     } else {
         updateData.is_serviceable = false;
         updateData.service_area_id = null;
@@ -101,20 +75,12 @@ export const syncUserLocationWithAddress = async (userId, address) => {
     }
 
     await User.findByIdAndUpdate(userId, { $set: updateData });
+    await invalidateUserCache(userId); // was missing entirely — Mongo write with no cache bust
 };
 
 // Format address string
-export const formatAddressString = (address) => {
-    return [
-        address.street,
-        address.city,
-        address.state,
-        address.postal_code,
-        address.country,
-    ]
-        .filter(Boolean)
-        .join(", ");
-};
+export const formatAddressString = (address) =>
+    [address.street, address.city, address.state, address.postal_code, address.country].filter(Boolean).join(", ");
 
 // Build address object
 export const buildAddressObject = async (body) => {
@@ -130,7 +96,6 @@ export const buildAddressObject = async (body) => {
         is_serviceable: false,
     };
 
-    // Run serviceability check if coordinates provided
     if (address.coordinates) {
         const [lng, lat] = address.coordinates;
         const { isServiceable } = await checkServiceability(lng, lat);

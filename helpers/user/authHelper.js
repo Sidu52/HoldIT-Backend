@@ -1,8 +1,4 @@
 import { v4 as uuidv4 } from "uuid";
-import redis, {
-    set,
-    get,
-} from "../../services/redisService.js";
 import { generateOTP } from "../../utils/otp.js";
 import {
     generateAccessToken,
@@ -10,14 +6,14 @@ import {
     clearAuthCookies,
 } from "../../utils/token.js";
 import {
-    OTP_EXPIRY,
     OTP_MAX_REQUESTS_PER_HOUR,
-    REFRESH_TOKEN_EXPIRY,
     TOKEN_TYPES,
 } from "../../utils/constants.js";
 
 export { clearAuthCookies };
 import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
+import { AuthKeys, AuthTTL } from "../../constants/redis/auth.keys.js";
+import { getCache, setCache, incrementCache } from "../../constants/redis/redisOperation.js";
 const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 5;
 
 // TIMING SAFE COMPARE
@@ -46,43 +42,26 @@ export const generateTokenPair = async (userId, role, path) => {
         path,
     });
 
-    await set(
-        `refresh:${userId}:${tokenId}`,
-        JSON.stringify("valid"),
-        "EX",
-        REFRESH_TOKEN_EXPIRY
-    );
-
+    
+    await setCache(AuthKeys.refreshToken(role, userId, tokenId), "valid", AuthTTL.REFRESH_TOKEN);
     return { accessToken, refreshToken };
 };
 
 // OTP HELPERS
-export const checkOTPRateLimit = async (phone) => {
-    const rateLimitKey = `otp_rate:${phone}`;
-    const count = await get(rateLimitKey);
+export const checkOTPRateLimit = async (role, phone) => {
+    const rateLimitKey = AuthKeys.otpRate(role, phone);
+    const count = await getCache(rateLimitKey);
 
-    if (count && parseInt(count) >= OTP_MAX_REQUESTS_PER_HOUR) {
+    if (count && parseInt(count, 10) >= OTP_MAX_REQUESTS_PER_HOUR) {
         return true;
     }
 
-    await redis
-        .multi()
-        .incr(rateLimitKey)
-        .expire(rateLimitKey, OTP_RATE_LIMIT_WINDOW_SECONDS)
-        .exec();
-
+    await incrementCache(rateLimitKey, OTP_RATE_LIMIT_WINDOW_SECONDS);
     return false;
 };
 
-export const generateAndStoreOTP = async (phone) => {
+export const generateAndStoreOTP = async (role, phone) => {
     const otp = generateOTP();
-    const otpKey = `otp:${phone}`;
-
-    await redis
-        .multi()
-        .del(otpKey)
-        .set(otpKey, JSON.stringify(otp), "EX", OTP_EXPIRY * 60)
-        .exec();
-
+    await setCache(AuthKeys.otp(role, phone), otp, AuthTTL.OTP);
     return otp;
 };

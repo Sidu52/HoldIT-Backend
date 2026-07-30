@@ -1,18 +1,13 @@
 import mongoose from "mongoose";
 import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
-import redis, { get, set, del, delByPattern } from "../../services/redisService.js";
 import { markDriverOnTrip, markDriverAvailable } from "../../services/driverGeoService.js";
-import { BOOKING_STATUS } from "../../utils/constants.js";
+import { BOOKING_STATUS, OTP_MAX_ATTEMPTS } from "../../utils/constants.js";
 import { generateOTP } from "../../utils/otp.js";
 import {
     DRIVER_VISIBLE_STATUSES,
     DRIVER_HISTORY_STATUSES,
-    DRIVER_RIDE_CACHE,
 } from "../../constants/driver/driver.ride.js";
-import {
-    REDIS_KEYS,
-} from "../../constants/user/booking.js";
 import {
     clearOffer,
     markOfferAccepted,
@@ -24,27 +19,11 @@ import {
 } from "../user/driverAssignHelper.js";
 import { invalidateBookingCache } from "../user/bookingHelper.js";
 import logger from "../../utils/logger.js";
-
-
-
-// CACHE
-export { getCachedData, setCacheData } from "../../utils/cache.js";
-
-export const invalidateDriverRideCache = async (driverId, bookingId = null) => {
-    try {
-        const promises = [
-            del(DRIVER_RIDE_CACHE.ASSIGNED_KEY(driverId)),
-            del(DRIVER_RIDE_CACHE.ACTIVE_KEY(driverId)),
-            delByPattern(`driver:ride_history:${driverId}:*`),
-        ];
-        if (bookingId) {
-            promises.push(del(DRIVER_RIDE_CACHE.RIDE_DETAIL_KEY(driverId, bookingId)));
-        }
-        await Promise.all(promises);
-    } catch (err) {
-        logger.error("Driver ride cache invalidation error:", err);
-    }
-};
+import { DriverKeys } from "../../constants/redis/driver.keys.js";
+import { BookingKeys } from "../../constants/redis/booking.keys.js";
+import { deleteCache, deleteByPattern, getCache } from "../../constants/redis/redisOperation.js";
+import { AuthKeys } from "../../constants/redis/auth.keys.js";
+import { invalidateDriverCache } from "../../constants/redis/invalidate/driver.invalidate.js";
 
 // QUERIES
 export const getAssignedRides = async (driverId, selectFields) => {
@@ -269,9 +248,9 @@ export const processCompletePickup = async (bookingId, driverId, otp, photos = [
     if (!booking) return null;
 
     // OTP Rate limiting check
-    const rateLimitKey = `rate_limit:otp:${driverId}:${bookingId}`;
-    const failedAttempts = parseInt(await redis.get(rateLimitKey) || "0", 10);
-    if (failedAttempts >= 5) {
+    const otpRateLimitKey = AuthKeys.otpRate("driver", driverId, bookingId);
+    const failedAttempts = await getCache(otpRateLimitKey);
+    if (failedAttempts >= OTP_MAX_ATTEMPTS) {
         throw new Error("Too many failed attempts. Locked out for 15 minutes.");
     }
 
@@ -282,7 +261,7 @@ export const processCompletePickup = async (bookingId, driverId, otp, photos = [
         throw new Error("Invalid pickup OTP");
     }
 
-    await redis.del(rateLimitKey); // clear on success
+    await deleteCache(otpRateLimitKey); // clear on success
 
     return Booking.findByIdAndUpdate(
         bookingId,
@@ -291,7 +270,6 @@ export const processCompletePickup = async (bookingId, driverId, otp, photos = [
                 status: BOOKING_STATUS.PICKED_UP,
                 lastStatusUpdatedAt: now,
                 "pickup.assignment.completedAt": now,
-                "pickup.assignment.otp": null, // Clear used OTP
                 "luggagePhotos.pickup": photos,
             },
             $push: {
@@ -314,14 +292,14 @@ export const processCompletePickupAtStore = async (bookingId, driverId, otp, pho
     const booking = await Booking.findOne({
         _id: bookingId,
         status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
-        "pickup.assignment.driverId": new mongoose.Types.ObjectId(driverId),
-    })
+        "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),   // fixed
+    });
 
     if (!booking) return null;
 
     // OTP Rate limiting check
-    const rateLimitKey = `rate_limit:otp:${driverId}:${bookingId}`;
-    const failedAttempts = parseInt(await redis.get(rateLimitKey) || "0", 10);
+    const rateLimitKey = AuthKeys.otpRate("driver", driverId, bookingId);
+    const failedAttempts = await getCache(rateLimitKey);
     if (failedAttempts >= 5) {
         throw new Error("Too many failed attempts. Locked out for 15 minutes.");
     }
@@ -333,7 +311,7 @@ export const processCompletePickupAtStore = async (bookingId, driverId, otp, pho
         throw new Error("Invalid pickup OTP");
     }
 
-    await redis.del(rateLimitKey); // clear on success
+    await deleteCache(rateLimitKey); // clear on success
 
     return Booking.findByIdAndUpdate(
         bookingId,
@@ -341,9 +319,9 @@ export const processCompletePickupAtStore = async (bookingId, driverId, otp, pho
             $set: {
                 status: BOOKING_STATUS.OUT_FOR_RETURN,
                 lastStatusUpdatedAt: now,
-                "delivery.returnOtp": generateOTP(), // User -> Driver
+                // "delivery.returnOtp": generateOTP(), // User -> Driver
                 "luggagePhotos.delivery": photos,
-               
+
             },
             $push: {
                 timeline: {
@@ -351,7 +329,7 @@ export const processCompletePickupAtStore = async (bookingId, driverId, otp, pho
                     note: "Luggage handed over to return driver by store",
                     updatedBy: new mongoose.Types.ObjectId(driverId),
                     updatedByModel: "Driver"
-                    
+
                 },
             },
         },
@@ -399,8 +377,8 @@ export const processArriveAtStoreForReturn = async (bookingId, driverId) => {
             status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
             "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
         },
-        { $set: { "delivery.assignment.storageReturnOtp": generateOTP() } },
         {
+            $set: { "delivery.assignment.storageReturnOtp": generateOTP() },
             $push: {
                 timeline: {
                     status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
@@ -430,7 +408,7 @@ export const processArriveAtUserReturn = async (bookingId, driverId) => {
             $set: {
                 status: BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
                 lastStatusUpdatedAt: now,
-                "delivery.assignment.startedAt": now, 
+                "delivery.assignment.startedAt": now,
                 "delivery.assignment.returnOtp": generateOTP(), // User -> Driver
             },
             $push: {
@@ -498,11 +476,6 @@ export const processDriverCancelRide = async (bookingId, driverId, reason = "") 
                 "pickup.assignment.cancelledAt": now,
                 "pickup.assignment.cancelReason": reason,
             },
-            // ROOT CAUSE FIX: Must unset driverId so isBookingAwaitingDriver
-            // no longer returns PICKUP_DRIVER_SET. Without this, scheduleDriverSearch
-            // finds the booking, calls isBookingAwaitingDriver, sees
-            // pickup.assignment.driverId is still set → awaiting=false →
-            // search exits immediately → no new driver is ever found.
             $unset: {
                 "pickup.assignment.driverId": "",
                 "pickup.assignment.assignedAt": "",
@@ -538,9 +511,10 @@ export const processDriverCancelRide = async (bookingId, driverId, reason = "") 
 
     // Clean up keys
     await Promise.allSettled([
-        redis.del(REDIS_KEYS.DRIVER_OFFERED(driverId)),
-        redis.del(REDIS_KEYS.BOOKING_OFFER(bookingId)),
-        invalidateDriverRideCache(driverId, bookingId),
+        deleteCache(DriverKeys.assigned(driverId)),
+        deleteCache(DriverKeys.offered(driverId)),
+        deleteCache(BookingKeys.offer(bookingId)),
+        invalidateDriverCache(driverId, bookingId),
         invalidateBookingCache(updatedBooking.userId.toString(), bookingId),
     ]);
 
@@ -590,9 +564,9 @@ export const processCompleteDelivery = async (bookingId, driverId, otp, photos =
 
     if (!booking) return null;
 
-    // OTP Rate limiting check
-    const rateLimitKey = `rate_limit:otp:${driverId}:${bookingId}`;
-    const failedAttempts = parseInt(await redis.get(rateLimitKey) || "0", 10);
+    // OTP Rate limiting Check
+    const rateLimitKey = AuthKeys.otpRate("driver", driverId, bookingId);
+    const failedAttempts = await getCache(rateLimitKey);
     if (failedAttempts >= 5) {
         throw new Error("Too many failed attempts. Locked out for 15 minutes.");
     }
@@ -604,7 +578,7 @@ export const processCompleteDelivery = async (bookingId, driverId, otp, photos =
         throw new Error("Invalid delivery OTP");
     }
 
-    await redis.del(rateLimitKey); // clear on success
+    await deleteCache(rateLimitKey); // clear on success
 
     const updated = await Booking.findByIdAndUpdate(
         bookingId,

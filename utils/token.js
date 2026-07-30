@@ -14,9 +14,7 @@ if (!ACCESS_SECRET || !REFRESH_SECRET) {
 const ACCESS_EXPIRY = "1h";
 const REFRESH_EXPIRY = "7d";
 
-// -------------------------
 // COOKIE CONFIG
-// -------------------------
 const BASE_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
@@ -34,10 +32,8 @@ const REFRESH_COOKIE_OPTIONS = {
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
-// -------------------------
-// GENERATE TOKENS
-// -------------------------
 
+// GENERATE Access Token
 export const generateAccessToken = ({ auth_id, role, type }) => {
   if (!auth_id || !role) throw new Error("Missing required fields for access token");
   return jwt.sign({ auth_id, role, type: type || "access" }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRY });
@@ -59,15 +55,11 @@ export const generateRefreshToken = ({ auth_id, role, token_id, session_id, path
   return jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRY });
 };
 
-// -------------------------
 // VERIFY TOKENS
-// -------------------------
 export const verifyAccessToken = (token) => jwt.verify(token, ACCESS_SECRET);
 export const verifyRefreshToken = (token) => jwt.verify(token, REFRESH_SECRET);
 
-// -------------------------
-// GENERATE TOKEN PAIR (MULTI-USER FRIENDLY)
-// -------------------------
+// GENERATE TOKEN PAIR 
 export const generateTokenPair = (userOrAuth, session_id, path) => {
   const isTokenPayload =
     userOrAuth &&
@@ -91,9 +83,7 @@ export const generateTokenPair = (userOrAuth, session_id, path) => {
   return { accessToken, refreshToken };
 };
 
-// -------------------------
 // COOKIE OPERATIONS
-// -------------------------
 const getCookieNames = (path = "") => {
   if (path.includes("/admin")) {
     return { access: "admin_accessToken", refresh: "admin_refreshToken" };
@@ -143,24 +133,3 @@ export const clearAuthCookies = (res, refreshCookiePath = "/") => {
     res.clearCookie("admin_refreshToken", { ...BASE_COOKIE_OPTIONS, path });
   });
 };
-
-// // Example user object for Admin
-// const adminUser = {
-//   auth_id: "admin_123",
-//   role: "admin",
-//   type: "admin"
-// };
-
-// // Example user object for Driver
-// const driverUser = {
-//   auth_id: "driver_789",
-//   role: "driver",
-//   type: "driver"
-// };
-
-// // Generate token pair for multiple devices/sessions
-// const sessionId = crypto.randomUUID(); // unique per session/device
-// const { accessToken, refreshToken } = generateTokenPair(adminUser, sessionId);
-
-// // Send cookies to frontend
-// setAuthCookies(res, accessToken, refreshToken);

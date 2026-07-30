@@ -1,18 +1,6 @@
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
 
-export const STORE_CACHE = {
-    SEARCH_KEY: (query, page, limit, sort) =>
-        `stores:search:${query}:${page}:${limit}:${sort}`,
-    NEARBY_KEY: (lat, lng, radius, page, limit) =>
-        `stores:nearby:${lat}:${lng}:${radius}:${page}:${limit}`,
-    DETAIL_KEY: (storeId) => `store:detail:${storeId}`,
-    AVAILABILITY_KEY: (storeId) => `store:availability:${storeId}`,
-
-    SEARCH_TTL: 120,        // 2 minutes
-    NEARBY_TTL: 60,         // 1 minute (location-sensitive)
-    DETAIL_TTL: 300,        // 5 minutes
-    AVAILABILITY_TTL: 30,   // 30 seconds (real-time sensitive)
-};
+// Removed STORE_CACHE (Migrated to constants/redis/store.keys.js)
 
 export const STORE_DEFAULTS = {
     NEARBY_RADIUS_KM: 10,

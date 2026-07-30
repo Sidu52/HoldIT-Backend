@@ -94,8 +94,7 @@ export const DASHBOARD_CACHE_TTL = 300;  // 5 minutes
 
 // OTP CONFIGURATION
 export const OTP_LENGTH = 4;
-export const OTP_EXPIRY = 10;                      // minutes — OTP valid for 10 mins
-export const OTP_COOLDOWN = 60;                    // seconds between resend requests
+export const OTP_EXPIRY = 10;                 // seconds between resend requests
 export const OTP_MAX_ATTEMPTS = 5;                 // max failed verifications before lockout
 export const OTP_FAIL_WINDOW_SECONDS = 15 * 60;    // 15-minute fail-lockout window
 export const OTP_MAX_REQUESTS_PER_HOUR = 5;        // max OTP sends per rate-limit window

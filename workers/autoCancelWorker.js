@@ -1,6 +1,5 @@
 import { Worker } from "bullmq";
 import { sharedWorkerConnection } from "../services/redisService.js";
-import { del } from "../services/redisService.js";
 import { cancelJob } from "../services/jobService.js";
 import Booking from "../models/Booking.js";
 import { BOOKING_STATUS, JOB_QUEUES } from "../utils/constants.js";

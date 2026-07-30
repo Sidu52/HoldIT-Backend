@@ -22,25 +22,23 @@ import {
     bulkDeactivateUsersSchema,
 } from "../../validations/admin/user.validation.js";
 import { addAddressSchema, updateAddressSchema } from "../../validations/user/user.address.validation.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
 const router = express.Router();
-router.use(authMiddleware);
-
-const VIEW_ROLES = [
+router.use(authMiddleware,
+  roleMiddleware(
     USER_ROLES.SUPER_ADMIN,
     USER_ROLES.ADMIN,
     USER_ROLES.OPERATION_MANAGER,
-    USER_ROLES.CUSTOMER_SUPPORT,
-];
+    USER_ROLES.CUSTOMER_SUPPORT
+  ),
+  checkAdminAccountStatus
+);
 
-const MODIFY_ROLES = [
-    USER_ROLES.SUPER_ADMIN,
-    USER_ROLES.ADMIN,
-];
+const manageModify = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.OPERATION_MANAGER);
 
 router.delete("/bulk-delete",
     apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
     validate(bulkDeactivateUsersSchema, "body"),
     bulkDeactivateUsers
 );
@@ -48,7 +46,6 @@ router.delete("/bulk-delete",
 // Get all users
 router.get("/",
     apiLimiter,
-    roleMiddleware(...VIEW_ROLES),
     validate(listUsersSchema, "query"),
     getUsers
 );
@@ -56,7 +53,6 @@ router.get("/",
 // Get user by ID
 router.get("/:user_id",
     apiLimiter,
-    roleMiddleware(...VIEW_ROLES),
     validate(userIdSchema, "params"),
     getUserById
 );
@@ -64,7 +60,7 @@ router.get("/:user_id",
 // Update user profile
 router.put("/:user_id",
     apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
+    manageModify,
     validate(userIdSchema, "params"),
     validate(updateUserSchema, "body"),
     updateUserProfile
@@ -73,7 +69,7 @@ router.put("/:user_id",
 // Update user status
 router.patch("/:user_id/status",
     apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
+    manageModify,
     validate(userIdSchema, "params"),
     validate(updateUserStatusSchema, "body"),
     updateUserStatus
@@ -81,18 +77,21 @@ router.patch("/:user_id/status",
 
 router.put(
     "/:userId/addresses/:addressId",
+    manageModify,
     validate(updateAddressSchema),
     updateUserAddress
 );
 
 router.post(
     "/:userId/addresses",
+    manageModify,
     validate(addAddressSchema),
     addUserAddress
 );
 
 router.delete(
     "/:userId/addresses/:addressId",
+    manageModify,
     deleteUserAddress
 );
 

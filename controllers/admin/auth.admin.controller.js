@@ -2,7 +2,6 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
-import { getCache, setCache, deleteCache, deleteByPattern } from "../../utils/cache.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import Admin from "../../models/Admin.js";
 import sendEmail from "../../mailer/emailService.js";
@@ -11,21 +10,20 @@ import logger from "../../utils/logger.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { clearAuthCookies, setAuthCookies, generateRefreshToken, generateAccessToken } from "../../utils/token.js";
 import { generateTokenPair } from "../../helpers/user/authHelper.js";
+import { AdminKeys, AdminTTL } from "../../constants/redis/admin.keys.js";
+import { AuthKeys } from "../../constants/redis/auth.keys.js";
+import { deleteCache, getCache, setCache, deleteByPattern } from "../../constants/redis/redisOperation.js";
+import { NS } from "../../constants/redis/namespaces.js";
+
 
 const BCRYPT_SALT_ROUNDS = 12;
-const FORGOT_PASSWORD_EXPIRY = 60 * 60; // 1 hour in seconds
 
-const REFRESH_KEY = (authId, tokenId) => `refresh:${authId}:${tokenId}`;
-const INVITE_TOKEN_KEY = (token) => `admin:invite:token:${token}`;
-const INVITE_EMAIL_KEY = (email) => `admin:invite:email:${email}`;
-const FORGOT_TOKEN_KEY = (token) => `admin:forgot:token:${token}`;
-const FORGOT_EMAIL_KEY = (email) => `admin:forgot:email:${email}`;
 
 // VERIFY INVITE TOKEN
 export const verifyAdminInviteToken = async (req, res) => {
     try {
         const { token } = req.query;
-        const invite = await getCache(INVITE_TOKEN_KEY(token));
+        const invite = await getCache(AdminKeys.inviteToken(token));
         if (!invite) return sendError(res, "Invalid or expired invite token", STATUS_CODES.BAD_REQUEST);
 
         return sendResponse({ res, message: "Token verified successfully", data: { email: invite.email, role: invite.role } });
@@ -40,25 +38,37 @@ export const signUp = async (req, res) => {
     try {
         const { invite_token, first_name, last_name, phone, address, date_of_birth, password, gender } = req.body;
 
-        const invite = await getCache(INVITE_TOKEN_KEY(invite_token));
+        const invite = await getCache(AdminKeys.inviteToken(invite_token));
         if (!invite) return sendError(res, "Invalid or expired invite token", STATUS_CODES.BAD_REQUEST);
 
         const { email, role, inviterId } = invite;
 
-        const existing = await Admin.findOne({ email }).select("verification_status").lean();
-        if (existing?.verification_status === VERIFICATION_STATUS.VERIFIED) {
-            await Promise.all([deleteCache(INVITE_TOKEN_KEY(invite_token)), deleteCache(INVITE_EMAIL_KEY(email))]);
-            return sendError(res, "Account has already been verified", STATUS_CODES.CONFLICT);
-        }
-
-        await Admin.findByIdAndUpdate(existing._id, {
+        const updateFields = {
             first_name, last_name, phone, address, date_of_birth, gender,
             password_hash: await bcrypt.hash(password, BCRYPT_SALT_ROUNDS),
             verification_status: VERIFICATION_STATUS.VERIFIED,
             account_status: ACCOUNT_STATUS.ACTIVE,
-        });
+        };
 
-        await Promise.all([deleteCache(INVITE_TOKEN_KEY(invite_token)), deleteCache(INVITE_EMAIL_KEY(email))]);
+        if (!Object.keys(updateFields).length) {
+            return sendError(res, "No fields provided to update", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const updatedAdmin = await Admin.findOneAndUpdate(
+            { email, verification_status: VERIFICATION_STATUS.PENDING },
+            { $set: updateFields },
+            { new: true, runValidators: true, context: "query" }
+        ).select(ExcludedFields).lean();
+
+        if (!updatedAdmin) {
+            return sendError(res, "Account not found", STATUS_CODES.NOT_FOUND);
+        }
+
+        await Promise.all([
+            deleteCache(AdminKeys.inviteToken(invite_token)),
+            deleteCache(AdminKeys.invite(email)),
+            setCache(AdminKeys.profile(updatedAdmin._id), updatedAdmin, AdminTTL.PROFILE),
+        ]);
 
         return sendResponse({ res, statusCode: STATUS_CODES.CREATED, message: "Account created successfully. Please login." });
     } catch (err) {
@@ -71,7 +81,6 @@ export const signUp = async (req, res) => {
 export const adminLogin = async (req, res) => {
     try {
         const { email, password } = req.body;
-
         const admin = await Admin.findOne({ email }).lean();
         if (!admin || !(await bcrypt.compare(password, admin.password_hash))) {
             return sendError(res, "Invalid email or password", STATUS_CODES.UNAUTHORIZED);
@@ -91,6 +100,8 @@ export const adminLogin = async (req, res) => {
         Admin.updateOne({ _id: admin._id }, { last_login_at: new Date() })
             .catch((err) => logger.error("Failed to update last login:", err));
 
+        await setCache(AdminKeys.profile(admin._id), admin, AdminTTL.PROFILE);
+
         return sendResponse({ res, message: "Login successful", data: { id: admin._id, email: admin.email, role: admin.role } });
     } catch (err) {
         logger.error("[adminLogin] Error:", err);
@@ -105,7 +116,7 @@ export const adminLogout = async (req, res) => {
         if (refreshToken) {
             const decoded = jwt.decode(refreshToken);
             if (decoded?.auth_id && decoded?.token_id) {
-                await deleteCache(REFRESH_KEY(decoded.auth_id, decoded.token_id));
+                await deleteCache(AuthKeys.refreshToken(decoded.auth_id, decoded.token_id));
             }
         }
         clearAuthCookies(res);
@@ -122,12 +133,17 @@ export const refresh = async (req, res) => {
     try {
         const { token: refreshToken } = extractRefreshToken(req);
         if (!refreshToken) return sendError(res, "Refresh token missing", STATUS_CODES.UNAUTHORIZED);
-
+console.log(refreshToken);
         const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
         if (decoded.type !== TOKEN_TYPES.REFRESH) return sendError(res, "Invalid token type", STATUS_CODES.UNAUTHORIZED);
 
-        const redisKey = REFRESH_KEY(decoded.auth_id, decoded.token_id);
-        const stored = await getCache(redisKey);
+        console.log(decoded);
+
+        const redisKey = AuthKeys.refreshToken(decoded.role, decoded.auth_id, decoded.token_id);
+        const stored = await getCache(redisKey, AdminTTL.REFRESH_TOKEN_EXPIRY);
+
+        console.log(redisKey, stored);
+
         if (!stored) {
             clearAuthCookies(res);
             return sendError(res, "Token reuse detected", STATUS_CODES.FORBIDDEN);
@@ -141,13 +157,11 @@ export const refresh = async (req, res) => {
             return sendError(res, "Account deactivated. Contact support.", STATUS_CODES.FORBIDDEN);
         }
 
-        // Rotate: delete old, issue new
-        await deleteCache(redisKey);
         const newTokenId = uuidv4();
         const newRefreshToken = generateRefreshToken({ auth_id: admin._id, role: admin.role, token_id: newTokenId, type: TOKEN_TYPES.REFRESH, path: decoded.path });
         const newAccessToken = generateAccessToken({ auth_id: admin._id, role: admin.role, type: TOKEN_TYPES.ACCESS });
 
-        await setCache(REFRESH_KEY(admin._id, newTokenId), "valid", REFRESH_TOKEN_EXPIRY);
+        await setCache(AuthKeys.refreshToken(admin._id, newTokenId), "valid", REFRESH_TOKEN_EXPIRY);
         setAuthCookies(res, newAccessToken, newRefreshToken, decoded.path);
 
         return sendResponse({ res, message: "Token refreshed" });
@@ -170,17 +184,17 @@ export const createAdminForgotPasswordToken = async (req, res) => {
         }
 
         // prevent duplicate tokens
-        const existing = await getCache(FORGOT_EMAIL_KEY(email));
+        const existing = await getCache(AdminKeys.forgotEmail(email));
         if (existing) return sendResponse({ res, message: successMessage });
 
         const token = crypto.randomBytes(32).toString("hex");
 
         await Promise.all([
-            setCache(FORGOT_TOKEN_KEY(token), { adminId: admin._id, email }, FORGOT_PASSWORD_EXPIRY),
-            setCache(FORGOT_EMAIL_KEY(email), token, FORGOT_PASSWORD_EXPIRY),
+            setCache(AdminKeys.forgotToken(token), { adminId: admin._id, email }, AdminTTL.FORGOT_PASSWORD_EXPIRY),
+            setCache(AdminKeys.forgotEmail(email), token, AdminTTL.FORGOT_PASSWORD_EXPIRY),
         ]);
 
-        const resetLink = `${process.env.ADMIN_UI_URL}/admin/reset-password?token=${token}`;
+        const resetLink = `${process.env.ADMIN_UI_URL}/reset-password?token=${token}`;
         sendEmail({
             to: admin.email,
             subject: "Password Reset Request",
@@ -200,7 +214,7 @@ export const createAdminForgotPasswordToken = async (req, res) => {
 export const verifyAdminForgotPasswordToken = async (req, res) => {
     try {
         const { token } = req.query;
-        const data = await getCache(FORGOT_TOKEN_KEY(token));
+        const data = await getCache(AdminKeys.forgotToken(token));
         if (!data) return sendError(res, "Invalid or expired reset token", STATUS_CODES.BAD_REQUEST);
 
         return sendResponse({ res, message: "Token is valid", data: { valid: true } });
@@ -213,20 +227,22 @@ export const verifyAdminForgotPasswordToken = async (req, res) => {
 // RESET PASSWORD
 export const updateAdminPassword = async (req, res) => {
     try {
-        const { token, password } = req.body;
+        const { token } = req.query;
+        const { password, confirm_password } = req.body;
 
-        const data = await getCache(FORGOT_TOKEN_KEY(token));
+        const data = await getCache(AdminKeys.forgotToken(token));
         if (!data) return sendError(res, "Invalid or expired reset token", STATUS_CODES.BAD_REQUEST);
 
         const { adminId, email } = data;
+        if (password !== confirm_password) return sendError(res, "Passwords do not match", STATUS_CODES.BAD_REQUEST);
 
         const result = await Admin.findByIdAndUpdate(adminId, { $set: { password_hash: await bcrypt.hash(password, BCRYPT_SALT_ROUNDS) } });
         if (!result) return sendError(res, "Account not found", STATUS_CODES.NOT_FOUND);
 
         await Promise.all([
-            deleteCache(FORGOT_TOKEN_KEY(token)),
-            deleteCache(FORGOT_EMAIL_KEY(email)),
-            deleteByPattern(`refresh:${adminId}:*`),
+            deleteCache(AdminKeys.forgotToken(token)),
+            deleteCache(AdminKeys.forgotEmail(email)),
+            deleteByPattern(AuthKeys.refreshTokenPattern(NS.ADMIN, adminId)),
         ]);
 
         return sendResponse({ res, message: "Password updated successfully. Please login again." });
@@ -255,10 +271,11 @@ export const resetPassword = async (req, res) => {
             return sendError(res, "New password must be different from current password", STATUS_CODES.BAD_REQUEST);
         }
 
-        admin.password_hash = await bcrypt.hash(new_password, BCRYPT_SALT_ROUNDS);
-        await admin.save();
+        admin.password_hash = new_password 
+        await admin.save(); 
 
-        await deleteByPattern(`refresh:${auth_id}:*`);
+
+        await deleteByPattern(AuthKeys.refreshTokenPattern(NS.ADMIN, auth_id));
         clearAuthCookies(res);
 
         return sendResponse({ res, message: "Password changed successfully. Please login again." });

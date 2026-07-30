@@ -55,14 +55,4 @@ export const DRIVER_RIDE_MESSAGES = {
     HISTORY_FAILED: "Failed to fetch ride history.",
 };
 
-// CACHE KEYS & TTLs
-export const DRIVER_RIDE_CACHE = {
-    ASSIGNED_KEY: (driverId) => `driver:assigned:${driverId}`,
-    ACTIVE_KEY: (driverId) => `driver:active:${driverId}`,
-    RIDE_DETAIL_KEY: (driverId, bookingId) => `driver:ride:${driverId}:${bookingId}`,
-    HISTORY_KEY: (driverId, page, limit) => `driver:ride_history:${driverId}:${page}:${limit}`,
-    ASSIGNED_TTL: 60,
-    ACTIVE_TTL: 120,
-    DETAIL_TTL: 300,
-    HISTORY_TTL: 120,
-};
+// Removed DRIVER_RIDE_CACHE (Migrated to constants/redis/driver.keys.js)

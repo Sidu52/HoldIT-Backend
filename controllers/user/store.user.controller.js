@@ -1,10 +1,10 @@
 import Store from "../../models/Store.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES } from "../../utils/constants.js";
-import { STORE_CACHE, STORE_MESSAGES } from "../../constants/user/store.js";
+import { STORE_MESSAGES } from "../../constants/user/store.js";
+import { getCache, setCache } from "../../constants/redis/redisOperation.js";
+import { StoreKeys, StoreTTL } from "../../constants/redis/store.keys.js";
 import {
-    getCachedData,
-    setCacheData,
     findVisibleStoreById,
     checkStoreOpenStatus,
     haversineDistance,
@@ -12,23 +12,6 @@ import {
 import asyncHandler from "../../utils/asyncHandler.js";
 import logger from "../../utils/logger.js";
 
-// ─── CHECK STORE AVAILABILITY ─────────────────────────────────────────────────
-/**
- * GET /availability?storeId=<id>&lat=<lat>&lng=<lng>&radius=<km>
- *
- * BUG FIXED: was a plain function (storeId, userLat, userLng, radiusKm) —
- * Express would call it as (req, res, next), making storeId === req and
- * all coordinates undefined. Rewrote as a proper asyncHandler route handler.
- *
- * BUG FIXED: checkStoreOpenStatus and haversineDistance were called but never
- * imported — would throw ReferenceError at runtime.
- *
- * BUG FIXED: storeId was never read from anywhere (not in route params,
- * not in query validation). Added storeId to query reads + validation.
- *
- * BUG FIXED: findVisibleStoreById called with an array — select expects a
- * space-separated string.
- */
 export const checkStoreAvailability = asyncHandler(async (req, res) => {
     // All validated and defaulted by Joi middleware
     const {
@@ -38,8 +21,8 @@ export const checkStoreAvailability = asyncHandler(async (req, res) => {
         radius: radiusKm,
     } = req.validated?.query ?? req.query;
 
-    const cacheKey = STORE_CACHE.AVAILABILITY_KEY(storeId, userLat, userLng);
-    const cached = await getCachedData(cacheKey);
+    const cacheKey = StoreKeys.availability(storeId, userLat, userLng);
+    const cached = await getCache(cacheKey);
     if (cached) {
         return sendResponse({
             res,
@@ -98,7 +81,7 @@ export const checkStoreAvailability = asyncHandler(async (req, res) => {
             : { reason: "Store is at full capacity" }),
     };
 
-    await setCacheData(cacheKey, responseData, STORE_CACHE.AVAILABILITY_TTL).catch((err) =>
+    await setCache(cacheKey, responseData, StoreTTL.AVAILABILITY).catch((err) =>
         logger.warn("[checkStoreAvailability] Cache set failed:", err.message)
     );
 

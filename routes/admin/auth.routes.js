@@ -23,6 +23,8 @@ import {
 } from "../../validations/admin/auth.validation.js";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { USER_ROLES } from "../../utils/constants.js";
+import { roleMiddleware } from "../../middlewares/role.middleware.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
 const router = express.Router();
 
@@ -35,53 +37,38 @@ router.post(
 );
 
 // Signup via invite
-router.post(
-    "/signup",
-    apiLimiter,
-    validate(signupSchema),
-    signUp
-);
+router.post("/signup",apiLimiter,validate(signupSchema),signUp);
 
 // Verify invite token
-router.get(
-    "/verify-invite",
-    apiLimiter,
-    validate(tokenQuerySchema, "query"),
-    verifyAdminInviteToken
-);
+router.get("/verify-invite",apiLimiter,validate(tokenQuerySchema, "query"),verifyAdminInviteToken);
 
 // Refresh access token
-router.post(
-    "/refresh",
-    apiLimiter,
-    (req, res) => refresh(req, res, USER_ROLES.ADMIN)
-);
+router.post("/refresh",apiLimiter, refresh);
 
 // Request password reset email
-router.post(
-    "/forgot-password",
-    apiLimiter,
+router.post("/forgot-password",apiLimiter,
     validate(forgotPasswordSchema),
-    createAdminForgotPasswordToken
-);
+    createAdminForgotPasswordToken);
 
 // Verify reset token 
-router.get(
-    "/verify-reset-token",
-    apiLimiter,
-    validate(tokenQuerySchema, "query"),
-    verifyAdminForgotPasswordToken
-);
+router.get("/reset-password",apiLimiter,
+    validate(tokenQuerySchema, "query"),verifyAdminForgotPasswordToken);
 
 // Set new password with reset token
-router.post(
-    "/forgot-password/reset",
-    apiLimiter,
-    validate(resetPasswordSchema),
-    updateAdminPassword
-);
+router.post("/forgot-password/reset",apiLimiter,
+    validate(tokenQuerySchema, "query"),
+    validate(resetPasswordSchema),updateAdminPassword);
 
-router.use(authMiddleware);
+router.use(
+  authMiddleware,
+  roleMiddleware(
+    USER_ROLES.SUPER_ADMIN,
+    USER_ROLES.ADMIN,
+    USER_ROLES.OPERATION_MANAGER,
+    USER_ROLES.CUSTOMER_SUPPORT
+  ),
+  checkAdminAccountStatus
+);
 
 // Verify current session
 router.get(

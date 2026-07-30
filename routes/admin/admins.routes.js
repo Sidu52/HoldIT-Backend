@@ -1,11 +1,10 @@
 import express from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
 import { roleMiddleware } from "../../middlewares/role.middleware.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 import { apiLimiter } from "../../config/rateLimiter.js";
 import { USER_ROLES } from "../../utils/constants.js";
 import {
-  getAdmins,
-  getSuperAdmins,
   createAdminInvite,
   getProfile,
   updateAccountStatus,
@@ -14,7 +13,7 @@ import {
   getTeamMemberById,
   bulkDeactivateAdmins,
   updateTeamMember,
-  resendInvite
+  resendInvite,
 } from "../../controllers/admin/admin.admin.controller.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
@@ -22,115 +21,47 @@ import {
   updateAccountSchema,
   updateProfileSchema,
   listQuerySchema,
-  userIdSchema
+  userIdSchema,
 } from "../../validations/admin/admin.validation.js";
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authMiddleware);
-
-// Get own profile
-router.get(
-  "/profile",
-  apiLimiter,
-  getProfile
+router.use(
+  authMiddleware,
+  roleMiddleware(
+    USER_ROLES.SUPER_ADMIN,
+    USER_ROLES.ADMIN,
+    USER_ROLES.OPERATION_MANAGER,
+    USER_ROLES.CUSTOMER_SUPPORT
+  ),
+  checkAdminAccountStatus
 );
 
-// Update own profile
-router.put(
-  "/profile",
-  apiLimiter,
-  validate(updateProfileSchema),
-  updateProfile
-);
+const manageTeamOnly = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN);
 
-// Get all team members
-router.get(
-  "/team",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  validate(listQuerySchema, "query"),
-  getTeamsMember
-);
 
-// Get By ID
-router.get(
-  "/team/:id",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  validate(userIdSchema, "params"),
-  getTeamMemberById
-)
+router.get("/profile", apiLimiter, getProfile);
+router.put("/profile", apiLimiter, validate(updateProfileSchema), updateProfile);
 
-// Update team members details
+router.get("/team", apiLimiter, validate(listQuerySchema, "query"), getTeamsMember);
+router.get("/team/:id", apiLimiter, validate(userIdSchema, "params"), getTeamMemberById);
+
 router.put(
   "/team/:id",
+  manageTeamOnly,
   apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
   validate(userIdSchema, "params"),
   validate(updateProfileSchema),
   updateTeamMember
 );
 
-// Bulk Deactivate
-router.post(
-  "/bulk-delete",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  bulkDeactivateAdmins
-)
+router.delete("/bulk-delete", manageTeamOnly, apiLimiter, bulkDeactivateAdmins);
 
-// Get admins only
-router.get(
-  "/admins",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  validate(listQuerySchema, "query"),
-  getAdmins
-);
+router.post("/invite", manageTeamOnly, apiLimiter, validate(inviteSchema), createAdminInvite);
+router.put("/resend-invite/:id", manageTeamOnly, apiLimiter, validate(userIdSchema, "params"), resendInvite);
 
-// Get super admins
-router.get(
-  "/super-admins",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  validate(listQuerySchema, "query"),
-  getSuperAdmins
-);
-
-// Invite new team member
-router.post(
-  "/invite",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  validate(inviteSchema),
-  createAdminInvite
-);
-
-// Resend Invite
-router.put(
-  "/resend-invite/:id",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
+router.put("/account-status/:id", manageTeamOnly, apiLimiter, 
   validate(userIdSchema, "params"),
-  resendInvite
-);
-
-// Update account status (block/unblock/etc.)
-router.put(
-  "/account-status",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  validate(updateAccountSchema),
-  updateAccountStatus
-);
-
-router.delete(
-  "/bulk-delete",
-  apiLimiter,
-  roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN),
-  bulkDeactivateAdmins
-)
+  validate(updateAccountSchema), updateAccountStatus);
 
 export default router;

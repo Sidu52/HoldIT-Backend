@@ -15,7 +15,7 @@ const LocationSchema = new mongoose.Schema(
 const DriverAssignmentSchema = new mongoose.Schema(
     {
         driverId: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" },
-        returnOtp: { type: String, sparse: true }, // Pickup Return OTP
+        returnOtp: { type: String, sparse: true }, // DELIVERED OTP
         storageOtp: { type: String, sparse: true }, // Store Conform OTP
         storageReturnOtp: { type: String, sparse: true }, // Pickup Return OTP
         otp: { type: String, sparse: true, }, // Pickup OTP

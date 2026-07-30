@@ -9,44 +9,44 @@ import {
     DRIVER_JOB_NAMES,
     DRIVER_ASSIGN_QUEUE,
     DRIVER_SEARCH_STATUSES,
-    REDIS_KEYS,
-    REDIS_TTL,
 } from "../../constants/user/booking.js";
+import { BookingKeys, BookingTTL } from "../../constants/redis/booking.keys.js";
+import { DriverKeys, DriverTTL } from "../../constants/redis/driver.keys.js";
 import logger from "../../utils/logger.js";
 // CANDIDATE PIPELINE
 export const storeCandidates = async (bookingId, driverIds) => {
     if (!driverIds.length) return 0;
 
-    const key = REDIS_KEYS.BOOKING_CANDIDATES(bookingId);
+    const key = BookingKeys.candidates(bookingId);
     const pipeline = redis.pipeline();
     pipeline.del(key);
     pipeline.rpush(key, ...driverIds);
-    pipeline.expire(key, REDIS_TTL.CANDIDATES);
+    pipeline.expire(key, BookingTTL.CANDIDATES);
     await pipeline.exec();
 
     return driverIds.length;
 };
 
 export const popNextCandidate = async (bookingId) => {
-    return redis.lpop(REDIS_KEYS.BOOKING_CANDIDATES(bookingId));
+    return redis.lpop(BookingKeys.candidates(bookingId));
 };
 
 export const getRemainingCandidateCount = async (bookingId) => {
-    return redis.llen(REDIS_KEYS.BOOKING_CANDIDATES(bookingId));
+    return redis.llen(BookingKeys.candidates(bookingId));
 };
 
 // TRIED-DRIVERS SET
 export const markDriverTried = async (bookingId, driverId) => {
-    const key = REDIS_KEYS.BOOKING_TRIED(bookingId);
+    const key = BookingKeys.tried(bookingId);
     const pipeline = redis.pipeline();
     pipeline.sadd(key, driverId.toString());
-    pipeline.expire(key, REDIS_TTL.TRIED_DRIVERS);
+    pipeline.expire(key, BookingTTL.TRIED_DRIVERS);
     await pipeline.exec();
 };
 
 export const wasDriverTried = async (bookingId, driverId) => {
     const result = await redis.sismember(
-        REDIS_KEYS.BOOKING_TRIED(bookingId),
+        BookingKeys.tried(bookingId),
         driverId.toString()
     );
     return result === 1;
@@ -54,8 +54,8 @@ export const wasDriverTried = async (bookingId, driverId) => {
 
 // OFFER STATE
 export const createDriverOffer = async (bookingId, driverId, attemptNumber = 1) => {
-    const offerKey = REDIS_KEYS.BOOKING_OFFER(bookingId);
-    const driverLockKey = REDIS_KEYS.DRIVER_OFFERED(driverId);
+    const offerKey = BookingKeys.offer(bookingId);
+    const driverLockKey = DriverKeys.offered(driverId);
 
     const existingLock = await redis.get(driverLockKey);
     if (existingLock) {
@@ -74,44 +74,44 @@ export const createDriverOffer = async (bookingId, driverId, attemptNumber = 1) 
         status: "pending",
         attemptNumber: attemptNumber.toString(),
     });
-    pipeline.expire(offerKey, REDIS_TTL.OFFER);
-    pipeline.set(driverLockKey, bookingId.toString(), "EX", REDIS_TTL.DRIVER_OFFERED);
+    pipeline.expire(offerKey, BookingTTL.OFFER);
+    pipeline.set(driverLockKey, bookingId.toString(), "EX", BookingTTL.OFFER);
     await pipeline.exec();
 
     return { created: true, reason: null };
 };
 
 export const getOfferStatus = async (bookingId) => {
-    const offer = await redis.hgetall(REDIS_KEYS.BOOKING_OFFER(bookingId));
+    const offer = await redis.hgetall(BookingKeys.offer(bookingId));
     if (!offer || !offer.driverId) return { exists: false, offer: null };
     return { exists: true, offer };
 };
 
 export const markOfferAccepted = async (bookingId) => {
-    await redis.hset(REDIS_KEYS.BOOKING_OFFER(bookingId), "status", "accepted");
+    await redis.hset(BookingKeys.offer(bookingId), "status", "accepted");
 };
 
 export const clearOffer = async (bookingId, driverId) => {
     await Promise.all([
-        redis.del(REDIS_KEYS.BOOKING_OFFER(bookingId)),
-        redis.del(REDIS_KEYS.DRIVER_OFFERED(driverId)),
+        redis.del(BookingKeys.offer(bookingId)),
+        redis.del(DriverKeys.offered(driverId)),
     ]);
 };
 
 // SEARCH ACTIVE LOCK
 export const markSearchActive = async (bookingId) => {
     const result = await redis.set(
-        REDIS_KEYS.BOOKING_SEARCH_ACTIVE(bookingId),
+        BookingKeys.searchActive(bookingId),
         "1",
         "EX",
-        REDIS_TTL.SEARCH_ACTIVE,
+        BookingTTL.SEARCH_ACTIVE,
         "NX"
     );
     return result === "OK";
 };
 
 export const clearSearchActive = async (bookingId) => {
-    await redis.del(REDIS_KEYS.BOOKING_SEARCH_ACTIVE(bookingId));
+    await redis.del(BookingKeys.searchActive(bookingId));
 };
 
 // REDIS CLEANUP
@@ -124,14 +124,14 @@ export const cleanupBookingRedisKeys = async (bookingId, knownDriverId = null) =
     }
 
     const keys = [
-        REDIS_KEYS.BOOKING_OFFER(bookingId),
-        REDIS_KEYS.BOOKING_CANDIDATES(bookingId),
-        REDIS_KEYS.BOOKING_TRIED(bookingId),
-        REDIS_KEYS.BOOKING_SEARCH_ACTIVE(bookingId),
+        BookingKeys.offer(bookingId),
+        BookingKeys.candidates(bookingId),
+        BookingKeys.tried(bookingId),
+        BookingKeys.searchActive(bookingId),
     ];
 
     if (driverIdToClean) {
-        keys.push(REDIS_KEYS.DRIVER_OFFERED(driverIdToClean));
+        keys.push(DriverKeys.offered(driverIdToClean));
     }
 
     await Promise.allSettled(keys.map((k) => redis.del(k)));
@@ -142,11 +142,11 @@ export const getDriverGeoKeys = async (serviceAreaId) => {
     const keys = [];
 
     if (serviceAreaId) {
-        keys.push(REDIS_KEYS.DRIVER_GEO(serviceAreaId));
+        keys.push(DriverKeys.geoByArea(serviceAreaId));
     }
 
-    if (!keys.includes(REDIS_KEYS.DRIVER_GEO_GLOBAL)) {
-        keys.push(REDIS_KEYS.DRIVER_GEO_GLOBAL);
+    if (!keys.includes(DriverKeys.geoGlobal())) {
+        keys.push(DriverKeys.geoGlobal());
     }
 
     return keys;
@@ -202,9 +202,9 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
                     }
                     seenIds.add(driverId);
 
-                    const meta = await redis.hgetall(REDIS_KEYS.DRIVER_META(driverId));
+                    const meta = await redis.hgetall(DriverKeys.meta(driverId));
                     const tried = await wasDriverTried(bookingId, driverId);
-                    const pendingOffer = await redis.get(REDIS_KEYS.DRIVER_OFFERED(driverId));
+                    const pendingOffer = await redis.get(DriverKeys.offered(driverId));
                     
                     console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} Redis Meta:`, JSON.stringify(meta));
                     console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} already tried: ${tried}, pendingOffer key status: ${pendingOffer}`);
@@ -243,7 +243,7 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
 
 const isDriverEligibleInRedis = async (driverId, bookingId) => {
     try {
-        const meta = await redis.hgetall(REDIS_KEYS.DRIVER_META(driverId));
+        const meta = await redis.hgetall(DriverKeys.meta(driverId));
 
         // No meta at all → let DB verification handle it later
         if (!meta || Object.keys(meta).length === 0) return true;
@@ -258,7 +258,7 @@ const isDriverEligibleInRedis = async (driverId, bookingId) => {
 
         const [tried, pendingOffer] = await Promise.all([
             wasDriverTried(bookingId, driverId),
-            redis.get(REDIS_KEYS.DRIVER_OFFERED(driverId)),
+            redis.get(DriverKeys.offered(driverId)),
         ]);
 
         if (tried) return false;
@@ -451,9 +451,9 @@ export const updateBookingStatus = async (bookingId, status, note) => {
 export const scheduleDriverSearch = async (bookingId, type = "PICKUP") => {
     // Clear stale search state so the new search starts clean
     await Promise.all([
-        redis.del(REDIS_KEYS.BOOKING_CANDIDATES(bookingId)),
-        redis.del(REDIS_KEYS.BOOKING_TRIED(bookingId)),
-        redis.del(REDIS_KEYS.BOOKING_SEARCH_ACTIVE(bookingId)),
+        redis.del(BookingKeys.candidates(bookingId)),
+        redis.del(BookingKeys.tried(bookingId)),
+        redis.del(BookingKeys.searchActive(bookingId)),
     ]);
 
     await addJobToQueue(

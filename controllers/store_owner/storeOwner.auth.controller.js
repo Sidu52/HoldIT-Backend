@@ -8,11 +8,9 @@ import {
     ACCOUNT_STATUS,
     OTP_LENGTH,
     OTP_MAX_ATTEMPTS,
-    OTP_COOLDOWN,
     TOKEN_TYPES,
-    OTP_FAIL_WINDOW_SECONDS,
     VERIFICATION_STATUS,
-    DETAIL_CACHE_TTL,
+    OTP_FAIL_WINDOW_SECONDS,
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import {
@@ -28,18 +26,18 @@ import asyncHandler from "../../utils/asyncHandler.js";
 import {
     getCache,
     setCache,
-    invalidateCache,
     deleteCache,
+    deleteByPattern,
     incrementCache,
-} from "../../utils/cache.js";
-
-
-const ownerCacheKey = (id) => `store_owners:${id}`;
+} from "../../constants/redis/redisOperation.js";
+import { AuthKeys, AuthTTL } from "../../constants/redis/auth.keys.js";
+import { StoreOwnerKeys, StoreOwnerTTL } from "../../constants/redis/storeOwner.keys.js";
+import { invalidateStoreOwnerCache } from "../../constants/redis/invalidate/storeOwner.invalidate.js";
 
 // Shared OTP dispatch helper
 async function dispatchOTP(res, phone) {
     const normalizedPhone = String(phone).replace(/[^0-9+]/g, "");
-    const isRateLimited = await checkOTPRateLimit(normalizedPhone);
+    const isRateLimited = await checkOTPRateLimit("store_owner", normalizedPhone);
     if (isRateLimited) {
         return {
             limited: true,
@@ -51,7 +49,7 @@ async function dispatchOTP(res, phone) {
         };
     }
 
-    const cooldownKey = `otp_cooldown:${normalizedPhone}`;
+    const cooldownKey = AuthKeys.otpCooldown("store_owner", normalizedPhone);
     const cooldownExists = await getCache(cooldownKey);
     if (cooldownExists) {
         return {
@@ -64,8 +62,8 @@ async function dispatchOTP(res, phone) {
         };
     }
 
-    const otp = await generateAndStoreOTP(normalizedPhone);
-    await setCache(cooldownKey, "1", OTP_COOLDOWN);
+    const otp = await generateAndStoreOTP("store_owner", normalizedPhone);
+    await setCache(cooldownKey, "1", AuthTTL.OTP_COOLDOWN);
     await NotificationService.sendOTP(normalizedPhone, otp);
 
     return { limited: false };
@@ -86,8 +84,8 @@ export const registerStoreOwner = asyncHandler(async (req, res) => {
         );
     }
 
-    const pendingKey = `pending_owner:${phone}`;
-    await setCache(pendingKey, phone, DETAIL_CACHE_TTL);
+    const pendingKey = AuthKeys.pendingOwner(phone);
+    await setCache(pendingKey, phone, AuthTTL.PENDING_USER);
 
     const { limited, response } = await dispatchOTP(res, phone);
     if (limited) return response;
@@ -126,7 +124,7 @@ export const loginStoreOwner = asyncHandler(async (req, res) => {
 export const sendOTP = asyncHandler(async (req, res) => {
     const { phone } = req.body;
 
-    const pendingKey = `pending_owner:${phone}`;
+    const pendingKey = AuthKeys.pendingOwner(phone);
     const isPending = await getCache(pendingKey);
 
     if (!isPending) {
@@ -165,10 +163,10 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         return sendError(res, `OTP must be ${OTP_LENGTH} digits`, STATUS_CODES.BAD_REQUEST);
     }
 
-    const failKey = `otp_fail:${sanitizedPhone}`;
+    const failKey = AuthKeys.otpFail("store_owner", sanitizedPhone);
     const failCount = await getCache(failKey);
     if (failCount && parseInt(failCount, 10) >= OTP_MAX_ATTEMPTS) {
-        await deleteCache(`otp:${sanitizedPhone}`);
+        await deleteCache(AuthKeys.otp("store_owner", sanitizedPhone));
         return sendError(
             res,
             "Too many failed attempts. Please request a new OTP.",
@@ -177,7 +175,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     // Validate OTP
-    const savedOTP = await getCache(`otp:${sanitizedPhone}`);
+    const savedOTP = await getCache(AuthKeys.otp("store_owner", sanitizedPhone));
     const isOtpValid =
         savedOTP &&
         savedOTP.length === sanitizedOtp.length &&
@@ -193,7 +191,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         .lean();
 
     if (!owner) {
-        const pendingKey = `pending_owner:${sanitizedPhone}`;
+        const pendingKey = AuthKeys.pendingOwner(sanitizedPhone);
         const pendingRaw = await getCache(pendingKey);
 
         if (!pendingRaw) {
@@ -220,10 +218,10 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     await Promise.all([
-        deleteCache(`otp:${sanitizedPhone}`),
+        deleteCache(AuthKeys.otp("store_owner", sanitizedPhone)),
         deleteCache(failKey),
-        deleteCache(`otp_cooldown:${sanitizedPhone}`),
-        deleteCache(`otp_rate:${sanitizedPhone}`),
+        deleteCache(AuthKeys.otpCooldown("store_owner", sanitizedPhone)),
+        deleteCache(AuthKeys.otpRate("store_owner", sanitizedPhone)),
     ]);
 
     const { accessToken, refreshToken } = await generateTokenPair(
@@ -241,13 +239,13 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     }).catch((err) => logger.error("Failed to update owner login timestamps:", err));
 
     await setCache(
-        ownerCacheKey(owner._id),
+        StoreOwnerKeys.profile(owner._id),
         {
             _id: owner._id,
             account_status: ACCOUNT_STATUS.ACTIVE,
             verification_status: VERIFICATION_STATUS.VERIFIED,
         },
-        DETAIL_CACHE_TTL
+        StoreOwnerTTL.PROFILE
     );
 
     await setAuthCookies(res, accessToken, refreshToken, "/api/v1/store-owner/auth/refresh");
@@ -275,11 +273,11 @@ export const refreshToken = asyncHandler(async (req, res) => {
     if (decoded.type !== TOKEN_TYPES.REFRESH) {
         return sendError(res, "Invalid token type.", STATUS_CODES.UNAUTHORIZED);
     }
-    const redisKey = `refresh:${decoded.auth_id}:${decoded.token_id}`;
+    const redisKey = AuthKeys.refreshToken("store_owner", decoded.auth_id, decoded.token_id);
     const exists = await getCache(redisKey);
 
     if (!exists) {
-        await invalidateCache(`refresh:${decoded.auth_id}:*`);
+        await deleteByPattern(AuthKeys.refreshTokenPattern("store_owner", decoded.auth_id));
         clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
         return sendError(
             res,
@@ -288,7 +286,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
         );
     }
 
-    const cacheKey = ownerCacheKey(decoded.auth_id);
+    const cacheKey = StoreOwnerKeys.profile(decoded.auth_id);
     let owner = await getCache(cacheKey);
 
     if (!owner) {
@@ -301,7 +299,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
             clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
             return sendError(res, "Store owner account not found.", STATUS_CODES.UNAUTHORIZED);
         }
-        await setCache(cacheKey, owner, DETAIL_CACHE_TTL);
+        await setCache(cacheKey, owner, StoreOwnerTTL.PROFILE);
     }
 
     if (
@@ -309,7 +307,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
         owner.verification_status !== VERIFICATION_STATUS.VERIFIED
     ) {
         await deleteCache(redisKey);
-        await invalidateCache("store_owner", decoded.auth_id);
+        await invalidateStoreOwnerCache(decoded.auth_id);
         clearAuthCookies(res, "/api/v1/store-owner/auth/refresh");
         return sendError(res, "This account has been suspended.", STATUS_CODES.FORBIDDEN);
     }
@@ -337,9 +335,9 @@ export const logout = asyncHandler(async (req, res) => {
         const decoded = jwt.decode(token);
         if (decoded?.auth_id && decoded?.token_id) {
             await Promise.all([
-                deleteCache(`refresh:${decoded.auth_id}:${decoded.token_id}`),
-                deleteCache(`access:${decoded.auth_id}:${decoded.token_id}`),
-                invalidateCache("store_owner", decoded.auth_id),
+                deleteCache(AuthKeys.refreshToken("store_owner", decoded.auth_id, decoded.token_id)),
+                deleteCache(AuthKeys.accessToken("store_owner", decoded.auth_id, decoded.token_id)),
+                invalidateStoreOwnerCache(decoded.auth_id),
             ]);
         }
     }

@@ -11,12 +11,13 @@ export const sendResponse = ({ res, data = null, statusCode = 200, message = nul
 };
 
 export const sendError = (res, error, statusCode = 500) => {
-  return res.status(statusCode).json({
+  const response = {
     success: false,
     status: statusCode,
-    message: error?.message || error,
+    message: error,
     data: null,
     timestamp: new Date().toISOString(),
-  });
+  };
+  return res.status(statusCode).json(response);
 };
 

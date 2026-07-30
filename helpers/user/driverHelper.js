@@ -1,12 +1,11 @@
 import Driver from "../../models/Driver.js";
 import Review from "../../models/Review.js";
-import { get, set } from "../../services/redisService.js";
 import {
     DRIVER_VISIBILITY_FILTER,
 } from "../../constants/user/driver.js";
 
 // CACHE
-export { getCachedData, setCacheData } from "../../utils/cache.js";
+
 
 export const findVisibleDriverById = async (driverId, selectFields) => {
     return Driver.findOne({

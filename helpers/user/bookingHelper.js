@@ -3,7 +3,6 @@ import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
 import User from "../../models/User.js";
-import { del, delByPattern } from "../../services/redisService.js";
 import { addJobToQueue } from "../../services/jobService.js";
 import { checkServiceability } from "./addressHelper.js";
 import { ACCOUNT_STATUS, BOOKING_STATUS, JOB_QUEUES } from "../../utils/constants.js";
@@ -12,12 +11,78 @@ import {
     ACTIVE_STATUSES,
     DEFAULT_JOB_OPTIONS,
     BOOKING_LIMITS,
-    REDIS_KEYS,
     BOOKING_JOB_NAMES,
+    BOOKING_TRANSITIONS,
 } from "../../constants/user/booking.js";
-import { DRIVER_RIDE_CACHE } from "../../constants/driver/driver.ride.js";
 import { safeAbortSession } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
+
+export const isValidStatusTransition = (fromStatus, toStatus) => BOOKING_TRANSITIONS[fromStatus]?.includes(toStatus);
+
+// Atomically increments the store's booking count, guarded by a capacity check.
+export const assignStoreToBooking = async (storeId, session) => {
+    try {
+        const updatedStore = await Store.findOneAndUpdate(
+            {
+                _id: storeId,
+                $expr: { $lt: ["$current_booking_count", "$max_booking_capacity"] },
+            },
+            { $inc: { current_booking_count: 1 } },
+            { returnDocument: "after", session, lean: true }
+        );
+
+        if (!updatedStore) {
+            return { success: false, store: null };
+        }
+
+        return { success: true, store: updatedStore };
+    } catch (err) {
+        logger.error("[bookingHelper] assignStoreToBooking error:", err.message);
+        return { success: false, store: null };
+    }
+};
+
+// RELEASE DRIVER
+export const releaseDriver = async (driverId) => {
+    if (!driverId) return;
+    try {
+        const driver = await Driver.findByIdAndUpdate(
+            driverId,
+            { $set: { is_on_trip: false, current_booking_id: null } },
+            { new: true }
+        );
+        if (driver) {
+            const { markDriverAvailable, addDriverToRedis } = await import("../../services/driverGeoService.js");
+            await addDriverToRedis(driver);
+            await markDriverAvailable(driverId.toString());
+        }
+    } catch (err) {
+        logger.error(`[ReleaseDriver] Failed for driver ${driverId}:`, err.message);
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // USER VERIFICATION
 export const verifyUserForBooking = async (userId, session = null) => {
@@ -116,52 +181,12 @@ export const findNearestAvailableStore = async (lat, lng, session = null) => {
     }
 };
 
-// Atomically increments the store's booking count, guarded by a capacity check.
-export const assignStoreToBooking = async (storeId, session) => {
-    try {
-        const updatedStore = await Store.findOneAndUpdate(
-            {
-                _id: storeId,
-                $expr: { $lt: ["$current_booking_count", "$max_booking_capacity"] },
-            },
-            { $inc: { current_booking_count: 1 } },
-            { returnDocument: "after", session, lean: true }
-        );
 
-        if (!updatedStore) {
-            return { success: false, store: null };
-        }
-
-        return { success: true, store: updatedStore };
-    } catch (err) {
-        logger.error("[bookingHelper] assignStoreToBooking error:", err.message);
-        return { success: false, store: null };
-    }
-};
 
 // LUGGAGE
 export const calculateTotalLuggage = (luggage) => {
     const { small = 0, medium = 0, large = 0, other = 0 } = luggage;
     return small + medium + large + other;
-};
-
-// RELEASE DRIVER
-export const releaseDriver = async (driverId) => {
-    if (!driverId) return;
-    try {
-        const driver = await Driver.findByIdAndUpdate(
-            driverId,
-            { $set: { is_on_trip: false, current_booking_id: null } },
-            { new: true }
-        );
-        if (driver) {
-            const { markDriverAvailable, addDriverToRedis } = await import("../../services/driverGeoService.js");
-            await addDriverToRedis(driver);
-            await markDriverAvailable(driverId.toString());
-        }
-    } catch (err) {
-        logger.error(`[ReleaseDriver] Failed for driver ${driverId}:`, err.message);
-    }
 };
 
 
@@ -417,13 +442,8 @@ const queueCancellationNotification = async (booking) => {
 
 // ─── CACHE ────────────────────────────────────────────────────────────────────
 
-/**
- * Invalidates all booking-related Redis cache keys for a user.
- *
- * BUG FIXED: original wrapped Promise.allSettled in try/catch — allSettled
- * never rejects, so the catch was dead code and individual failures were
- * silently swallowed. Now logs each rejected settlement individually.
- */
+import { invalidateBookingCache as coreInvalidateBooking } from "../../constants/redis/invalidate/booking.invalidate.js";
+
 export const invalidateBookingCache = async (userId, bookingId = null, storeId = null) => {
     if (!userId) return;
 
@@ -444,61 +464,9 @@ export const invalidateBookingCache = async (userId, bookingId = null, storeId =
             logger.error("[Cache] Error fetching booking for invalidation:", err.message);
         }
     }
-
-    const ops = [
-        { label: "list-pattern", fn: () => delByPattern(REDIS_KEYS.BOOKING_CACHE_LIST_PATTERN(userId)) },
-        { label: "active-key", fn: () => del(REDIS_KEYS.BOOKING_ACTIVE(userId)) },
-        { label: "history-pattern", fn: () => delByPattern(REDIS_KEYS.BOOKING_HISTORY_PATTERN(userId)) },
-        { label: "admin-summary", fn: () => del("dashboard:summary") },
-        { label: "admin-charts", fn: () => delByPattern("dashboard:chart:*") },
-    ];
-
-    if (bookingId) {
-        ops.push({
-            label: "detail-key",
-            fn: () => del(REDIS_KEYS.BOOKING_CACHE_DETAIL(userId, bookingId)),
-        });
-    }
-
-    if (resolvedStoreId) {
-        ops.push({
-            label: "store-dashboard",
-            fn: () => del(`store:dashboard:${resolvedStoreId.toString()}`),
-        });
-    }
-
-    resolvedDriverIds.forEach((driverId) => {
-        ops.push({
-            label: `driver-assigned-${driverId}`,
-            fn: () => del(DRIVER_RIDE_CACHE.ASSIGNED_KEY(driverId)),
-        });
-        ops.push({
-            label: `driver-active-${driverId}`,
-            fn: () => del(DRIVER_RIDE_CACHE.ACTIVE_KEY(driverId)),
-        });
-        ops.push({
-            label: `driver-detail-${driverId}`,
-            fn: () => del(DRIVER_RIDE_CACHE.RIDE_DETAIL_KEY(driverId, bookingId)),
-        });
-        ops.push({
-            label: `driver-history-${driverId}`,
-            fn: () => delByPattern(`driver:ride_history:${driverId}:*`),
-        });
-    });
-
-    const results = await Promise.allSettled(ops.map((o) => o.fn()));
-
-    results.forEach((result, i) => {
-        if (result.status === "rejected") {
-            logger.warn(
-                `[Cache] Failed to invalidate '${ops[i].label}' for user ${userId}:`,
-                result.reason?.message
-            );
-        }
-    });
+    
+    await coreInvalidateBooking({ _id: bookingId, userId }, { driverIds: resolvedDriverIds, storeId: resolvedStoreId });
 };
-
-export { getCachedData, setCacheData } from "../../utils/cache.js";
 
 // ─── BOOKING QUERIES ──────────────────────────────────────────────────────────
 

@@ -160,9 +160,7 @@ export const loginLimiter = rateLimiterMiddleware(loginLimiterInstance, {
 
 export const refreshLimiter = rateLimiterMiddleware(refreshLimiterInstance, {
   useRole: true,
-  useIdentifier: false, // /refresh has no authMiddleware before it → req.user is always null
-                        // and body never contains phone/email → identifier is ALWAYS null here.
-                        // useIdentifier:true was silently falling back to IP-only anyway.
+  useIdentifier: false,
   useIP: true,
 });
 

@@ -72,7 +72,6 @@ export const userIdSchema = Joi.object({
 const STATUSES_REQUIRING_REASON = [ACCOUNT_STATUS.BLOCKED, ACCOUNT_STATUS.SUSPENDED].filter(Boolean);;
 
 export const updateAccountSchema = Joi.object({
-  auth_id: objectIdField("User ID"),
   account_status: Joi.string()
     .valid(...Object.values(ACCOUNT_STATUS))
     .required()

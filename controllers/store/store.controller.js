@@ -5,15 +5,17 @@ import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES, BOOKING_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 import { verifyStore } from "../../helpers/store/store.helper.js";
-import { getCachedData, setCacheData, invalidateCache } from "../../utils/cache.js";
+import { getCache, setCache, deleteCache } from "../../constants/redis/redisOperation.js";
+import { StoreKeys, StoreTTL } from "../../constants/redis/store.keys.js";
+import { invalidateStoreCache } from "../../constants/redis/invalidate/store.invalidate.js";
 
 // GET PROFILE
 export const getProfile = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
-        const cacheKey = `store:profile:${storeId}`;
+        const cacheKey = StoreKeys.profile(storeId);
 
-        let store = await getCachedData(cacheKey);
+        let store = await getCache(cacheKey);
 
         if (!store) {
             store = await Store.findById(storeId)
@@ -21,13 +23,13 @@ export const getProfile = async (req, res) => {
                 .lean();
 
             if (store) {
-                await setCacheData(cacheKey, store, 3600);
+                await setCache(cacheKey, store, StoreTTL.PROFILE);
             }
         }
 
         const storeCheck = verifyStore(store);
         if (!storeCheck.valid) {
-            await invalidateCache(cacheKey).catch(() => { });
+            await deleteCache(cacheKey).catch(() => { });
             return sendError(res, storeCheck.message, storeCheck.code);
         }
 
@@ -93,10 +95,7 @@ export const updateProfile = async (req, res) => {
         }
 
         // Invalidate caches
-        await Promise.all([
-            invalidateCache(`store:profile:${storeId}`),
-            invalidateCache(`store:dashboard:${storeId}`)
-        ]).catch(() => { });
+        await invalidateStoreCache(storeId).catch(() => { });
 
         return sendResponse({
             res,
@@ -155,10 +154,7 @@ export const goOnline = async (req, res) => {
         );
 
         // Invalidate caches
-        await Promise.all([
-            invalidateCache(`store:profile:${storeId}`),
-            invalidateCache(`store:dashboard:${storeId}`)
-        ]).catch(() => { });
+        await invalidateStoreCache(storeId).catch(() => { });
 
         return sendResponse({
             res,
@@ -175,9 +171,9 @@ export const goOnline = async (req, res) => {
 export const getDashboard = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
-        const cacheKey = `store:dashboard:${storeId}`;
+        const cacheKey = StoreKeys.dashboard(storeId);
 
-        const cachedDashboard = await getCachedData(cacheKey);
+        const cachedDashboard = await getCache(cacheKey);
         if (cachedDashboard) {
             return sendResponse({
                 res,
@@ -314,7 +310,7 @@ export const getDashboard = async (req, res) => {
         };
 
         // Cache dashboard for 60 seconds
-        await setCacheData(cacheKey, dashboardData, 60);
+        await setCache(cacheKey, dashboardData, StoreTTL.DASHBOARD);
 
         return sendResponse({
             res,

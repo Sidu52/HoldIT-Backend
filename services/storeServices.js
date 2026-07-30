@@ -1,5 +1,6 @@
 import Store from "../models/Store.js";
 import redis from "./redisService.js";
+import { StoreKeys } from "../constants/redis/store.keys.js";
 import logger from "../utils/logger.js";
 
 
@@ -42,14 +43,14 @@ export const addStoreToRedis = async (store) => {
 
         // Write to service-area key if present
         if (store.service_area_id) {
-            pipeline.geoadd(`stores:${store.service_area_id.toString()}`, lng, lat, storeId);
+            pipeline.geoadd(StoreKeys.geoByArea(store.service_area_id.toString()), lng, lat, storeId);
         }
 
         // Always write to global fallback
-        pipeline.geoadd("stores:global", lng, lat, storeId);
+        pipeline.geoadd(StoreKeys.geoByArea("global"), lng, lat, storeId);
 
         // Store metadata hash
-        pipeline.hset(`store:meta:${storeId}`, {
+        pipeline.hset(StoreKeys.meta(storeId), {
             is_online:              "true",
             current_booking_count: (store.current_booking_count ?? 0).toString(),
             max_booking_capacity:   (store.max_booking_capacity   ?? 50).toString(),
@@ -60,7 +61,7 @@ export const addStoreToRedis = async (store) => {
 
         // Meta TTL — expire after 2 hours of inactivity
         // Geo keys are NOT expired; they are managed explicitly via remove
-        pipeline.expire(`store:meta:${storeId}`, 7200);
+        pipeline.expire(StoreKeys.meta(storeId), 7200);
 
         await pipeline.exec();
 
@@ -86,20 +87,20 @@ export const removeStoreFromRedis = async (storeId, serviceAreaId = null) => {
         const pipeline = redis.pipeline();
 
         if (serviceAreaId) {
-            pipeline.zrem(`stores:${serviceAreaId.toString()}`, storeIdStr);
+            pipeline.zrem(StoreKeys.geoByArea(serviceAreaId.toString()), storeIdStr);
         } else {
             // Look up service area from meta if not provided
-            const areaId = await redis.hget(`store:meta:${storeIdStr}`, "service_area_id");
+            const areaId = await redis.hget(StoreKeys.meta(storeIdStr), "service_area_id");
             if (areaId) {
-                pipeline.zrem(`stores:${areaId}`, storeIdStr);
+                pipeline.zrem(StoreKeys.geoByArea(areaId), storeIdStr);
             }
         }
 
         // Always remove from global
-        pipeline.zrem("stores:global", storeIdStr);
+        pipeline.zrem(StoreKeys.geoByArea("global"), storeIdStr);
 
         // Remove metadata
-        pipeline.del(`store:meta:${storeIdStr}`);
+        pipeline.del(StoreKeys.meta(storeIdStr));
 
         await pipeline.exec();
 
@@ -119,7 +120,7 @@ export const updateStoreCapacityInRedis = async (storeId, newCount) => {
     if (!storeId) return false;
 
     try {
-        await redis.hset(`store:meta:${storeId.toString()}`, {
+        await redis.hset(StoreKeys.meta(storeId.toString()), {
             current_booking_count: newCount.toString(),
             updated_at:             Date.now().toString(),
         });

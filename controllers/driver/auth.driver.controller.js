@@ -1,12 +1,8 @@
 import jwt from "jsonwebtoken";
 import Driver from "../../models/Driver.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import redis, {
-    set,
-    get,
-    del,
-    delByPattern,
-} from "../../services/redisService.js";
+import { getCache, setCache, deleteCache, deleteByPattern, incrementCache, isKeyExist } from "../../constants/redis/redisOperation.js";
+import { AuthKeys, AuthTTL } from "../../constants/redis/auth.keys.js";
 import { addJobToQueue, cancelJob } from "../../services/jobService.js";
 import {
     STATUS_CODES,
@@ -14,10 +10,8 @@ import {
     VERIFICATION_STATUS,
     OTP_LENGTH,
     OTP_MAX_ATTEMPTS,
-    OTP_COOLDOWN,
     JOB_QUEUES,
     TOKEN_TYPES,
-    OTP_FAIL_WINDOW_SECONDS,
     UNVERIFIED_ACCOUNT_CLEANUP_DELAY_MS
 } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
@@ -69,7 +63,7 @@ export const authDriver = asyncHandler(async (req, res) => {
         });
     }
 
-    const isRateLimited = await checkOTPRateLimit(sanitizedPhone);
+    const isRateLimited = await checkOTPRateLimit("driver", sanitizedPhone);
     if (isRateLimited) {
         return sendError(
             res,
@@ -78,7 +72,7 @@ export const authDriver = asyncHandler(async (req, res) => {
         );
     }
 
-    const otp = await generateAndStoreOTP(sanitizedPhone);
+    const otp = await generateAndStoreOTP("driver", sanitizedPhone);
 
     await cancelJob(JOB_QUEUES.DELETE_UNVERIFIED_DRIVER, `delete-driver-${sanitizedPhone}`);
     await addJobToQueue(
@@ -143,7 +137,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
         );
     }
 
-    const isRateLimited = await checkOTPRateLimit(sanitizedPhone);
+    const isRateLimited = await checkOTPRateLimit("driver", sanitizedPhone);
     if (isRateLimited) {
         return sendError(
             res,
@@ -152,8 +146,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
         );
     }
 
-    const cooldownKey = `otp_cooldown:${sanitizedPhone}`;
-    const cooldownExists = await get(cooldownKey);
+    const cooldownExists = await isKeyExist(AuthKeys.otpCooldown("driver", sanitizedPhone));
     if (cooldownExists) {
         return sendError(
             res,
@@ -162,8 +155,8 @@ export const sendOTP = asyncHandler(async (req, res) => {
         );
     }
 
-    const otp = await generateAndStoreOTP(sanitizedPhone);
-    await set(cooldownKey, "1", "EX", OTP_COOLDOWN);
+    const otp = await generateAndStoreOTP("driver", sanitizedPhone);
+    await setCache(AuthKeys.otpCooldown("driver", sanitizedPhone), "1", AuthTTL.OTP_COOLDOWN);
     await NotificationService.sendOTP(sanitizedPhone, otp);
 
     return sendResponse({
@@ -213,11 +206,11 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     // Check failed attempts
-    const failKey = `otp_fail:${sanitizedPhone}`;
-    const failCount = await get(failKey);
+    const failKey = AuthKeys.otpFail("driver", sanitizedPhone);
+    const failCount = await getCache(failKey);
 
     if (failCount && parseInt(failCount, 10) >= OTP_MAX_ATTEMPTS) {
-        await del(`otp:${sanitizedPhone}`);
+        await deleteCache(AuthKeys.otp("driver", sanitizedPhone));
         return sendError(
             res,
             "Too many failed attempts. Please request a new OTP.",
@@ -245,7 +238,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         );
     }
 
-    let savedOTP = await get(`otp:${sanitizedPhone}`);
+    let savedOTP = await getCache(AuthKeys.otp("driver", sanitizedPhone));
     if (savedOTP) {
         try {
             savedOTP = JSON.parse(savedOTP);
@@ -260,11 +253,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         timingSafeEqual(String(savedOTP), sanitizedOtp);
 
     if (!isOtpValid) {
-        await redis
-            .multi()
-            .incr(failKey)
-            .expire(failKey, OTP_FAIL_WINDOW_SECONDS)
-            .exec();
+        await incrementCache(failKey, AuthTTL.OTP_FAIL_WINDOW);
 
         return sendError(
             res,
@@ -274,12 +263,11 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     // Clean up all OTP-related keys
-    // FIX: Changed DELETE_UNVERIFIED_USER to DELETE_UNVERIFIED_DRIVER
     await Promise.all([
-        del(`otp:${sanitizedPhone}`),
-        del(failKey),
-        del(`otp_cooldown:${sanitizedPhone}`),
-        del(`otp_rate:${sanitizedPhone}`),
+        deleteCache(AuthKeys.otp("driver", sanitizedPhone)),
+        deleteCache(failKey),
+        deleteCache(AuthKeys.otpCooldown("driver", sanitizedPhone)),
+        deleteCache(AuthKeys.otpRate("driver", sanitizedPhone)),
         cancelJob(
             JOB_QUEUES.DELETE_UNVERIFIED_DRIVER,
             `delete-driver-${sanitizedPhone}`
@@ -382,11 +370,11 @@ export const refreshToken = asyncHandler(async (req, res) => {
         );
     }
 
-    const redisKey = `refresh:${decoded.auth_id}:${decoded.token_id}`;
-    const exists = await get(redisKey);
+    const redisKey = AuthKeys.refreshToken("driver", decoded.auth_id, decoded.token_id);
+    const exists = await getCache(redisKey);
 
     if (!exists) {
-        await delByPattern(`refresh:${decoded.auth_id}:*`);
+        await deleteByPattern(AuthKeys.refreshTokenPattern("driver", decoded.auth_id));
         clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
@@ -399,7 +387,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
         .lean();
 
     if (!driver) {
-        await del(redisKey);
+        await deleteCache(redisKey);
         clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
@@ -409,7 +397,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
     }
 
     if (driver.account_status === ACCOUNT_STATUS.BLOCKED) {
-        await del(redisKey);
+        await deleteCache(redisKey);
         clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
@@ -419,7 +407,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
     }
 
     if (driver.verification_status !== VERIFICATION_STATUS.VERIFIED) {
-        await del(redisKey);
+        await deleteCache(redisKey);
         clearAuthCookies(res, "/api/v1/driver/auth/refresh");
         return sendError(
             res,
@@ -428,7 +416,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
         );
     }
 
-    await del(redisKey);
+    await deleteCache(redisKey);
 
     const { accessToken, refreshToken: newRefreshToken } =
         await generateTokenPair(decoded.auth_id, "driver", "/api/v1/driver/auth/refresh");
@@ -639,7 +627,10 @@ export const logout = asyncHandler(async (req, res) => {
         try {
             const decoded = jwt.decode(token);
             if (decoded?.auth_id && decoded?.token_id) {
-                await del(`refresh:${decoded.auth_id}:${decoded.token_id}`);
+                await Promise.all([
+                    deleteCache(AuthKeys.refreshToken("driver", decoded.auth_id, decoded.token_id)),
+                    deleteCache(AuthKeys.accessToken("driver", decoded.auth_id, decoded.token_id)),
+                ]);
                 logger.info(`User ${decoded.auth_id} logged out successfully`);
             }
         } catch (err) {

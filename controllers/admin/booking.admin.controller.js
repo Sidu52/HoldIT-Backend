@@ -3,39 +3,26 @@ import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
 import User from "../../models/User.js";
 import mongoose from "mongoose";
-import { assignStoreToBooking, releaseDriver } from "../../helpers/user/bookingHelper.js";
+import { assignStoreToBooking, releaseDriver, isValidStatusTransition } from "../../helpers/user/bookingHelper.js";
 import logger from "../../utils/logger.js";
 import { getIO } from "../../src/socket/index.js";
-import { getCache, setCache, deleteCache, deleteByPattern, buildCacheKey } from "../../utils/cache.js";
-import { STATUS_CODES, BOOKING_STATUS, ACCOUNT_STATUS, CACHE_TTL } from "../../utils/constants.js";
+import { STATUS_CODES, BOOKING_STATUS, ACCOUNT_STATUS } from "../../utils/constants.js";
 import {
     emitBookingCancelled, emitBookingDriverAssigned, emitBookingStoreAssigned,
     emitBookingReturnDriverAssigned, emitBookingDriverArrived, emitBookingPickedUp,
     emitBookingStored, emitBookingReturnRequested, emitBookingDelivered,
 } from "../../src/socket/emitters/booking.emitter.js";
+import { cacheAside, deleteByPattern, deleteCache } from "../../constants/redis/redisOperation.js";
+import { AdminKeys, AdminTTL } from "../../constants/redis/admin.keys.js";
+import { sendError, sendResponse } from "../../utils/apiResponse.js";
+import { invalidateBookingCache } from "../../constants/redis/invalidate/booking.invalidate.js";
 
-const MAX_LIMIT = 100;
-const ALLOWED_SORT_FIELDS = new Set(["createdAt", "status", "userId", "storeId", "serviceAreaId", "updatedAt", "bookingCode"]);
 const EXCLUDED_FIELDS = "-__v";
-const LIST_CACHE_TTL = CACHE_TTL.LIST;
-const DETAIL_CACHE_TTL = CACHE_TTL.DETAIL;
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-
-const bookingCacheKey = (id) => buildCacheKey("booking", { id: String(id) });
-const bookingListPattern = "bookings:*";
 
 const createTimelineEntry = (status, note, actorId, role = "Admin") => ({
     status, note, updatedBy: actorId, role, timestamp: new Date(),
 });
-
-const invalidateBookingCache = async (bookingId, userId) => {
-    await Promise.allSettled([
-        deleteCache(bookingCacheKey(bookingId)),
-        deleteByPattern(bookingListPattern),
-        userId && deleteByPattern(`bookings:*userId=${userId}*`),
-    ].filter(Boolean));
-};
 
 const releaseStoreCapacity = (storeId, session) =>
     storeId ? Store.findByIdAndUpdate(storeId, { $inc: { current_capacity: -1 } }, { session }) : null;
@@ -52,13 +39,14 @@ const withSession = async (res, controllerName, fn) => {
     } catch (err) {
         await safeAbortSession(session);
         logger.error(`[${controllerName}] Error:`, err);
-        return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ success: false, message: "Failed to update booking status" });
+        return sendError(res, "Failed to update booking status");
     }
 };
 
+// still used by assignReturnDriver — NOT used by assignDriver anymore (replaced with an atomic claim there)
 const fetchAvailableDriver = async (driverId, session) => {
     const driver = await Driver.findById(driverId)
-        .select("account_status is_online is_on_trip name first_name last_name phone vehicle_details")
+        .select("account_status is_online is_on_trip first_name last_name phone vehicle_details")
         .session(session).lean();
 
     if (!driver || driver.account_status !== ACCOUNT_STATUS.ACTIVE || !driver.is_online || driver.is_on_trip) {
@@ -96,7 +84,6 @@ const emitSocketEvent = (toStatus, io, id, booking, extra = {}) => {
 const tryEmit = async (toStatus, bookingId, bookingData, extra = {}) => {
     try {
         const io = getIO();
-        // For status progressions that need populated data, re-fetch
         const needsPopulate = [BOOKING_STATUS.DRIVER_ARRIVED, BOOKING_STATUS.PICKED_UP, BOOKING_STATUS.STORED, BOOKING_STATUS.RETURN_REQUESTED, BOOKING_STATUS.DELIVERED].includes(toStatus);
 
         if (needsPopulate) {
@@ -123,66 +110,68 @@ export const getBookings = async (req, res) => {
             sort_by = "createdAt", sort_order = "desc", from_date, to_date,
         } = req.query;
 
-        const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(MAX_LIMIT, Math.max(1, parseInt(limit, 10) || 10));
-        const safeSortField = ALLOWED_SORT_FIELDS.has(sort_by) ? sort_by : "createdAt";
+        const pageNum = Number(page);
+        const limitNum = Number(limit);
 
-        const filter = {
-            ...(status && { status }),
-            ...(storeId && { storeId }),
-            ...(serviceAreaId && { serviceAreaId }),
-            ...(userId && { userId }),
-        };
+        const cacheKey = AdminKeys.bookingList({
+            page: pageNum, limit: limitNum, status, userId, storeId, serviceAreaId,
+            search, sort_by, sort_order, from_date, to_date,
+        });
 
-        if (from_date || to_date) {
-            filter.createdAt = {
-                ...(from_date && { $gte: new Date(from_date) }),
-                ...(to_date && { $lte: Object.assign(new Date(to_date), { _: new Date(to_date).setHours(23, 59, 59, 999) }) }),
+        const responseData = await cacheAside(cacheKey, AdminTTL.BOOKING_LIST, async () => {
+            const filter = {
+                ...(status && { status }),
+                ...(storeId && { storeId }),
+                ...(serviceAreaId && { serviceAreaId }),
+                ...(userId && { userId }),
             };
-        }
 
-        if (search) {
-            const searchRegex = { $regex: escapeRegex(search.trim()), $options: "i" };
-            const [matchingUsers, matchingStores] = await Promise.all([
-                User.find({ $or: [{ first_name: searchRegex }, { last_name: searchRegex }, { phone: searchRegex }] }).select("_id").limit(200).lean(),
-                Store.find({ store_name: searchRegex }).select("_id").limit(100).lean(),
+            if (from_date || to_date) {
+                let toDateEnd;
+                if (to_date) {
+                    toDateEnd = new Date(to_date);
+                    toDateEnd.setHours(23, 59, 59, 999); // FIXED — actually mutates the date now, not a bolted-on unused property
+                }
+                filter.createdAt = {
+                    ...(from_date && { $gte: new Date(from_date) }),
+                    ...(to_date && { $lte: toDateEnd }),
+                };
+            }
+
+            if (search) {
+                const searchRegex = { $regex: escapeRegex(search.trim()), $options: "i" };
+                const [matchingUsers, matchingStores] = await Promise.all([
+                    User.find({ $or: [{ first_name: searchRegex }, { last_name: searchRegex }, { phone: searchRegex }] }).select("_id").limit(200).lean(),
+                    Store.find({ store_name: searchRegex }).select("_id").limit(100).lean(),
+                ]);
+                filter.$or = [
+                    { bookingCode: searchRegex },
+                    ...(matchingUsers.length ? [{ userId: { $in: matchingUsers.map((u) => u._id) } }] : []),
+                    ...(matchingStores.length ? [{ storeId: { $in: matchingStores.map((s) => s._id) } }] : []),
+                ];
+            }
+
+            const sort = { [sort_by]: sort_order === "asc" ? 1 : -1 };
+            const skip = (pageNum - 1) * limitNum;
+
+            const [bookings, total] = await Promise.all([
+                Booking.find(filter).select(EXCLUDED_FIELDS)
+                    .populate("userId", "first_name last_name phone email")
+                    .populate("storeId", "store_name store_contact_number")
+                    .sort(sort).skip(skip).limit(limitNum).lean(),
+                Booking.countDocuments(filter),
             ]);
-            filter.$or = [
-                { bookingCode: searchRegex },
-                ...(matchingUsers.length ? [{ userId: { $in: matchingUsers.map((u) => u._id) } }] : []),
-                ...(matchingStores.length ? [{ storeId: { $in: matchingStores.map((s) => s._id) } }] : []),
-            ];
-        }
 
-        const cacheKey = buildCacheKey("bookings", { page: pageNum, limit: limitNum, status, userId, storeId, serviceAreaId, sort_by: safeSortField, sort_order, from_date, to_date });
-
-        if (!search) {
-            const cached = await getCache(cacheKey);
-            if (cached) return res.json({ success: true, message: "Bookings fetched successfully", data: cached });
-        }
-
-        const sort = { [safeSortField]: sort_order === "asc" ? 1 : -1 };
-        const skip = (pageNum - 1) * limitNum;
-
-        const [bookings, total] = await Promise.all([
-            Booking.find(filter).select(EXCLUDED_FIELDS)
-                .populate("userId", "first_name last_name phone email")
-                .populate("storeId", "store_name store_contact_number")
-                .sort(sort).skip(skip).limit(limitNum).lean(),
-            Booking.countDocuments(filter),
-        ]);
-
-        const totalPages = Math.ceil(total / limitNum);
-        const responseData = {
-            bookings,
-            pagination: { currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum, hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1 },
-        };
-
-        if (!search) await setCache(cacheKey, responseData, LIST_CACHE_TTL);
-        return res.json({ success: true, message: "Bookings fetched successfully", data: responseData });
+            const totalPages = Math.ceil(total / limitNum);
+            return {
+                bookings,
+                pagination: { currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum, hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1 },
+            };
+        });
+        return sendResponse({ res, message: "Bookings fetched successfully", data: responseData });
     } catch (err) {
         logger.error("[getBookings] Error:", err);
-        return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ success: false, message: "Failed to fetch bookings" });
+        return sendError(res, "Failed to fetch bookings");
     }
 };
 
@@ -190,23 +179,19 @@ export const getBookings = async (req, res) => {
 export const getBookingById = async (req, res) => {
     try {
         const { id } = req.params;
-        const cacheKey = bookingCacheKey(id);
-
-        const cached = await getCache(cacheKey);
-        if (cached) return res.json({ success: true, message: "Booking fetched successfully", data: cached });
-
-        const booking = await Booking.findById(id).select(EXCLUDED_FIELDS)
-            .populate("userId", "first_name last_name phone email")
-            .populate("storeId", "store_name store_contact_number")
-            .lean();
-
-        if (!booking) return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Booking not found" });
-
-        await setCache(cacheKey, booking, DETAIL_CACHE_TTL);
-        return res.json({ success: true, message: "Booking fetched successfully", data: booking });
+        const booking = await cacheAside(
+            AdminKeys.bookingDetail(id),
+            AdminTTL.BOOKING_DETAIL,
+            () => Booking.findById(id).select(EXCLUDED_FIELDS)
+                .populate("userId", "first_name last_name phone email")
+                .populate("storeId", "store_name store_contact_number")
+                .lean()
+        );
+        if (!booking) return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
+        return sendResponse({ res, message: "Booking fetched successfully", data: booking });
     } catch (err) {
-        logger.error("[getBookingById] Error:", err);
-        return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ success: false, message: "Failed to fetch booking" });
+        logger.error("[getBookingById] Error:", err.message);
+        return sendError(res, "Failed to fetch booking");
     }
 };
 
@@ -221,15 +206,15 @@ export const cancelBooking = (req, res) => withSession(res, "cancelBooking", asy
 
     if (!booking) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Booking not found" });
+        return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
     }
     if (booking.status === BOOKING_STATUS.CANCELLED) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "Booking is already cancelled" });
+        return sendError(res, "Booking is already cancelled", STATUS_CODES.BAD_REQUEST);
     }
     if (booking.status === BOOKING_STATUS.DELIVERED) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: `Cannot cancel a booking with status: ${booking.status}` });
+        return sendError(res, `Cannot cancel a booking with status: ${booking.status}`, STATUS_CODES.BAD_REQUEST);
     }
 
     const updatedBooking = await Booking.findByIdAndUpdate(id, {
@@ -248,61 +233,95 @@ export const cancelBooking = (req, res) => withSession(res, "cancelBooking", asy
         );
     }
 
-    await invalidateBookingCache(id, booking.userId);
+    await invalidateBookingCache(booking, { driverIds: [driverId], storeId: booking.storeId });
+
     await tryEmit(BOOKING_STATUS.CANCELLED, id, booking, {
-        driverId: booking.pickup?.assignment?.driverId || booking.delivery?.assignment?.driverId || null,
+        driverId: driverId || null,
         reason: "Admin requested cancellation",
     });
 
-    return res.json({ success: true, message: "Booking cancelled successfully", data: updatedBooking });
+    return sendResponse({ res, message: "Booking cancelled successfully", data: updatedBooking });
 });
 
 // ASSIGN / REASSIGN DRIVER
-const assignDriverHandler = (isReassign) => (req, res) => withSession(res, isReassign ? "reassignDriver" : "assignDriver", async (session) => {
+export const assignDriver = (req, res) => withSession(res, "assignDriver", async (session) => {
     const { id } = req.params;
     const { driverId } = req.body;
     const { auth_id } = req.user;
 
-    const booking = await Booking.findById(id).select("status userId pickup.assignment").session(session).lean();
+    const booking = await Booking.findById(id).select("status userId storeId pickup.assignment").session(session).lean();
     if (!booking) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Booking not found" });
+        return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
     }
 
-    const expectedStatus = isReassign ? BOOKING_STATUS.DRIVER_ASSIGNED : BOOKING_STATUS.STORE_ASSIGNED;
-    if (booking.status !== expectedStatus) {
+    const isReassign = booking.status === BOOKING_STATUS.DRIVER_ASSIGNED;
+    if (![BOOKING_STATUS.STORE_ASSIGNED, BOOKING_STATUS.DRIVER_ASSIGNED].includes(booking.status)) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: `Invalid status for this operation. Current: ${booking.status}` });
+        return sendError(res, `Invalid status for this operation. Current: ${booking.status}`, STATUS_CODES.CONFLICT);
     }
 
-    if (isReassign && booking.pickup?.assignment?.driverId?.toString() === driverId) {
+    const currentDriverId = booking.pickup?.assignment?.driverId?.toString();
+    if (isReassign && currentDriverId === driverId) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "This driver is already assigned to the booking" });
+        return sendError(res, "This driver is already assigned to the booking", STATUS_CODES.BAD_REQUEST);
     }
 
-    const driver = await fetchAvailableDriver(driverId, session);
-    if (!driver) {
+    // atomic claim — matches the SAME fields fetchAvailableDriver checks, fixes the typo'd field name
+    const claimedDriver = await Driver.findOneAndUpdate(
+        { _id: driverId, account_status: ACCOUNT_STATUS.ACTIVE, is_online: true, is_on_trip: false },
+        { $set: { is_on_trip: true } },
+        { new: true, session }
+    ).select("_id first_name last_name phone vehicle_details").lean();
+
+    if (!claimedDriver) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "Driver not available" });
+        return sendError(res, "Driver not available", STATUS_CODES.BAD_REQUEST);
     }
 
-    const currentDriverId = booking.pickup?.assignment?.driverId;
-    const updatedBooking = await Booking.findByIdAndUpdate(id, {
-        $set: { status: BOOKING_STATUS.DRIVER_ASSIGNED, "pickup.assignment.driverId": driverId, "pickup.assignment.assignedAt": new Date(), updated_at: new Date(), status_updated_by: auth_id },
-        $push: { timeline: createTimelineEntry(BOOKING_STATUS.DRIVER_ASSIGNED, isReassign ? `Driver reassigned by admin from ${currentDriverId} to ${driverId}` : `Driver manually assigned by admin: ${driver.name}`, auth_id) },
-    }, { new: true, runValidators: true, session }).select(EXCLUDED_FIELDS).lean();
+    const updatedBooking = await Booking.findByIdAndUpdate(
+        id,
+        {
+            $set: {
+                status: BOOKING_STATUS.DRIVER_ASSIGNED,
+                "pickup.assignment.driverId": driverId,
+                "pickup.assignment.assignedAt": new Date(),
+                updated_at: new Date(),
+                status_updated_by: auth_id,
+            },
+            $push: {
+                timeline: createTimelineEntry(
+                    BOOKING_STATUS.DRIVER_ASSIGNED,
+                    isReassign
+                        ? `Driver reassigned by admin from ${currentDriverId} to ${driverId}`
+                        : `Driver manually assigned by admin: ${claimedDriver.first_name}`,
+                    auth_id
+                ),
+            },
+        },
+        { new: true, runValidators: true, session }
+    ).select(EXCLUDED_FIELDS).lean();
+
+    if (isReassign && currentDriverId) {
+        await Driver.findByIdAndUpdate(currentDriverId, { $set: { is_on_trip: false } }, { session });
+    }
 
     await session.commitTransaction();
     session.endSession();
 
-    await invalidateBookingCache(id, booking.userId);
-    await tryEmit(BOOKING_STATUS.DRIVER_ASSIGNED, id, booking, { driver });
+    await invalidateBookingCache(booking, {
+        driverIds: [driverId, isReassign ? currentDriverId : null],
+        storeId: booking.storeId,
+    });
 
-    return res.json({ success: true, message: isReassign ? "Driver reassigned successfully" : "Driver assigned successfully", data: updatedBooking });
+    await tryEmit(BOOKING_STATUS.DRIVER_ASSIGNED, id, booking, { driver: claimedDriver });
+
+    return sendResponse({
+        res,
+        message: isReassign ? "Driver reassigned successfully" : "Driver assigned successfully",
+        data: updatedBooking,
+    });
 });
-
-export const assignDriver = assignDriverHandler(false);
-export const reassignDriver = assignDriverHandler(true);
 
 // REASSIGN STORE
 export const reassignStore = (req, res) => withSession(res, "reassignStore", async (session) => {
@@ -313,31 +332,32 @@ export const reassignStore = (req, res) => withSession(res, "reassignStore", asy
     const booking = await Booking.findById(id).select("status userId storeId").session(session).lean();
     if (!booking) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Booking not found" });
+        return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
     }
 
     const reassignableStatuses = [BOOKING_STATUS.CREATED, BOOKING_STATUS.STORE_ASSIGNED];
     if (!reassignableStatuses.includes(booking.status)) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: `Store can only be reassigned before driver assignment. Current: ${booking.status}` });
+        return sendError(res, `Store can only be reassigned before driver assignment. Current: ${booking.status}`, STATUS_CODES.BAD_REQUEST);
     }
     if (booking.storeId?.toString() === storeId) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "Store is already assigned to this booking" });
+        return sendError(res, "Store is already assigned to this booking", STATUS_CODES.BAD_REQUEST);
     }
 
-    await releaseStoreCapacity(booking.storeId, session);
+    const oldStoreId = booking.storeId;
+    await releaseStoreCapacity(oldStoreId, session);
 
     const { success: storeAssigned } = await assignStoreToBooking(storeId, session);
     if (!storeAssigned) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.CONFLICT).json({ success: false, message: "Selected store is at capacity" });
+        return sendError(res, "Selected store is at capacity", STATUS_CODES.CONFLICT);
     }
 
     const store = await Store.findById(storeId).select("store_name address location").session(session).lean();
     if (!store) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Store not found" });
+        return sendError(res, "Store not found", STATUS_CODES.NOT_FOUND);
     }
 
     const updatedBooking = await Booking.findByIdAndUpdate(id, {
@@ -348,10 +368,13 @@ export const reassignStore = (req, res) => withSession(res, "reassignStore", asy
     await session.commitTransaction();
     session.endSession();
 
-    await invalidateBookingCache(id, booking.userId);
+    // bust BOTH the old and new store's caches — old store no longer has this booking, new one does
+    await invalidateBookingCache(booking, { storeId: oldStoreId });
+    await invalidateBookingCache(booking, { storeId });
+
     await tryEmit(BOOKING_STATUS.STORE_ASSIGNED, id, booking, { store: { ...store, name: store.store_name } });
 
-    return res.json({ success: true, message: "Store reassigned successfully", data: updatedBooking });
+    return sendResponse({ res, message: "Store reassigned successfully", data: updatedBooking });
 });
 
 // ASSIGN RETURN DRIVER
@@ -360,34 +383,40 @@ export const assignReturnDriver = (req, res) => withSession(res, "assignReturnDr
     const { driverId } = req.body;
     const { auth_id } = req.user;
 
-    const booking = await Booking.findById(id).select("status userId").session(session).lean();
+    const booking = await Booking.findById(id).select("status userId storeId").session(session).lean();
     if (!booking) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Booking not found" });
+        return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
     }
     if (!isValidStatusTransition(booking.status, BOOKING_STATUS.RETURN_DRIVER_ASSIGNED)) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: `Return driver can only be assigned after return is requested. Current: ${booking.status}` });
+        return sendError(res, `Return driver can only be assigned after return is requested. Current: ${booking.status}`, STATUS_CODES.BAD_REQUEST);
     }
 
-    const driver = await fetchAvailableDriver(driverId, session);
-    if (!driver) {
+    // same race condition as assignDriver had — use the atomic claim here too, not the read-only check
+    const claimedDriver = await Driver.findOneAndUpdate(
+        { _id: driverId, account_status: ACCOUNT_STATUS.ACTIVE, is_online: true, is_on_trip: false },
+        { $set: { is_on_trip: true } },
+        { new: true, session }
+    ).select("_id first_name last_name phone vehicle_details").lean();
+
+    if (!claimedDriver) {
         await safeAbortSession(session);
-        return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "Driver not available" });
+        return sendError(res, "Driver not available", STATUS_CODES.BAD_REQUEST);
     }
 
     const updatedBooking = await Booking.findByIdAndUpdate(id, {
         $set: { status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, "delivery.assignment.driverId": driverId, "delivery.assignment.assignedAt": new Date(), updated_at: new Date(), status_updated_by: auth_id },
-        $push: { timeline: createTimelineEntry(BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, `Return driver assigned by admin: ${driver.name}`, auth_id) },
+        $push: { timeline: createTimelineEntry(BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, `Return driver assigned by admin: ${claimedDriver.first_name}`, auth_id) },
     }, { new: true, runValidators: true, session }).select(EXCLUDED_FIELDS).lean();
 
     await session.commitTransaction();
     session.endSession();
 
-    await invalidateBookingCache(id, booking.userId);
-    await tryEmit(BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, id, booking, { driver });
+    await invalidateBookingCache(booking, { driverIds: [driverId], storeId: booking.storeId });
+    await tryEmit(BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, id, booking, { driver: claimedDriver });
 
-    return res.json({ success: true, message: "Return driver assigned successfully", data: updatedBooking });
+    return sendResponse({ res, message: "Return driver assigned successfully", data: updatedBooking });
 });
 
 // STATUS PROGRESSION FACTORY
@@ -401,11 +430,11 @@ const createStatusProgressController = ({ toStatus, successMessage, timelineMess
             .session(session).lean();
         if (!booking) {
             await safeAbortSession(session);
-            return res.status(STATUS_CODES.NOT_FOUND).json({ success: false, message: "Booking not found" });
+            return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
         }
         if (!isValidStatusTransition(booking.status, toStatus)) {
             await safeAbortSession(session);
-            return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: `Cannot transition to ${toStatus} from: ${booking.status}` });
+            return sendError(res, `Cannot transition to ${toStatus} from: ${booking.status}`, STATUS_CODES.BAD_REQUEST);
         }
 
         const updatedBooking = await Booking.findByIdAndUpdate(id, {
@@ -416,27 +445,25 @@ const createStatusProgressController = ({ toStatus, successMessage, timelineMess
         await session.commitTransaction();
         session.endSession();
 
-        // Release driver if transitioning to a status where driver's job is complete
+        let releasedDriverId = null;
         if (toStatus === BOOKING_STATUS.STORED) {
-            const driverId = booking.pickup?.assignment?.driverId;
-            if (driverId) {
-                await releaseDriver(driverId).catch((err) =>
-                    logger.warn("[markStored] Failed to release pickup driver:", err.message)
-                );
-            }
+            releasedDriverId = booking.pickup?.assignment?.driverId;
         } else if (toStatus === BOOKING_STATUS.DELIVERED) {
-            const driverId = booking.delivery?.assignment?.driverId;
-            if (driverId) {
-                await releaseDriver(driverId).catch((err) =>
-                    logger.warn("[markDelivered] Failed to release delivery driver:", err.message)
-                );
-            }
+            releasedDriverId = booking.delivery?.assignment?.driverId;
+        }
+        if (releasedDriverId) {
+            await releaseDriver(releasedDriverId).catch((err) =>
+                logger.warn(`[${controllerName}] Failed to release driver:`, err.message)
+            );
         }
 
-        await invalidateBookingCache(id, booking.userId);
+        await invalidateBookingCache(booking, {
+            driverIds: [booking.pickup?.assignment?.driverId, booking.delivery?.assignment?.driverId],
+            storeId: booking.storeId,
+        });
         await tryEmit(toStatus, id, booking);
 
-        return res.json({ success: true, message: successMessage, data: updatedBooking });
+        return sendResponse({ res, message: successMessage, data: updatedBooking });
     });
 
 export const markDriverArrived = createStatusProgressController({ toStatus: BOOKING_STATUS.DRIVER_ARRIVED, successMessage: "Driver marked as arrived", timelineMessage: "Driver arrived at pickup location (admin)", controllerName: "markDriverArrived" });

@@ -1,22 +1,14 @@
 import Store from "../../models/Store.js";
-import { get, set } from "../../services/redisService.js";
-import {
-    STORE_VISIBILITY_FILTER
-} from "../../constants/user/store.js";
+import { STORE_VISIBILITY_FILTER } from "../../constants/user/store.js";
+import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
 
-// Cache
-export { getCachedData, setCacheData } from "../../utils/cache.js";
 // Query Builders
-
-// Data Transformers
 export const buildSearchFilter = (query) => {
     const filter = { ...STORE_VISIBILITY_FILTER };
 
     if (query && query.trim()) {
         const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        filter.$or = [
-            { store_name: { $regex: escapedQuery, $options: "i" } },
-        ];
+        filter.$or = [{ store_name: { $regex: escapedQuery, $options: "i" } }];
     }
 
     return filter;
@@ -35,10 +27,7 @@ export const buildNearbyPipeline = (lat, lng, radiusKm, skip, limit, selectField
     return [
         {
             $geoNear: {
-                near: {
-                    type: "Point",
-                    coordinates: [lng, lat],
-                },
+                near: { type: "Point", coordinates: [lng, lat] },
                 distanceField: "distance",
                 spherical: true,
                 maxDistance: maxDistanceMeters,
@@ -49,11 +38,7 @@ export const buildNearbyPipeline = (lat, lng, radiusKm, skip, limit, selectField
         {
             $facet: {
                 metadata: [{ $count: "total" }],
-                stores: [
-                    { $skip: skip },
-                    { $limit: limit },
-                    { $project: projectFields },
-                ],
+                stores: [{ $skip: skip }, { $limit: limit }, { $project: projectFields }],
             },
         },
     ];
@@ -67,24 +52,18 @@ export const formatDistance = (distanceInMeters) => {
     return `${(distanceInMeters / 1000).toFixed(1)} km`;
 };
 
-
-export const enrichNearbyStores = (stores) => {
-    return stores.map((store) => ({
+export const enrichNearbyStores = (stores) =>
+    stores.map((store) => ({
         ...store,
         distanceFormatted: formatDistance(store.distance),
         distanceKm: parseFloat((store.distance / 1000).toFixed(2)),
     }));
-};
 
 export const calculateAvailability = (store) => {
     const { current_booking_count = 0, max_booking_capacity = 0 } = store;
     const availableSlots = Math.max(0, max_booking_capacity - current_booking_count);
 
-    // Determine current open/closed status
-    const isCurrentlyOpen = checkStoreOpenStatus(
-        store.store_open_time,
-        store.store_close_time
-    );
+    const isCurrentlyOpen = checkStoreOpenStatus(store.store_open_time, store.store_close_time);
 
     return {
         storeId: store._id,
@@ -99,7 +78,12 @@ export const calculateAvailability = (store) => {
         utilizationPercent: max_booking_capacity > 0
             ? parseFloat(((current_booking_count / max_booking_capacity) * 100).toFixed(1))
             : 0,
-        canAcceptBooking: store.is_online && store.account_status == ACCOUNT_STATUS.ACTIVE && store.verification_status == VERIFICATION_STATUS.VERIFIED && isCurrentlyOpen && availableSlots > 0,
+        canAcceptBooking:
+            store.is_online &&
+            store.account_status === ACCOUNT_STATUS.ACTIVE &&
+            store.verification_status === VERIFICATION_STATUS.VERIFIED &&
+            isCurrentlyOpen &&
+            availableSlots > 0,
         operatingHours: {
             open: store.store_open_time || null,
             close: store.store_close_time || null,
@@ -108,16 +92,12 @@ export const calculateAvailability = (store) => {
 };
 
 export const haversineDistance = (lat1, lng1, lat2, lng2) => {
-    const R = 6371; // Radius of Earth in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLng = (lng2 - lng1) * (Math.PI / 180);
     const a =
-        Math.sin(dLat / 2) *
-        Math.sin(dLat / 2) +
-        Math.cos(lat1 * (Math.PI / 180)) *
-        Math.cos(lat2 * (Math.PI / 180)) *
-        Math.sin(dLng / 2) *
-        Math.sin(dLng / 2);
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 };
@@ -134,7 +114,6 @@ export const checkStoreOpenStatus = (openTime, closeTime) => {
         const openMinutes = openH * 60 + openM;
         const closeMinutes = closeH * 60 + closeM;
 
-        // Handle overnight hours (e.g., 22:00 - 06:00)
         if (closeMinutes < openMinutes) {
             return currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
         }
@@ -146,18 +125,11 @@ export const checkStoreOpenStatus = (openTime, closeTime) => {
 };
 
 export const findVisibleStoreById = async (storeId, selectFields) => {
-    return Store.findOne({
-        _id: storeId,
-        ...STORE_VISIBILITY_FILTER,
-    })
-        .select(selectFields)
-        .lean();
+    return Store.findOne({ _id: storeId, ...STORE_VISIBILITY_FILTER }).select(selectFields).lean();
 };
 
 export const findStoreById = async (storeId, selectFields) => {
-    return Store.findById(storeId)
-        .select(selectFields)
-        .lean();
+    return Store.findById(storeId).select(selectFields).lean();
 };
 
 export { buildPagination } from "../../utils/helper.js";

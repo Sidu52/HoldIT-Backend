@@ -1,23 +1,24 @@
 import SupportTicket from "../../models/SupportTicket.js";
 import Booking from "../../models/Booking.js";
-import { get, set, del, delByPattern } from "../../services/redisService.js";
+// import { get, set, del, delByPattern } from "../../services/redisService.js";
 import { addJobToQueue } from "../../services/jobService.js";
 import {
-    SUPPORT_CACHE,
     OPEN_TICKET_STATUSES,
     SUPPORT_LIMITS,
     SUPPORT_JOB_OPTIONS,
 } from "../../constants/user/support.js";
 import logger from "../../utils/logger.js";
+import { deleteByPattern } from "../../constants/redis/redisOperation.js";
+import { SupportKeys } from "../../constants/redis/support.keys.js";
 
-export { getCachedData, setCacheData } from "../../utils/cache.js";
+
 
 
 export const invalidateTicketCache = async (userId, ticketId = null) => {
     try {
-        const promises = [delByPattern(SUPPORT_CACHE.LIST_PATTERN(userId))];
+        const promises = [deleteByPattern(SupportKeys.detail(userId, "*"))];
         if (ticketId) {
-            promises.push(del(SUPPORT_CACHE.DETAIL_KEY(userId, ticketId)));
+            promises.push(deleteByPattern(SupportKeys.detail(userId, ticketId)));
         }
         await Promise.all(promises);
     } catch (err) {

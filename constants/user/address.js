@@ -20,15 +20,3 @@ export const ADDRESS_MESSAGES = {
 export const ADDRESS_LIMITS = {
     MAX_ADDRESSES: 10,
 };
-
-// CACHE KEYS
-export const CACHE_KEYS = {
-    USER_ADDRESSES: (userId) => `user:addresses:${userId}`,
-    USER_ADDRESS_DETAIL: (userId, addressId) => `user:${userId}:address:${addressId}`,
-};
-
-// CACHE TTL (seconds)
-export const CACHE_TTL = {
-    LIST: 120,
-    DETAIL: 300,
-};

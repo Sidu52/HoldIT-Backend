@@ -9,7 +9,7 @@ import {
   getBookingById,
   cancelBooking,
   assignDriver,
-  reassignDriver,
+  // reassignDriver,
   reassignStore,
   assignReturnDriver,
   markDriverArrived,
@@ -26,32 +26,31 @@ import {
   reassignStoreSchema,
   assignReturnDriverSchema,
 } from "../../validations/admin/booking.validation.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
+
+
 
 const router = express.Router();
 
 // All routes require authentication
-router.use(authMiddleware);
+router.use(authMiddleware,
+  roleMiddleware(
+    USER_ROLES.SUPER_ADMIN,
+    USER_ROLES.ADMIN,
+    USER_ROLES.OPERATION_MANAGER,
+    USER_ROLES.CUSTOMER_SUPPORT
+  ),
+  checkAdminAccountStatus
+);
 
-// Read access support can view but not modify
-const BOOKING_READ_ROLES = [
-  USER_ROLES.SUPER_ADMIN,
-  USER_ROLES.ADMIN,
-  USER_ROLES.OPERATION_MANAGER,
-  USER_ROLES.CUSTOMER_SUPPORT,
-];
+const manageModify = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.OPERATION_MANAGER);
 
-// Modify access operations and above
-const BOOKING_MODIFY_ROLES = [
-  USER_ROLES.SUPER_ADMIN,
-  USER_ROLES.ADMIN,
-  USER_ROLES.OPERATION_MANAGER,
-];
+
 
 // Read Routes
 router.get(
   "/",
   apiLimiter,
-  roleMiddleware(...BOOKING_READ_ROLES),
   validate(listBookingsSchema, "query"),
   getBookings
 );
@@ -59,7 +58,6 @@ router.get(
 router.get(
   "/:id",
   apiLimiter,
-  roleMiddleware(...BOOKING_READ_ROLES),
   validate(bookingIdSchema, "params"),
   getBookingById
 );
@@ -68,7 +66,7 @@ router.get(
 router.put(
   "/:id/cancel",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   cancelBooking
 );
@@ -77,25 +75,25 @@ router.put(
 router.patch(
   "/:id/assign-driver",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   validate(assignDriverSchema, "body"),
   assignDriver
 );
 
-router.patch(
-  "/:id/reassign-driver",
-  apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
-  validate(bookingIdSchema, "params"),
-  validate(reassignDriverSchema, "body"),
-  reassignDriver
-);
+// router.patch(
+//   "/:id/reassign-driver",
+//   apiLimiter,
+//   manageModify,
+//   validate(bookingIdSchema, "params"),
+//   validate(reassignDriverSchema, "body"),
+//   reassignDriver
+// );
 
 router.patch(
   "/:id/reassign-store",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   validate(reassignStoreSchema, "body"),
   reassignStore
@@ -104,7 +102,7 @@ router.patch(
 router.patch(
   "/:id/assign-return-driver",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   validate(assignReturnDriverSchema, "body"),
   assignReturnDriver
@@ -114,7 +112,7 @@ router.patch(
 router.patch(
   "/:id/mark-arrived",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   markDriverArrived
 );
@@ -122,7 +120,7 @@ router.patch(
 router.patch(
   "/:id/mark-picked-up",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+ manageModify,
   validate(bookingIdSchema, "params"),
   markPickedUp
 );
@@ -130,7 +128,7 @@ router.patch(
 router.patch(
   "/:id/mark-stored",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   markStored
 );
@@ -138,7 +136,7 @@ router.patch(
 router.patch(
   "/:id/request-return",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   requestReturn
 );
@@ -146,7 +144,7 @@ router.patch(
 router.patch(
   "/:id/mark-delivered",
   apiLimiter,
-  roleMiddleware(...BOOKING_MODIFY_ROLES),
+  manageModify,
   validate(bookingIdSchema, "params"),
   markDelivered
 );

@@ -1,15 +1,6 @@
 import { TICKET_STATUS } from "../../utils/constants.js";
 
-export const SUPPORT_CACHE = {
-    LIST_KEY: (userId, page, limit, status) =>
-        `support:tickets:${userId}:${page}:${limit}:${status || "all"}`,
-    DETAIL_KEY: (userId, ticketId) =>
-        `support:ticket:${userId}:${ticketId}`,
-    LIST_PATTERN: (userId) => `support:tickets:${userId}:*`,
-
-    LIST_TTL: 60,
-    DETAIL_TTL: 120,
-};
+// Removed SUPPORT_CACHE (Migrated to constants/redis/support.keys.js)
 
 export const SUPPORT_LIMITS = {
     MAX_OPEN_TICKETS: 5,

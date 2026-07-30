@@ -151,11 +151,8 @@ const syncStoreToRedis = async (doc) => {
 
         // Invalidate profile & dashboard caches on any store modification
         const storeId = doc._id.toString();
-        const { invalidateCache } = await import("../utils/cache.js");
-        await Promise.all([
-            invalidateCache(`store:profile:${storeId}`),
-            invalidateCache(`store:dashboard:${storeId}`)
-        ]).catch(err => {
+        const { invalidateStoreCache } = await import("../constants/redis/invalidate/store.invalidate.js");
+        await invalidateStoreCache(storeId).catch(err => {
             logger.error(`[Store Hook] Cache invalidation failed for ${storeId}:`, err.message);
         });
     } catch (err) {

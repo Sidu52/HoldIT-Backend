@@ -6,20 +6,19 @@ import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import {
     getCache,
     setCache,
-    invalidateCache,
     deleteCache,
     deleteByPattern,
     incrementCache,
-} from "../../utils/cache.js";
+} from "../../constants/redis/redisOperation.js";
+import { StoreOwnerKeys, StoreOwnerTTL } from "../../constants/redis/storeOwner.keys.js";
+import { StoreKeys, StoreTTL } from "../../constants/redis/store.keys.js";
+import { AuthKeys, AuthTTL } from "../../constants/redis/auth.keys.js";
+import { invalidateStoreOwnerCache } from "../../constants/redis/invalidate/storeOwner.invalidate.js";
+import { invalidateStoreCache } from "../../constants/redis/invalidate/store.invalidate.js";
 import {
     STATUS_CODES,
     ACCOUNT_STATUS,
     VERIFICATION_STATUS,
-    OTP_COOLDOWN,
-    DETAIL_CACHE_TTL,
-    STORES_CACHE_TTL,        // was used but never imported
-    DASHBOARD_CACHE_TTL,     // was used but never imported
-    OTP_FAIL_WINDOW_SECONDS, // was used but never imported
 } from "../../utils/constants.js";
 import {
     timingSafeEqual,
@@ -31,21 +30,12 @@ import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import logger from "../../utils/logger.js";
 
 // ─────────────────────────────────────────────
-// CACHE KEY HELPERS  (one place, no typos)
-// ─────────────────────────────────────────────
-const ownerCacheKey = (id) => `store_owners:${id}`;
-const ownerProfileCacheKey = (id) => `owner_profile:${id}`;   // used in update/complete
-const ownerStoresCacheKey = (id) => `owner_stores:${id}`;
-const ownerDashboardCacheKey = (id) => `owner_dashboard:${id}`;
-const storePublicCacheKey = (id) => `store:public:${id}`;
-
-// ─────────────────────────────────────────────
 // PROFILE
 // ─────────────────────────────────────────────
 export const getProfile = async (req, res) => {
     try {
         const ownerId = req.user.auth_id;
-        const cacheKey = ownerCacheKey(ownerId);
+        const cacheKey = StoreOwnerKeys.profile(ownerId);
 
         const cached = await getCache(cacheKey);
         if (cached) {
@@ -59,7 +49,7 @@ export const getProfile = async (req, res) => {
             return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
         }
 
-        await setCache(cacheKey, owner, DETAIL_CACHE_TTL);
+        await setCache(cacheKey, owner, StoreOwnerTTL.PROFILE);
 
         return sendResponse({ res, message: "Profile fetched.", data: { owner } });
     } catch (err) {
@@ -125,10 +115,10 @@ export const updateProfile = async (req, res) => {
                 }
 
                 // Fail-attempt gate
-                const failKey = `otp_fail:${sanitizedPhone}`;
-                const failCount = await getCache(failKey);  // was: get(failKey) — undefined
+                const failKey = AuthKeys.otpFail("store_owner", sanitizedPhone);
+                const failCount = await getCache(failKey);
                 if (failCount && parseInt(failCount, 10) >= 5) {
-                    await deleteCache(`otp:${sanitizedPhone}`);
+                    await deleteCache(AuthKeys.otp("store_owner", sanitizedPhone));
                     return sendError(
                         res,
                         "Too many failed attempts. Please request a new OTP.",
@@ -136,23 +126,23 @@ export const updateProfile = async (req, res) => {
                     );
                 }
 
-                const savedOTP = await getCache(`otp:${sanitizedPhone}`); // was: get(...)
+                const savedOTP = await getCache(AuthKeys.otp("store_owner", sanitizedPhone));
                 const isOtpValid =
                     savedOTP &&
                     String(savedOTP).length === String(phoneOtp).length &&
                     timingSafeEqual(String(savedOTP), String(phoneOtp));
 
                 if (!isOtpValid) {
-                    await incrementCache(failKey, OTP_FAIL_WINDOW_SECONDS);
+                    await incrementCache(failKey, AuthTTL.OTP_FAIL_WINDOW);
                     return sendError(res, "Invalid or expired OTP.", STATUS_CODES.UNAUTHORIZED);
                 }
 
                 // Verified — clean up all OTP-related keys atomically
                 await Promise.allSettled([
-                    deleteCache(`otp:${sanitizedPhone}`),
+                    deleteCache(AuthKeys.otp("store_owner", sanitizedPhone)),
                     deleteCache(failKey),
-                    deleteCache(`otp_cooldown:${sanitizedPhone}`),
-                    deleteCache(`otp_rate:${sanitizedPhone}`),
+                    deleteCache(AuthKeys.otpCooldown("store_owner", sanitizedPhone)),
+                    deleteCache(AuthKeys.otpRate("store_owner", sanitizedPhone)),
                 ]);
 
                 updateData.phone = sanitizedPhone;
@@ -165,11 +155,7 @@ export const updateProfile = async (req, res) => {
             { new: true, runValidators: true }
         ).select("-__v").lean();
 
-        // Invalidate BOTH cache keys used across get/update flows
-        await Promise.allSettled([
-            deleteCache(ownerCacheKey(ownerId)),
-            deleteCache(ownerProfileCacheKey(ownerId)),
-        ]);
+        await deleteCache(StoreOwnerKeys.profile(ownerId));
 
         return sendResponse({ res, message: "Profile updated.", data: { owner: updatedOwner } });
     } catch (err) {
@@ -211,7 +197,7 @@ export const sendUpdatePhoneOTP = async (req, res) => {
             );
         }
 
-        const isRateLimited = await checkOTPRateLimit(sanitizedPhone);
+        const isRateLimited = await checkOTPRateLimit("store_owner", sanitizedPhone);
         if (isRateLimited) {
             return sendError(
                 res,
@@ -220,7 +206,7 @@ export const sendUpdatePhoneOTP = async (req, res) => {
             );
         }
 
-        const cooldownKey = `otp_cooldown:${sanitizedPhone}`;
+        const cooldownKey = AuthKeys.otpCooldown("store_owner", sanitizedPhone);
         const cooldownExists = await getCache(cooldownKey);  // was: get(cooldownKey)
         if (cooldownExists) {
             return sendError(
@@ -230,9 +216,8 @@ export const sendUpdatePhoneOTP = async (req, res) => {
             );
         }
 
-        const otp = await generateAndStoreOTP(sanitizedPhone);
-        await setCache(cooldownKey, "1", OTP_COOLDOWN);  // was: set(cooldownKey, "1", "EX", OTP_COOLDOWN)
-
+        const otp = await generateAndStoreOTP("store_owner", sanitizedPhone);
+        await setCache(cooldownKey, "1", AuthTTL.OTP_COOLDOWN);  
         await NotificationService.sendOTP(sanitizedPhone, otp);
 
         // Never expose OTP in production responses — remove `data.otp`
@@ -271,11 +256,7 @@ export const completeProfile = async (req, res) => {
             { new: true, runValidators: true }
         ).select("-__v").lean();
 
-        // Clear both profile cache keys
-        await Promise.allSettled([
-            deleteCache(ownerCacheKey(ownerId)),
-            deleteCache(ownerProfileCacheKey(ownerId)),
-        ]);
+        await deleteCache(StoreOwnerKeys.profile(ownerId));
 
         return sendResponse({
             res,
@@ -294,7 +275,7 @@ export const completeProfile = async (req, res) => {
 export const getStores = async (req, res) => {
     try {
         const ownerId = req.user.auth_id;
-        const cacheKey = ownerStoresCacheKey(ownerId);  // was: ownerStoresCacheKey undefined
+        const cacheKey = StoreOwnerKeys.stores(ownerId);
 
         const cached = await getCache(cacheKey);        // was: get(cacheKey)
         if (cached) {
@@ -304,7 +285,7 @@ export const getStores = async (req, res) => {
 
         const stores = await Store.find({ store_owner_id: ownerId }).select("-__v").lean();
 
-        await setCache(cacheKey, stores, STORES_CACHE_TTL); // was: Jstores (typo)
+        await setCache(cacheKey, stores, StoreOwnerTTL.STORES);
 
         return sendResponse({ res, message: "Stores fetched.", data: { stores } });
     } catch (err) {
@@ -397,7 +378,7 @@ export const createStore = async (req, res) => {
             verification_status: VERIFICATION_STATUS.PENDING,
         });
 
-        await deleteCache(ownerStoresCacheKey(owner._id)); // was: del(...) — undefined
+        await deleteCache(StoreOwnerKeys.stores(owner._id));
 
         return sendResponse({
             res,
@@ -473,8 +454,8 @@ export const updateStore = async (req, res) => {
         ).select("-__v").lean();
 
         await Promise.allSettled([
-            deleteCache(ownerStoresCacheKey(ownerId)),  // was: del(...)
-            deleteCache(storePublicCacheKey(id)),        // was: del(...)
+            deleteCache(StoreOwnerKeys.stores(ownerId)),
+            deleteCache(StoreKeys.publicView(id)),
         ]);
 
         return sendResponse({ res, message: "Store updated.", data: { store: updatedStore } });
@@ -532,11 +513,11 @@ export const deleteStore = async (req, res) => {
         });
 
         await Promise.allSettled([
-            deleteByPattern(`refresh:${id}:*`),
-            deleteByPattern(`access:${id}:*`),
-            deleteCache(ownerStoresCacheKey(ownerId)),   // was: del(...)
-            deleteCache(ownerDashboardCacheKey(ownerId)), // was: del(...)
-            deleteCache(storePublicCacheKey(id)),         // was: del(...)
+            deleteByPattern(AuthKeys.refreshTokenPattern("store", id)),
+            deleteByPattern(AuthKeys.accessTokenPattern("store", id)),
+            deleteCache(StoreOwnerKeys.stores(ownerId)),
+            deleteCache(StoreOwnerKeys.dashboard(ownerId)),
+            deleteCache(StoreKeys.publicView(id)),
         ]);
 
         return sendResponse({ res, message: "Store deactivated successfully." });
@@ -552,7 +533,7 @@ export const deleteStore = async (req, res) => {
 export const getDashboard = async (req, res) => {
     try {
         const ownerId = req.user.auth_id;
-        const cacheKey = ownerDashboardCacheKey(ownerId);
+        const cacheKey = StoreOwnerKeys.dashboard(ownerId);
 
         const cached = await getCache(cacheKey);  // was: get(cacheKey)
         if (cached) {
@@ -674,8 +655,7 @@ export const getDashboard = async (req, res) => {
             orders: bookingStats,
         };
 
-        // was: set(cacheKey, JSON.stringify(dashboard), "EX", DASHBOARD_CACHE_TTL)
-        await setCache(cacheKey, dashboard, DASHBOARD_CACHE_TTL);
+        await setCache(cacheKey, dashboard, StoreOwnerTTL.DASHBOARD);
 
         return sendResponse({ res, message: "Dashboard fetched.", data: dashboard });
     } catch (err) {
@@ -741,8 +721,8 @@ export const goOnline = async (req, res) => {
         ).select("store_name is_online").lean();
 
         await Promise.allSettled([
-            deleteCache(ownerStoresCacheKey(owner._id)),    // was: del(...)
-            deleteCache(ownerDashboardCacheKey(owner._id)), // was: del(...)
+            deleteCache(StoreOwnerKeys.stores(owner._id)),
+            deleteCache(StoreOwnerKeys.dashboard(owner._id)),
         ]);
 
         return sendResponse({

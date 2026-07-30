@@ -21,29 +21,27 @@ import {
   updateLocationSchema,
   updateDriverAccountSchema,
 } from "../../validations/admin/driver.validation.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
 const router = express.Router();
 
-router.use(authMiddleware);
+// All routes require authentication
+router.use(authMiddleware,
+  roleMiddleware(
+    USER_ROLES.SUPER_ADMIN,
+    USER_ROLES.ADMIN,
+    USER_ROLES.OPERATION_MANAGER,
+  ),
+  checkAdminAccountStatus
+);
 
-// Roles
-const DRIVER_VIEW_ROLES = [
-  USER_ROLES.SUPER_ADMIN,
-  USER_ROLES.ADMIN,
-  USER_ROLES.OPERATION_MANAGER,
-];
-
-const DRIVER_MODIFY_ROLES = [
-  USER_ROLES.SUPER_ADMIN,
-  USER_ROLES.ADMIN,
-];
+// const manageModify = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.OPERATION_MANAGER);
 
 // Bulk deactivate
 
 router.delete(
   "/bulk-delete",
   apiLimiter,
-  roleMiddleware(...DRIVER_MODIFY_ROLES),
   validate(bulkDeactivateSchema),
   bulkDeactivateDrivers
 );
@@ -52,7 +50,6 @@ router.delete(
 router.get(
   "/",
   apiLimiter,
-  roleMiddleware(...DRIVER_VIEW_ROLES),
   validate(listDriversSchema, "query"),
   getDrivers
 );
@@ -61,7 +58,6 @@ router.get(
 router.get(
   "/:driver_id",
   apiLimiter,
-  roleMiddleware(...DRIVER_VIEW_ROLES),
   validate(driverIdSchema, "params"),
   getDriverById
 );
@@ -69,7 +65,6 @@ router.get(
 router.patch(
   "/:driver_id",
   apiLimiter,
-  roleMiddleware(...DRIVER_MODIFY_ROLES),
   validate(driverIdSchema, "params"),
   validate(updateDriverSchema, "body"),
   updateDriver
@@ -78,7 +73,6 @@ router.patch(
 router.patch(
   "/:driver_id/location",
   apiLimiter,
-  roleMiddleware(...DRIVER_MODIFY_ROLES),
   validate(driverIdSchema, "params"),
   validate(updateLocationSchema, "body"),
   driverLocation
@@ -87,7 +81,6 @@ router.patch(
 router.patch(
   "/:driver_id/status",
   apiLimiter,
-  roleMiddleware(...DRIVER_MODIFY_ROLES),
   validate(driverIdSchema, "params"),
   validate(updateDriverAccountSchema, "body"),
   updateDriverStatus
@@ -96,7 +89,6 @@ router.patch(
 router.patch(
   "/:driver_id/duty",
   apiLimiter,
-  roleMiddleware(...DRIVER_MODIFY_ROLES),
   validate(driverIdSchema, "params"),
   updateDriverDuty
 );

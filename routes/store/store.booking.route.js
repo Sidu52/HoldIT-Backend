@@ -5,6 +5,7 @@ import { validate } from "../../middlewares/validate.middleware.js";
 import {
     getIncomingBookings,
     getActiveBookings,
+    getReturnParcels,
     getBookingDetail,
     confirmStored,
     getBookingHistory,
@@ -21,6 +22,7 @@ router.use(authMiddleware);
 
 router.get("/incoming", apiLimiter, getIncomingBookings);
 router.get("/active", apiLimiter, getActiveBookings);
+router.get("/return_parcels", apiLimiter, getReturnParcels);
 router.get("/history", apiLimiter, getBookingHistory);
 router.get("/:booking_id", apiLimiter, getBookingDetail);
 router.post("/:booking_id/confirm-stored", apiLimiter, validate(confirmStoredSchema), confirmStored);

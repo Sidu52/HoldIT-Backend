@@ -23,29 +23,26 @@ import {
     checkServiceableSchema,
     distanceSchema,
 } from "../../validations/admin/serviceableArea.validation.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
 const router = express.Router();
 
-router.use(authMiddleware);
-
-// Roles
-const AREA_VIEW_ROLES = [
+router.use(authMiddleware,
+  roleMiddleware(
     USER_ROLES.SUPER_ADMIN,
     USER_ROLES.ADMIN,
     USER_ROLES.OPERATION_MANAGER,
-];
+    USER_ROLES.CUSTOMER_SUPPORT
+  ),
+  checkAdminAccountStatus
+);
 
-const AREA_MODIFY_ROLES = [
-    USER_ROLES.SUPER_ADMIN,
-    USER_ROLES.ADMIN,
-];
 
 
 // Create serviceable area
 router.post(
     "/",
     apiLimiter,
-    roleMiddleware(...AREA_MODIFY_ROLES),
     validate(createServiceableAreaSchema),
     createArea
 );
@@ -54,7 +51,6 @@ router.post(
 router.get(
     "/",
     apiLimiter,
-    roleMiddleware(...AREA_VIEW_ROLES),
     validate(listServiceableAreasSchema, "query"),
     getAreas
 );
@@ -63,7 +59,6 @@ router.get(
 router.get(
     "/:id",
     apiLimiter,
-    roleMiddleware(...AREA_VIEW_ROLES),
     validate(serviceableAreaIdSchema, "params"),
     getAreaById
 );
@@ -72,7 +67,6 @@ router.get(
 router.put(
     "/:id",
     apiLimiter,
-    roleMiddleware(...AREA_MODIFY_ROLES),
     validate(serviceableAreaIdSchema, "params"),
     validate(updateServiceableAreaSchema),
     updateArea
@@ -82,7 +76,6 @@ router.put(
 router.patch(
     "/:id/status",
     apiLimiter,
-    roleMiddleware(...AREA_MODIFY_ROLES),
     validate(serviceableAreaIdSchema, "params"),
     validate(toggleStatusSchema),
     toggleAreaStatus
@@ -92,7 +85,6 @@ router.patch(
 router.delete(
     "/:id",
     apiLimiter,
-    roleMiddleware(USER_ROLES.SUPER_ADMIN),
     validate(serviceableAreaIdSchema, "params"),
     deleteArea
 );
@@ -101,7 +93,6 @@ router.delete(
 router.get(
     "/check-serviceability",
     apiLimiter,
-    roleMiddleware(...AREA_VIEW_ROLES),
     validate(checkServiceableSchema, "query"),
     checkServiceable
 );
@@ -110,7 +101,6 @@ router.get(
 router.get(
     "/distance",
     apiLimiter,
-    roleMiddleware(...AREA_VIEW_ROLES),
     validate(distanceSchema, "query"),
     getDistance
 );

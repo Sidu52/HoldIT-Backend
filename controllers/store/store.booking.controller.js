@@ -4,7 +4,6 @@ import Driver from "../../models/Driver.js";
 import Store from "../../models/Store.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES, BOOKING_STATUS } from "../../utils/constants.js";
-import { invalidateBookingCache } from "../../helpers/user/bookingHelper.js";
 import { timingSafeEqual } from "../../helpers/user/authHelper.js";
 import { incrementStoreCapacity, decrementStoreCapacity } from "../../services/storeServices.js";
 import { markDriverAvailable, addDriverToRedis } from "../../services/driverGeoService.js";
@@ -15,11 +14,37 @@ import {
 } from "../../src/socket/emitters/booking.emitter.js";
 import logger from "../../utils/logger.js";
 import { processMarkStored } from "../../helpers/store/store.helper.js";
+import { invalidateBookingCache } from "../../constants/redis/invalidate/booking.invalidate.js";
+import { invalidateStoreBookingCache } from "../../constants/redis/invalidate/store.invalidate.js";
+import { cacheAside } from "../../constants/redis/redisOperation.js";
+import { StoreKeys, StoreTTL } from "../../constants/redis/store.keys.js";
 
 const safeGetIO = () => {
     try { return getIO(); } catch { return null; }
 };
 
+const STORE_BOOKING_FIELDS = [
+  "bookingCode", "status", "userId", "userInfo",
+  "luggage", "luggagePhotos",
+  "storage", "deliveryLocation", "pickup.scheduledAt",
+  "pickup.assignment.completedAt",
+  "pickup.assignment.storageOtp",
+  "pickup.assignment.driverId",
+  "pickup.assignment.assignedAt",
+  "pickup.assignment.startedAt",
+  "pickup.assignment.completedAt",
+  
+  "delivery.requestedAt",
+  "delivery.assignment.driverId",
+  "delivery.assignment.assignedAt",
+  "delivery.assignment.startedAt",
+  "delivery.assignment.completedAt",
+  "delivery.assignment.returnOtp",
+  "delivery.assignment.storageReturnOtp",
+  "delivery.assignment.completedAt",
+  "cancelReason",
+  "cancelledAt",
+];
 
 const buildPagination = (page, limit, total) => ({
     currentPage: page,
@@ -34,29 +59,36 @@ const buildPagination = (page, limit, total) => ({
 export const getIncomingBookings = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
+        const cacheKey = StoreKeys.bookingIncoming(storeId);
 
-        const bookings = await Booking.find({
-            storeId: new mongoose.Types.ObjectId(storeId),
-            status: {
-                $in: [
-                    BOOKING_STATUS.STORE_ASSIGNED,
-                    BOOKING_STATUS.DRIVER_ASSIGNED,
-                    BOOKING_STATUS.DRIVER_ARRIVED,
-                    BOOKING_STATUS.PICKED_UP,
-                    BOOKING_STATUS.AT_STORE
-                ]
-            },
-            isActive: true,
-        })
-            .select("bookingCode status pickupLocation deliveryLocation luggage pickup storage pricing userId createdAt")
-            .populate("userId", "first_name last_name phone")
-            .sort({ createdAt: 1 })
-            .lean();
+        const data = await cacheAside(cacheKey, StoreTTL.BOOKING_INCOMING, async () => {
+            const bookings = await Booking.find({
+                storeId: new mongoose.Types.ObjectId(storeId),
+                status: {
+                    $in: [
+                        BOOKING_STATUS.STORE_ASSIGNED,
+                        BOOKING_STATUS.DRIVER_ASSIGNED,
+                        BOOKING_STATUS.DRIVER_ARRIVED,
+                        BOOKING_STATUS.PICKED_UP,
+                        BOOKING_STATUS.AT_STORE
+                    ]
+                },
+                isActive: true,
+            })
+                .select(STORE_BOOKING_FIELDS.join(" "))
+                .populate("userId", "first_name last_name phone")
+                .populate("pickup.assignment.driverId", "first_name last_name phone")
+                .populate("delivery.assignment.driverId", "first_name last_name phone")
+                .sort({ createdAt: 1 })
+                .lean();
+
+            return { bookings, total: bookings.length };
+        });
 
         return sendResponse({
             res,
             message: "Incoming bookings fetched successfully.",
-            data: { bookings, total: bookings.length },
+            data,
         });
     } catch (err) {
         logger.error("Store Get Incoming Error:", err);
@@ -74,42 +106,101 @@ export const getActiveBookings = async (req, res) => {
         const limitNum = Math.min(50, Math.max(1, Number(limit)));
         const skip = (pageNum - 1) * limitNum;
 
-        const filter = {
-            storeId: new mongoose.Types.ObjectId(storeId),
-            status: {
-                $in: [
-                    BOOKING_STATUS.STORED,
-                    BOOKING_STATUS.RETURN_REQUESTED,
-                    BOOKING_STATUS.RETURN_DRIVER_ASSIGNED
-                ]
-            },
-            isActive: true,
-        };
+        const cacheKey = StoreKeys.bookingActive(storeId, { page: pageNum, limit: limitNum });
 
-        const [bookings, total] = await Promise.all([
-            Booking.find(filter)
-                .select("bookingCode status pickupLocation deliveryLocation luggage storage pricing payment userId pickup delivery createdAt")
-                .populate("userId", "first_name last_name phone")
-                .sort({ "storage.storedAt": -1 })
-                .skip(skip)
-                .limit(limitNum)
-                .lean(),
-            Booking.countDocuments(filter),
-        ]);
+        const data = await cacheAside(cacheKey, StoreTTL.BOOKING_ACTIVE, async () => {
+            const filter = {
+                storeId: new mongoose.Types.ObjectId(storeId),
+                status: {
+                    $in: [
+                        BOOKING_STATUS.STORED,
+                        BOOKING_STATUS.RETURN_REQUESTED,
+                    ]
+                },
+                isActive: true,
+            };
+
+            const [bookings, total] = await Promise.all([
+                Booking.find(filter)
+                    .select(STORE_BOOKING_FIELDS.join(" "))
+                    .populate("userId", "first_name last_name phone")
+                    .populate("pickup.assignment.driverId", "first_name last_name phone")
+                    .populate("delivery.assignment.driverId", "first_name last_name phone")
+                    .sort({ "storage.storedAt": -1 })
+                    .skip(skip)
+                    .limit(limitNum)
+                    .lean(),
+                Booking.countDocuments(filter),
+            ]);
+
+            return {
+                bookings,
+                pagination: buildPagination(pageNum, limitNum, total),
+            };
+        });
 
         return sendResponse({
             res,
             message: "Active bookings fetched successfully.",
-            data: {
-                bookings,
-                pagination: buildPagination(pageNum, limitNum, total),
-            },
+            data,
         });
     } catch (err) {
         logger.error("Store Get Active Error:", err);
         return sendError(res, "Failed to fetch active bookings.");
     }
 };
+
+// GET RETURN PARCEL
+export const getReturnParcels = async (req, res) => {
+    try {
+        const storeId = req.user.auth_id;
+        const { page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(1, Number(page));
+        const limitNum = Math.min(50, Math.max(1, Number(limit)));
+        const skip = (pageNum - 1) * limitNum;
+
+        const cacheKey = StoreKeys.bookingReturnParcel(storeId, { page: pageNum, limit: limitNum });
+
+        const data = await cacheAside(cacheKey, StoreTTL.BOOKING_RETURN_PARCEL, async () => {
+            const filter = {
+                storeId: new mongoose.Types.ObjectId(storeId),
+                status: {
+                    $in: [
+                        BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                    ]
+                },
+                isActive: true,
+            };
+
+            const [bookings, total] = await Promise.all([
+                Booking.find(filter)
+                    .select(STORE_BOOKING_FIELDS.join(" "))
+                    .populate("userId", "first_name last_name phone")
+                    .populate("pickup.assignment.driverId", "first_name last_name phone")
+                    .populate("delivery.assignment.driverId", "first_name last_name phone")
+                    .sort({ createdAt: 1 })
+                    .skip(skip)
+                    .limit(limitNum)
+                    .lean(),
+                Booking.countDocuments(filter),
+            ]);
+
+            return {
+                bookings,
+                pagination: buildPagination(pageNum, limitNum, total),
+            };
+        });
+
+        return sendResponse({
+            res,
+            message: "Return parcel fetched successfully.",
+            data,
+        }); 
+    } catch (err) {
+        logger.error("Store Get Return Parcel Error:", err);
+        return sendError(res, "Failed to fetch return parcel.");
+    }
+}
 
 // GET BOOKING DETAIL
 export const getBookingDetail = async (req, res) => {
@@ -121,14 +212,20 @@ export const getBookingDetail = async (req, res) => {
             return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
         }
 
-        const booking = await Booking.findOne({
-            _id: booking_id,
-            storeId: new mongoose.Types.ObjectId(storeId),
-        })
-            .select("-__v")
-            .populate("userId", "first_name last_name phone")
-            .populate("storeId", "store_name store_contact_number location")
-            .lean();
+        const cacheKey = StoreKeys.bookingDetail(storeId, booking_id);
+
+        const booking = await cacheAside(cacheKey, StoreTTL.BOOKING_DETAIL, async () => {
+            return Booking.findOne({
+                _id: booking_id,
+                storeId: new mongoose.Types.ObjectId(storeId),
+            })
+                .select(STORE_BOOKING_FIELDS.join(" "))
+                .populate("userId", "first_name last_name phone")
+                .populate("pickup.assignment.driverId", "first_name last_name phone")
+                .populate("delivery.assignment.driverId", "first_name last_name phone")
+                .populate("storeId", "store_name store_contact_number location")
+                .lean();
+        });
 
         if (!booking) {
             return sendError(res, "Booking not found.", STATUS_CODES.NOT_FOUND);
@@ -151,7 +248,7 @@ export const confirmStored = async (req, res) => {
         const storeId = req.user.auth_id;
         const { booking_id } = req.params;
         const { notes = "", otp } = req.body || {};
-       
+
         if (!mongoose.isValidObjectId(booking_id)) {
             return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
         }
@@ -193,33 +290,32 @@ export const confirmStored = async (req, res) => {
         const updated = await processMarkStored(booking_id, storeId, notes);
 
         if (!updated) {
-            // Status likely changed between the read above and the atomic update
             return sendError(res, "Booking is no longer eligible for this action.", STATUS_CODES.CONFLICT);
         }
 
         const userId = updated.userId.toString();
 
-        // Store capacity
         await incrementStoreCapacity(storeId);
 
-        // Clear cache
-        await invalidateBookingCache(userId, booking_id).catch(() => { });
+        // Clear both user-facing and store-facing caches
+        await Promise.allSettled([
+            invalidateBookingCache(userId, booking_id),
+            invalidateStoreBookingCache(storeId, booking_id),
+        ]);
 
-        // Emit socket event
         try {
             const io = safeGetIO();
             if (io) {
-                emitBookingStored(
-                    io,
-                    booking_id,
-                    userId,
-                    updated.storage?.storedAt,
-                    "Your Store"
-                );
+                emitBookingStored(io, booking_id, userId, updated.storage?.storedAt, "Your Store");
             }
         } catch (socketErr) {
             logger.debug(`[Store:Socket] Socket emission skipped: ${socketErr.message}`);
         }
+
+        await Promise.allSettled([
+            invalidateBookingCache(userId, booking_id),
+            invalidateStoreBookingCache(storeId, booking_id),
+        ]);
 
         return sendResponse({
             res,
@@ -248,29 +344,37 @@ export const getBookingHistory = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
         const sortDir = sort_order === "asc" ? 1 : -1;
 
-        const filter = {
-            storeId: new mongoose.Types.ObjectId(storeId),
-            status: { $in: [BOOKING_STATUS.DELIVERED, BOOKING_STATUS.CANCELLED] },
-        };
+        const cacheKey = StoreKeys.bookingHistory(storeId, { page: pageNum, limit: limitNum, sort_order });
 
-        const [bookings, total] = await Promise.all([
-            Booking.find(filter)
-                .select("bookingCode status pickupLocation deliveryLocation luggage pricing payment storage createdAt cancelledAt cancelReason")
-                .populate("userId", "first_name last_name phone")
-                .sort({ createdAt: sortDir })
-                .skip(skip)
-                .limit(limitNum)
-                .lean(),
-            Booking.countDocuments(filter),
-        ]);
+        const data = await cacheAside(cacheKey, StoreTTL.BOOKING_HISTORY, async () => {
+            const filter = {
+                storeId: new mongoose.Types.ObjectId(storeId),
+                status: { $in: [BOOKING_STATUS.DELIVERED, BOOKING_STATUS.CANCELLED] },
+            };
+
+            const [bookings, total] = await Promise.all([
+                Booking.find(filter)
+                    .select(STORE_BOOKING_FIELDS.join(" "))
+                    .populate("userId", "first_name last_name phone")
+                    .populate("pickup.assignment.driverId", "first_name last_name phone")
+                    .populate("delivery.assignment.driverId", "first_name last_name phone")
+                    .sort({ createdAt: sortDir })
+                    .skip(skip)
+                    .limit(limitNum)
+                    .lean(),
+                Booking.countDocuments(filter),
+            ]);
+
+            return {
+                bookings,
+                pagination: buildPagination(pageNum, limitNum, total),
+            };
+        });
 
         return sendResponse({
             res,
             message: "Booking history fetched successfully.",
-            data: {
-                bookings,
-                pagination: buildPagination(pageNum, limitNum, total),
-            },
+            data,
         });
     } catch (err) {
         logger.error("Store Get History Error:", err);
@@ -278,43 +382,31 @@ export const getBookingHistory = async (req, res) => {
     }
 };
 
-// DASHBOARD
+// DASHBOARD (cached)
 export const getDashboard = async (req, res) => {
     try {
         const storeId = req.user.auth_id;
+        const cacheKey = StoreKeys.dashboard(storeId);
 
-        const [store, counts] = await Promise.all([
-            Store.findById(storeId)
-                .select("store_name is_online current_booking_count max_booking_capacity rating")
-                .lean(),
-            Booking.aggregate([
-                {
-                    $match: {
-                        storeId: new mongoose.Types.ObjectId(storeId),
-                    },
-                },
-                {
-                    $group: {
-                        _id: "$status",
-                        count: { $sum: 1 },
-                    },
-                },
-            ]),
-        ]);
+        const data = await cacheAside(cacheKey, StoreTTL.DASHBOARD, async () => {
+            const [store, counts] = await Promise.all([
+                Store.findById(storeId)
+                    .select("store_name is_online current_booking_count max_booking_capacity rating")
+                    .lean(),
+                Booking.aggregate([
+                    { $match: { storeId: new mongoose.Types.ObjectId(storeId) } },
+                    { $group: { _id: "$status", count: { $sum: 1 } } },
+                ]),
+            ]);
 
-        if (!store) {
-            return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
-        }
+            if (!store) return null;
 
-        const statusCounts = counts.reduce((acc, { _id, count }) => {
-            acc[_id] = count;
-            return acc;
-        }, {});
+            const statusCounts = counts.reduce((acc, { _id, count }) => {
+                acc[_id] = count;
+                return acc;
+            }, {});
 
-        return sendResponse({
-            res,
-            message: "Dashboard fetched successfully.",
-            data: {
+            return {
                 store,
                 stats: {
                     incoming: (statusCounts[BOOKING_STATUS.STORE_ASSIGNED] || 0) +
@@ -322,8 +414,8 @@ export const getDashboard = async (req, res) => {
                         (statusCounts[BOOKING_STATUS.DRIVER_ARRIVED] || 0) +
                         (statusCounts[BOOKING_STATUS.PICKED_UP] || 0) +
                         (statusCounts[BOOKING_STATUS.AT_STORE] || 0),
-                    stored: (statusCounts[BOOKING_STATUS.STORED] || 0) +
-                        (statusCounts[BOOKING_STATUS.RETURN_REQUESTED] || 0) +
+                    stored: (statusCounts[BOOKING_STATUS.STORED] || 0),
+                    returned: (statusCounts[BOOKING_STATUS.RETURN_REQUESTED] || 0) +
                         (statusCounts[BOOKING_STATUS.RETURN_DRIVER_ASSIGNED] || 0),
                     delivered: statusCounts[BOOKING_STATUS.DELIVERED] || 0,
                     cancelled: (statusCounts[BOOKING_STATUS.CANCELLED] || 0) +
@@ -331,14 +423,23 @@ export const getDashboard = async (req, res) => {
                     capacityUsed: store.current_booking_count,
                     capacityAvailable: Math.max(0, store.max_booking_capacity - store.current_booking_count),
                 },
-            },
+            };
+        });
+
+        if (!data) {
+            return sendError(res, "Store not found.", STATUS_CODES.NOT_FOUND);
+        }
+
+        return sendResponse({
+            res,
+            message: "Dashboard fetched successfully.",
+            data,
         });
     } catch (err) {
         logger.error("Store Dashboard Error:", err);
         return sendError(res, "Failed to fetch dashboard.");
     }
 };
-
 
 // VERIFY RETURN OTP
 export const verifyReturnOtp = async (req, res) => {
@@ -364,14 +465,9 @@ export const verifyReturnOtp = async (req, res) => {
             .lean();
 
         if (!booking) {
-            return sendError(
-                res,
-                "Booking not found or not ready for return handover.",
-                STATUS_CODES.NOT_FOUND
-            );
+            return sendError(res, "Booking not found or not ready for return handover.", STATUS_CODES.NOT_FOUND);
         }
 
-        // Correctly read from delivery.assignment.returnOtp
         const returnOtp = booking.delivery?.assignment?.returnOtp;
 
         const isValid =
@@ -391,7 +487,7 @@ export const verifyReturnOtp = async (req, res) => {
                 $set: {
                     status: BOOKING_STATUS.OUT_FOR_RETURN,
                     "storage.releasedAt": now,
-                    "delivery.assignment.returnOtp": null, // Clear used OTP
+                    "delivery.assignment.returnOtp": null,
                     lastStatusUpdatedAt: now,
                 },
                 $push: {
@@ -409,24 +505,18 @@ export const verifyReturnOtp = async (req, res) => {
 
         const userId = updated.userId.toString();
 
-        // 1. Decrement Store Capacity
         await decrementStoreCapacity(storeId);
 
-        // 2. Clear cache
-        await invalidateBookingCache(userId, booking_id).catch(() => { });
+        await Promise.allSettled([
+            invalidateBookingCache(userId, booking_id),
+            invalidateStoreBookingCache(storeId, booking_id),
+        ]);
 
-        // 3. Emit Socket Event
         try {
             const io = safeGetIO();
             if (io) {
                 const driverId = updated.delivery?.assignment?.driverId?.toString();
-                emitBookingOutForReturn(
-                    io,
-                    booking_id,
-                    userId,
-                    driverId,
-                    now
-                );
+                emitBookingOutForReturn(io, booking_id, userId, driverId, now);
             }
         } catch (socketErr) {
             logger.debug(`[Store:Socket] Socket emission skipped: ${socketErr.message}`);

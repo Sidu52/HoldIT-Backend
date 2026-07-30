@@ -6,7 +6,6 @@ import { addJobToQueue } from "../../services/jobService.js";
 import {
     DRIVER_ASSIGN_QUEUE,
     DRIVER_JOB_NAMES,
-    BOOKING_CACHE,
     BOOKING_LIMITS,
     CANCELLABLE_STATUSES,
     RETURN_REQUESTABLE_STATUSES,
@@ -18,8 +17,6 @@ import {
 } from "../../constants/user/booking.js";
 import {
     invalidateBookingCache,
-    getCachedData,
-    setCacheData,
     verifyUserForBooking,
     verifyServiceability,
     checkActiveBookingLimit,
@@ -45,6 +42,9 @@ import logger from "../../utils/logger.js";
 import { getIO } from "../../src/socket/index.js";
 import { emitBookingCreated, emitBookingStoreAssigned, emitStoreIncomingBooking, emitBookingReturnRequested } from "../../src/socket/emitters/booking.emitter.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
+import { getCache, setCache } from "../../constants/redis/redisOperation.js";
+import { BookingKeys, BookingTTL } from "../../constants/redis/booking.keys.js";
+import Store from "../../models/Store.js";
 
 /*
 * Schedule a pickup for a user
@@ -175,7 +175,7 @@ export const schedulePickup = async (req, res) => {
                     luggage: { ...luggage, totalCount },
                     pickup: {
                         scheduledAt: new Date(),
-                        notes: notes ?? "",
+                        "assignment.notes": notes ?? "",
                     },
                     timeline: [
                         createTimelineEntry(
@@ -297,8 +297,8 @@ export const getMyBookings = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
         const sortDir = sort_order === "asc" ? 1 : -1;
 
-        const cacheKey = BOOKING_CACHE.LIST_KEY(userId, pageNum, limitNum, status, sort_order);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = BookingKeys.list(userId, pageNum, limitNum, status, sort_order);
+        const cached = await getCache(cacheKey);
         if (cached) {
             return sendResponse({ res, message: BOOKING_MESSAGES.BOOKINGS_FETCHED, data: cached });
         }
@@ -321,7 +321,7 @@ export const getMyBookings = async (req, res) => {
             pagination: buildPagination(pageNum, limitNum, total),
         };
 
-        await setCacheData(cacheKey, responseData, BOOKING_CACHE.LIST_TTL);
+        await setCache(cacheKey, responseData, BookingTTL.LIST);
 
         return sendResponse({
             res,
@@ -340,8 +340,8 @@ export const getBookingById = async (req, res) => {
         const userId = req.user.auth_id;
         const { booking_id } = req.params;
 
-        const cacheKey = BOOKING_CACHE.DETAIL_KEY(userId, booking_id);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = BookingKeys.detail(userId, booking_id);
+        const cached = await getCache(cacheKey);
         if (cached) {
             return sendResponse({ res, message: BOOKING_MESSAGES.BOOKING_FETCHED, data: cached });
         }
@@ -352,7 +352,7 @@ export const getBookingById = async (req, res) => {
             return sendError(res, BOOKING_MESSAGES.BOOKING_NOT_FOUND, STATUS_CODES.NOT_FOUND);
         }
 
-        await setCacheData(cacheKey, booking, BOOKING_CACHE.DETAIL_TTL);
+        await setCache(cacheKey, booking, BookingTTL.DETAIL);
 
         return sendResponse({ res, message: BOOKING_MESSAGES.BOOKING_FETCHED, data: booking });
     } catch (err) {
@@ -479,8 +479,8 @@ export const getActiveBookings = async (req, res) => {
     try {
         const userId = req.user.auth_id;
 
-        const cacheKey = BOOKING_CACHE.ACTIVE_KEY(userId);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = BookingKeys.active(userId);
+        const cached = await getCache(cacheKey);
         if (cached) {
             return sendResponse({ res, message: BOOKING_MESSAGES.ACTIVE_FETCHED, data: cached });
         }
@@ -495,7 +495,7 @@ export const getActiveBookings = async (req, res) => {
 
         const responseData = { bookings, total: bookings.length };
 
-        await setCacheData(cacheKey, responseData, BOOKING_CACHE.ACTIVE_TTL);
+        await setCache(cacheKey, responseData, BookingTTL.ACTIVE);
 
         return sendResponse({ res, message: BOOKING_MESSAGES.ACTIVE_FETCHED, data: responseData });
     } catch (err) {
@@ -520,8 +520,8 @@ export const getBookingHistory = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
         const sortDir = sort_order === "asc" ? 1 : -1;
 
-        const cacheKey = BOOKING_CACHE.HISTORY_KEY(userId, pageNum, limitNum, sort_order);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = BookingKeys.history(userId, pageNum, limitNum, sort_order);
+        const cached = await getCache(cacheKey);
         if (cached) {
             return sendResponse({ res, message: BOOKING_MESSAGES.HISTORY_FETCHED, data: cached });
         }
@@ -552,7 +552,7 @@ export const getBookingHistory = async (req, res) => {
             pagination: buildPagination(pageNum, limitNum, total),
         };
 
-        await setCacheData(cacheKey, responseData, BOOKING_CACHE.HISTORY_TTL);
+        await setCache(cacheKey, responseData, BookingTTL.HISTORY);
 
         return sendResponse({ res, message: BOOKING_MESSAGES.HISTORY_FETCHED, data: responseData });
     } catch (err) {
@@ -572,8 +572,20 @@ export const requestReturn = async (req, res) => {
             return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
         }
 
+        const response = await Booking.findOne({ _id: booking_id, userId })
+            .select("status userId storeId")
+            .lean();
+
+        if (!response) {
+            return sendError(res, BOOKING_MESSAGES.BOOKING_NOT_FOUND, STATUS_CODES.NOT_FOUND);
+        }
+
+        if (!response.storeId) {
+            return sendError(res, BOOKING_MESSAGES.STORE_NOT_ASSIGNED, STATUS_CODES.NOT_FOUND);
+        }
+
         // Validate Location under 5km from store
-        const store = await Store.findById(booking.storeId).select("location");
+        const store = await Store.findById(response.storeId).select("location");
         const distanceKm = parseFloat((store.location.coordinates[0] - returnLocation.lng) ** 2 + (store.location.coordinates[1] - returnLocation.lat) ** 2);
         if (distanceKm > 5000) {
             return sendError(
@@ -611,7 +623,6 @@ export const requestReturn = async (req, res) => {
         }
 
         // Re Assign Driver
-
         return sendResponse({
             res,
             message: BOOKING_MESSAGES.RETURN_REQUESTED,
@@ -619,10 +630,11 @@ export const requestReturn = async (req, res) => {
                 bookingId: booking._id,
                 status: booking.status,
             },
+            statusCode: STATUS_CODES.CREATED,
         });
     } catch (err) {
         logger.error("[requestReturnV2] Error:", err);
-        return sendError(res, BOOKING_MESSAGES.RETURN_FAILED);
+        return sendError(res, "Failed to request return.");
     }
 };
 

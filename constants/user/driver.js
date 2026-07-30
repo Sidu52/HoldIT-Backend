@@ -1,12 +1,6 @@
 import { ACCOUNT_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
 
-export const DRIVER_CACHE = {
-    DETAIL_KEY: (driverId) => `driver:user_view:${driverId}`,
-    REVIEWS_KEY: (driverId, page, limit) => `driver:reviews:${driverId}:${page}:${limit}`,
-
-    DETAIL_TTL: 300,
-    REVIEWS_TTL: 180,
-};
+// Removed DRIVER_CACHE (Migrated to constants/redis/driver.keys.js)
 
 export const DRIVER_VISIBILITY_FILTER = {
     verification_status: VERIFICATION_STATUS.VERIFIED,

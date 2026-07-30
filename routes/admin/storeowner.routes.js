@@ -19,31 +19,26 @@ import {
     updateStoreOwnerSchema,
     updateOwnerStatusSchema,
 } from "../../validations/admin/store_owner.validation.js";
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
 const router = express.Router();
-router.use(authMiddleware);
-
-const VIEW_ROLES = [
+router.use(authMiddleware,
+  roleMiddleware(
     USER_ROLES.SUPER_ADMIN,
     USER_ROLES.ADMIN,
     USER_ROLES.OPERATION_MANAGER,
-];
-
-const MODIFY_ROLES = [
-    USER_ROLES.SUPER_ADMIN,
-    USER_ROLES.ADMIN,
-];
+  ),
+  checkAdminAccountStatus
+);
 
 router.get("/",
     apiLimiter,
-    roleMiddleware(...VIEW_ROLES),
     validate(listStoreOwnersSchema, "query"),
     getStoreOwners
 );
 
 router.get("/:store_owner_id",
     apiLimiter,
-    roleMiddleware(...VIEW_ROLES),
     validate(storeOwnerIdSchema, "params"),
     getStoreOwnerById
 );
@@ -51,7 +46,6 @@ router.get("/:store_owner_id",
 // POST
 router.post("/",
     apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
     validate(createStoreOwnerSchema, "body"),
     createStoreOwner
 );
@@ -59,7 +53,6 @@ router.post("/",
 // PUT
 router.put("/:store_owner_id",
     apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
     validate(storeOwnerIdSchema, "params"),
     validate(updateStoreOwnerSchema, "body"),
     updateStoreOwner
@@ -68,7 +61,6 @@ router.put("/:store_owner_id",
 // PATCH
 router.patch("/:store_owner_id/status",
     apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
     validate(storeOwnerIdSchema, "params"),
     validate(updateOwnerStatusSchema, "body"),
     updateStoreOwnerStatus
@@ -76,7 +68,6 @@ router.patch("/:store_owner_id/status",
 
 router.delete("/bulk-delete",
     apiLimiter,
-    roleMiddleware(...MODIFY_ROLES),
     bulkDeactivateStoreOwners
 );
 

@@ -2,35 +2,21 @@ import StoreOwner from "../../models/StoreOwner.js";
 import Store from "../../models/Store.js";
 import Booking from "../../models/Booking.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
-import { getCache, setCache, deleteCache, deleteManyCache, deleteByPattern, buildCacheKey } from "../../utils/cache.js";
-import { clearAuthCookies } from "../../utils/token.js";
-import { ACCOUNT_STATUS, STATUS_CODES, VERIFICATION_STATUS, CACHE_TTL } from "../../utils/constants.js";
+import { ACCOUNT_STATUS, STATUS_CODES, VERIFICATION_STATUS } from "../../utils/constants.js";
 import { escapeRegex } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
+import { cacheAside, deleteCache, deleteByPattern, deleteManyCache } from "../../constants/redis/redisOperation.js";
+import { StoreOwnerKeys, StoreOwnerTTL } from "../../constants/redis/storeOwner.keys.js";
+import { AuthKeys } from "../../constants/redis/auth.keys.js";
+import { NS } from "../../constants/redis/namespaces.js";
 
-const EXCLUDED_FIELDS = "-password_hash -__v";
-
-// Key Builders
-const ownerKey = (id) => buildCacheKey("store_owner", { id: String(id) });
-const ownerListPattern = "store_owners:*";
-const storeListPattern = "stores:*";
+const EXCLUDED_FIELDS = "-__v -password_hash";
+const MAX_BULK_SIZE = 50;
 
 // CREATE
 export const createStoreOwner = async (req, res) => {
     try {
         const { first_name, last_name, phone, email, gender, date_of_birth, address } = req.body;
-
-        const conflict = await StoreOwner.findOne({
-            $or: [{ phone }, ...(email ? [{ email }] : [])],
-        }).select("_id phone").lean();
-
-        if (conflict) {
-            return sendError(
-                res,
-                conflict.phone === phone ? "Account with this phone already exists" : "Account with this email already exists",
-                STATUS_CODES.CONFLICT
-            );
-        }
 
         const owner = await StoreOwner.create({
             first_name: first_name.trim(),
@@ -44,7 +30,7 @@ export const createStoreOwner = async (req, res) => {
             verification_status: VERIFICATION_STATUS.VERIFIED,
         });
 
-        await deleteByPattern(ownerListPattern);
+        await deleteByPattern(StoreOwnerKeys.listPattern());
         return sendResponse({ res, statusCode: STATUS_CODES.CREATED, message: "Store owner created successfully", data: { owner } });
     } catch (err) {
         if (err.code === 11000) {
@@ -67,43 +53,33 @@ export const getStoreOwners = async (req, res) => {
         const pageNum = Number(page);
         const limitNum = Number(limit);
 
-        const cacheKey = buildCacheKey("store_owners", {
-            page: pageNum, limit: limitNum,
-            account_status, verification_status,
-            search: search || "none", sort_by, sort_order,
+        const cacheKey = StoreOwnerKeys.list({ page: pageNum, limit: limitNum, account_status, verification_status, search, sort_by, sort_order });
+
+        const responseData = await cacheAside(cacheKey, StoreOwnerTTL.LIST, async () => {
+            const filter = {
+                ...(account_status && { account_status }),
+                ...(verification_status && { verification_status }),
+            };
+            if (search) {
+                const r = { $regex: escapeRegex(search.trim()), $options: "i" };
+                filter.$or = [{ first_name: r }, { last_name: r }, { phone: r }, { email: r }];
+            }
+
+            const sort = { [sort_by]: sort_order === "asc" ? 1 : -1 };
+            const skip = (pageNum - 1) * limitNum;
+
+            const [owners, total] = await Promise.all([
+                StoreOwner.find(filter).select(EXCLUDED_FIELDS).sort(sort).skip(skip).limit(limitNum).lean(),
+                StoreOwner.countDocuments(filter),
+            ]);
+
+            const totalPages = Math.ceil(total / limitNum);
+            return {
+                owners,
+                pagination: { currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum, hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1 },
+            };
         });
 
-        const cached = await getCache(cacheKey);
-        if (cached) return sendResponse({ res, message: "Store owners fetched successfully", data: cached });
-
-        const filter = {
-            ...(account_status && { account_status }),
-            ...(verification_status && { verification_status }),
-        };
-
-        if (search) {
-            const r = { $regex: escapeRegex(search.trim()), $options: "i" };
-            filter.$or = [{ first_name: r }, { last_name: r }, { phone: r }, { email: r }];
-        }
-
-        const sort = { [sort_by]: sort_order === "asc" ? 1 : -1 };
-        const skip = (pageNum - 1) * limitNum;
-
-        const [owners, total] = await Promise.all([
-            StoreOwner.find(filter).select(EXCLUDED_FIELDS).sort(sort).skip(skip).limit(limitNum).lean(),
-            StoreOwner.countDocuments(filter),
-        ]);
-
-        const totalPages = Math.ceil(total / limitNum);
-        const responseData = {
-            owners,
-            pagination: {
-                currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum,
-                hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1,
-            },
-        };
-
-        await setCache(cacheKey, responseData, CACHE_TTL.LIST);
         return sendResponse({ res, message: "Store owners fetched successfully", data: responseData });
     } catch (err) {
         logger.error("[getStoreOwners] Error:", err);
@@ -111,33 +87,29 @@ export const getStoreOwners = async (req, res) => {
     }
 };
 
-// GET BY ID
+// GET BY ID (admin composed view — owner + stores + counts, NOT the same cache as self-profile)
 export const getStoreOwnerById = async (req, res) => {
     try {
         const { store_owner_id } = req.params;
-        const cacheKey = ownerKey(store_owner_id);
 
-        const cached = await getCache(cacheKey);
-        if (cached) return sendResponse({ res, message: "Store owner fetched successfully", data: cached });
+        const responseData = await cacheAside(StoreOwnerKeys.adminDetail(store_owner_id), StoreOwnerTTL.ADMIN_DETAIL, async () => {
+            const [owner, stores] = await Promise.all([
+                StoreOwner.findById(store_owner_id).select(EXCLUDED_FIELDS).lean(),
+                Store.find({ store_owner_id }).select("store_name is_online account_status verification_status location").lean(),
+            ]);
+            if (!owner) return null;
 
-        const [owner, stores] = await Promise.all([
-            StoreOwner.findById(store_owner_id).select(EXCLUDED_FIELDS).lean(),
-            Store.find({ store_owner_id }).select("store_name is_online account_status verification_status location").lean(),
-        ]);
+            const activeStoreCount = stores.filter((s) => s.account_status === ACCOUNT_STATUS.ACTIVE).length;
+            return {
+                ...owner,
+                stores,
+                store_count: stores.length,
+                activeStoreCount,
+                inactiveStoreCount: stores.length - activeStoreCount,
+            };
+        });
 
-        if (!owner) return sendError(res, "Store owner not found", STATUS_CODES.NOT_FOUND);
-
-        const activeStoreCount = stores.filter((s) => s.account_status === ACCOUNT_STATUS.ACTIVE).length;
-
-        const responseData = {
-            ...owner,
-            stores,
-            store_count: stores.length,
-            activeStoreCount,
-            inactiveStoreCount: stores.length - activeStoreCount,
-        };
-
-        await setCache(cacheKey, responseData, CACHE_TTL.DETAIL);
+        if (!responseData) return sendError(res, "Store owner not found", STATUS_CODES.NOT_FOUND);
         return sendResponse({ res, message: "Store owner fetched successfully", data: responseData });
     } catch (err) {
         logger.error("[getStoreOwnerById] Error:", err);
@@ -152,15 +124,11 @@ export const updateStoreOwner = async (req, res) => {
         const { auth_id } = req.user;
         const { first_name, last_name, phone, email, gender, date_of_birth, address } = req.body;
 
-        const owner = await StoreOwner.findById(store_owner_id).select("_id phone email").lean();
-        if (!owner) return sendError(res, "Store owner not found", STATUS_CODES.NOT_FOUND);
-
         if (phone || email) {
             const conflict = await StoreOwner.findOne({
                 _id: { $ne: store_owner_id },
                 $or: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])],
             }).select("_id phone email").lean();
-
             if (conflict) {
                 return sendError(
                     res,
@@ -181,21 +149,30 @@ export const updateStoreOwner = async (req, res) => {
             ...(address && { address: address.trim() }),
         };
 
-        const updatedOwner = await StoreOwner.findByIdAndUpdate(
-            store_owner_id, { $set: updateFields }, { new: true, runValidators: true }
-        ).select(EXCLUDED_FIELDS).lean();
+        let updatedOwner;
+        try {
+            updatedOwner = await StoreOwner.findByIdAndUpdate(
+                store_owner_id, { $set: updateFields }, { new: true, runValidators: true }
+            ).select(EXCLUDED_FIELDS).lean();
+        } catch (err) {
+            if (err.code === 11000) {
+                const field = Object.keys(err.keyPattern || {})[0] ?? "field";
+                return sendError(res, `${field} already in use`, STATUS_CODES.CONFLICT);
+            }
+            throw err;
+        }
 
-        await Promise.all([
-            deleteCache(ownerKey(store_owner_id)),
-            deleteByPattern(ownerListPattern),
+        if (!updatedOwner) return sendError(res, "Store owner not found", STATUS_CODES.NOT_FOUND);
+
+        const results = await Promise.allSettled([
+            deleteCache(StoreOwnerKeys.profile(store_owner_id)),
+            deleteCache(StoreOwnerKeys.adminDetail(store_owner_id)),
+            deleteByPattern(StoreOwnerKeys.listPattern()),
         ]);
+        results.forEach((r) => r.status === "rejected" && logger.warn("[updateStoreOwner] cache sync failed:", r.reason?.message));
 
         return sendResponse({ res, message: "Store owner updated successfully", data: updatedOwner });
     } catch (err) {
-        if (err.code === 11000) {
-            const field = Object.keys(err.keyPattern || {})[0] ?? "field";
-            return sendError(res, `${field} already in use`, STATUS_CODES.CONFLICT);
-        }
         logger.error("[updateStoreOwner] Error:", err);
         return sendError(res, "Failed to update store owner");
     }
@@ -209,17 +186,18 @@ const hasActiveBookings = async (storeIds) => {
 };
 
 const deactivateOwnerStores = async (storeIds, auth_id) => {
-    if (!storeIds.length) return null;
+    if (!storeIds.length) return;
     await Store.updateMany(
         { _id: { $in: storeIds } },
         { $set: { is_online: false, account_status: ACCOUNT_STATUS.INACTIVE, store_deactivated_reason: "Owner account deactivated", deactivated_at: new Date(), deactivated_by: auth_id } }
     );
-    await Promise.all(storeIds.map((storeId) =>
-        Promise.all([
-            deleteByPattern(`refresh:${storeId}:*`),
-            deleteByPattern(`access:${storeId}:*`),
+    const results = await Promise.allSettled(
+        storeIds.flatMap((storeId) => [
+            deleteByPattern(AuthKeys.refreshTokenPattern(NS.STORE, storeId)),
+            deleteByPattern(AuthKeys.accessTokenPattern(NS.STORE, storeId)),
         ])
-    ));
+    );
+    results.forEach((r) => r.status === "rejected" && logger.warn("[deactivateOwnerStores] token revocation failed:", r.reason?.message));
 };
 
 // UPDATE STATUS
@@ -235,6 +213,7 @@ export const updateStoreOwnerStatus = async (req, res) => {
 
         const isDeactivation = account_status === ACCOUNT_STATUS.BLOCKED || account_status === ACCOUNT_STATUS.INACTIVE;
 
+        // NOTE: TOCTOU window here — see note below the code block.
         if (isDeactivation) {
             const storeIds = (await Store.find({ store_owner_id }).select("_id").lean()).map((s) => s._id);
             if (await hasActiveBookings(storeIds)) {
@@ -253,15 +232,22 @@ export const updateStoreOwnerStatus = async (req, res) => {
             },
         }, { new: true }).select(EXCLUDED_FIELDS).lean();
 
-        await Promise.all([
-            deleteCache(ownerKey(store_owner_id)),
-            deleteByPattern(ownerListPattern),
-            isDeactivation && deleteByPattern(storeListPattern),
-        ].filter(Boolean));
-
+        const sideEffects = [
+            deleteCache(StoreOwnerKeys.profile(store_owner_id)),
+            deleteCache(StoreOwnerKeys.adminDetail(store_owner_id)),
+            deleteByPattern(StoreOwnerKeys.listPattern()),
+        ];
         if (isDeactivation) {
-            clearAuthCookies(res);
+            sideEffects.push(
+                deleteByPattern(StoreOwnerKeys.listPattern()), // stores' account_status changed too, but that's a Store cache — see note
+                deleteByPattern(AuthKeys.refreshTokenPattern(NS.STORE_OWNER, store_owner_id)), // revoke the OWNER's own session — was missing entirely
+            );
         }
+        const results = await Promise.allSettled(sideEffects);
+        results.forEach((r) => r.status === "rejected" && logger.warn("[updateStoreOwnerStatus] side effect failed:", r.reason?.message));
+
+        // clearAuthCookies(res) REMOVED — that clears the ADMIN's own cookies, not the store owner's.
+        // Session termination for the store owner happens via the refresh-token revocation above.
 
         return sendResponse({ res, message: "Store owner status updated successfully", data: updatedOwner });
     } catch (err) {
@@ -279,8 +265,12 @@ export const bulkDeactivateStoreOwners = async (req, res) => {
         if (!Array.isArray(ids) || ids.length === 0) {
             return sendError(res, "No store owner IDs provided", STATUS_CODES.BAD_REQUEST);
         }
+        if (ids.length > MAX_BULK_SIZE) {
+            return sendError(res, `Cannot process more than ${MAX_BULK_SIZE} accounts at once`, STATUS_CODES.BAD_REQUEST);
+        }
 
-        const activeOwners = await StoreOwner.find({ _id: { $in: ids }, account_status: ACCOUNT_STATUS.ACTIVE }).select("_id").lean();
+        const uniqueIds = [...new Set(ids.map(String))];
+        const activeOwners = await StoreOwner.find({ _id: { $in: uniqueIds }, account_status: ACCOUNT_STATUS.ACTIVE }).select("_id").lean();
         if (!activeOwners.length) return sendError(res, "No active store owners found with the provided IDs", STATUS_CODES.NOT_FOUND);
 
         const activeOwnerIds = activeOwners.map((o) => o._id);
@@ -298,20 +288,19 @@ export const bulkDeactivateStoreOwners = async (req, res) => {
             deactivateOwnerStores(storeIds, auth_id),
         ]);
 
-        await Promise.all([
-            deleteManyCache(activeOwnerIds.map((id) => ownerKey(id))),
-            deleteByPattern(ownerListPattern),
-            storeIds.length && deleteByPattern(storeListPattern),
-        ].filter(Boolean));
-
-        if (ownerResult.modifiedCount > 0) {
-            clearAuthCookies(res);
-        }
+        const sideEffects = [
+            deleteManyCache(activeOwnerIds.map((id) => StoreOwnerKeys.profile(id))),
+            deleteManyCache(activeOwnerIds.map((id) => StoreOwnerKeys.adminDetail(id))),
+            deleteByPattern(StoreOwnerKeys.listPattern()),
+            ...activeOwnerIds.map((id) => deleteByPattern(AuthKeys.refreshTokenPattern(NS.STORE_OWNER, id))),
+        ];
+        const results = await Promise.allSettled(sideEffects);
+        results.forEach((r) => r.status === "rejected" && logger.warn("[bulkDeactivateStoreOwners] side effect failed:", r.reason?.message));
 
         return sendResponse({
             res,
             message: `${ownerResult.modifiedCount} store owner(s) deactivated successfully`,
-            data: { requested: ids.length, deactivated: ownerResult.modifiedCount, alreadyInactive: ids.length - activeOwners.length },
+            data: { requested: uniqueIds.length, deactivated: ownerResult.modifiedCount, alreadyInactive: uniqueIds.length - activeOwners.length },
         });
     } catch (err) {
         logger.error("[bulkDeactivateStoreOwners] Error:", err);

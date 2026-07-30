@@ -1,4 +1,4 @@
-import redis, { del } from "../../services/redisService.js";
+import { deleteCache } from "../../constants/redis/redisOperation.js";
 import Driver from "../../models/Driver.js";
 import { addDriverToRedis, removeDriverFromRedis, updateDriverLocation as updateRedisLocation } from "../../services/driverGeoService.js";
 import logger from "../../utils/logger.js";
@@ -10,6 +10,7 @@ import {
   emitAdminDriverLocationUpdated,
   emitAdminDriverStatusChanged,
 } from "../../src/socket/emitters/driver.emitter.js";
+import { DriverKeys } from "../../constants/redis/driver.keys.js";
 
 const safeGetIO = () => {
   try {
@@ -83,7 +84,7 @@ export const updateDriverInfo = asyncHandler(async (req, res) => {
     return sendError(res, "Failed to update profile", STATUS_CODES.INTERNAL_SERVER_ERROR);
   }
   // Invalidate profile cache
-  await del(`driver:profile:${driverId}`);
+  await deleteCache(DriverKeys.profile(driverId));
   return sendResponse({
     res,
     message: "Profile updated successfully",

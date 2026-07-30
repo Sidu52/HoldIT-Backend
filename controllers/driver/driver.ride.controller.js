@@ -1,14 +1,10 @@
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES, BOOKING_STATUS } from "../../utils/constants.js";
 import {
-    DRIVER_RIDE_CACHE,
     DRIVER_RIDE_SELECT,
     DRIVER_RIDE_MESSAGES,
 } from "../../constants/driver/driver.ride.js";
 import {
-    getCachedData,
-    setCacheData,
-    invalidateDriverRideCache,
     getAssignedRides,
     getDriverActiveRide,
     findDriverRide,
@@ -25,11 +21,12 @@ import {
     processCompleteDelivery,
     processCompletePickupAtStore,
 } from "../../helpers/driver/driverRideHelper.js";
-
-
+import { invalidateDriverCache } from "../../constants/redis/invalidate/driver.invalidate.js" 
+import { getCache, setCache, deleteCache } from "../../constants/redis/redisOperation.js";
+import { DriverKeys, DriverTTL } from "../../constants/redis/driver.keys.js";
+import { BookingKeys } from "../../constants/redis/booking.keys.js";
 import { getOfferStatus } from "../../helpers/user/driverAssignHelper.js";
 import { invalidateBookingCache } from "../../helpers/user/bookingHelper.js";
-import { REDIS_KEYS } from "../../constants/user/booking.js";
 import redis from "../../services/redisService.js";
 import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
@@ -60,7 +57,7 @@ export const getPendingOfferController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
 
-        const offerKey = REDIS_KEYS.DRIVER_OFFERED(driverId);
+        const offerKey = DriverKeys.offered(driverId);
         const bookingId = await redis.get(offerKey);
 
         if (!bookingId) {
@@ -89,7 +86,7 @@ export const getPendingOfferController = async (req, res) => {
             return sendError(res, "Booking not found.", STATUS_CODES.NOT_FOUND);
         }
 
-        const offerTTL = await redis.ttl(REDIS_KEYS.BOOKING_OFFER(bookingId));
+        const offerTTL = await redis.ttl(BookingKeys.offer(bookingId));
 
         return sendResponse({
             res,
@@ -113,8 +110,8 @@ export const getPendingOfferController = async (req, res) => {
 export const getAssignedRidesController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
-        const cacheKey = DRIVER_RIDE_CACHE.ASSIGNED_KEY(driverId);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = DriverKeys.assigned(driverId);
+        const cached = await getCache(cacheKey);
 
         if (cached) {
             return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.ASSIGNED_RIDES_FETCHED, data: cached });
@@ -123,7 +120,7 @@ export const getAssignedRidesController = async (req, res) => {
         const rides = await getAssignedRides(driverId, DRIVER_RIDE_SELECT.LIST);
         const responseData = { rides, total: rides.length };
 
-        await setCacheData(cacheKey, responseData, DRIVER_RIDE_CACHE.ASSIGNED_TTL);
+        await setCache(cacheKey, responseData, DriverTTL.ASSIGNED);
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.ASSIGNED_RIDES_FETCHED, data: responseData });
     } catch (err) {
@@ -136,8 +133,8 @@ export const getAssignedRidesController = async (req, res) => {
 export const getActiveRideController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
-        const cacheKey = DRIVER_RIDE_CACHE.ACTIVE_KEY(driverId);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = DriverKeys.active(driverId);
+        const cached = await getCache(cacheKey);
 
         if (cached) {
             return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.ACTIVE_RIDE_FETCHED, data: cached });
@@ -149,7 +146,7 @@ export const getActiveRideController = async (req, res) => {
             return sendError(res, DRIVER_RIDE_MESSAGES.NO_ACTIVE_RIDE, STATUS_CODES.NOT_FOUND);
         }
 
-        await setCacheData(cacheKey, ride, DRIVER_RIDE_CACHE.ACTIVE_TTL);
+        await setCache(cacheKey, ride, DriverTTL.ACTIVE);
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.ACTIVE_RIDE_FETCHED, data: ride });
     } catch (err) {
@@ -164,8 +161,8 @@ export const getRideDetailsController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
 
-        const cacheKey = DRIVER_RIDE_CACHE.RIDE_DETAIL_KEY(driverId, booking_id);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = DriverKeys.rideDetail(driverId, booking_id);
+        const cached = await getCache(cacheKey);
 
         if (cached) {
             return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.RIDE_DETAIL_FETCHED, data: cached });
@@ -177,7 +174,7 @@ export const getRideDetailsController = async (req, res) => {
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_FOUND, STATUS_CODES.NOT_FOUND);
         }
 
-        await setCacheData(cacheKey, ride, DRIVER_RIDE_CACHE.DETAIL_TTL);
+        await setCache(cacheKey, ride, DriverTTL.DETAIL);
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.RIDE_DETAIL_FETCHED, data: ride });
     } catch (err) {
@@ -201,8 +198,8 @@ export const getRideHistoryController = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
         const sortDir = sort_order === "asc" ? 1 : -1;
 
-        const cacheKey = DRIVER_RIDE_CACHE.HISTORY_KEY(driverId, pageNum, limitNum);
-        const cached = await getCachedData(cacheKey);
+        const cacheKey = DriverKeys.history(driverId, pageNum, limitNum);
+        const cached = await getCache(cacheKey);
 
         if (cached) {
             return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.HISTORY_FETCHED, data: cached });
@@ -211,7 +208,7 @@ export const getRideHistoryController = async (req, res) => {
         const { rides, total } = await getDriverRideHistory(driverId, skip, limitNum, sortDir);
         const responseData = { rides, pagination: buildPagination(pageNum, limitNum, total) };
 
-        await setCacheData(cacheKey, responseData, DRIVER_RIDE_CACHE.HISTORY_TTL);
+        await setCache(cacheKey, responseData, DriverTTL.HISTORY);
 
         return sendResponse({ res, message: DRIVER_RIDE_MESSAGES.HISTORY_FETCHED, data: responseData });
     } catch (err) {
@@ -247,7 +244,7 @@ export const acceptRideController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
         emitDriverOfferRemoved(safeGetIO(), driverId, {
@@ -330,7 +327,7 @@ export const arriveAtPickupController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
@@ -375,7 +372,7 @@ export const completePickupController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
@@ -419,7 +416,7 @@ export const arriveAtStoreController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
@@ -458,7 +455,7 @@ export const arriveAtStoreForReturnController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
@@ -507,7 +504,7 @@ export const completePickupAtStoreController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
@@ -551,7 +548,7 @@ export const arriveAtUserReturnController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 
@@ -631,7 +628,7 @@ export const completeDeliveryController = async (req, res) => {
         }
 
         await Promise.all([
-            invalidateDriverRideCache(driverId, booking_id),
+            invalidateDriverCache(driverId, booking_id),
             invalidateBookingCache(booking.userId.toString(), booking_id),
         ]);
 

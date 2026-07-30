@@ -1,6 +1,5 @@
-import { redisClient } from "../../config/redisClient.js";
+import { redisClient } from "../../services/redisService.js";
 import logger from "../../utils/logger.js";
-
 
 /**
  * Get a value from cache. Returns parsed JSON or null.
@@ -88,26 +87,17 @@ export const deleteByPattern = async (pattern) => {
     try {
         let cursor = "0";
         let deletedCount = 0;
-
         do {
-            const [nextCursor, keys] = await redisClient.scan(
-                cursor,
-                "MATCH",
-                pattern,
-                "COUNT",
-                100
-            );
+            const [nextCursor, keys] = await redisClient.scan(cursor, "MATCH", pattern, "COUNT", 100);
             cursor = nextCursor;
-
             if (keys.length) {
                 await redisClient.del(...keys);
                 deletedCount += keys.length;
             }
         } while (cursor !== "0");
-
         return deletedCount;
     } catch (err) {
-        logger.error(`[deleteByPattern] "${pattern}":`, err.message);
+        logger.error(`[deleteByPattern] "${pattern}":`, err); // full error object/stack, not just err.message
         return 0;
     }
 };
