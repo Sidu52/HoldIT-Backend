@@ -38,14 +38,16 @@ export const createStoreSchema = Joi.object({
 
 export const updateStoreSchema = Joi.object({
     store_name: Joi.string().trim().max(200).optional(),
-    store_description: Joi.string().trim().max(1000).optional(),
-    store_contact_number: Joi.string().trim().max(15).optional(),
-    store_open_time: Joi.string().optional(),
-    store_close_time: Joi.string().optional(),
+    store_description: Joi.string().trim().max(1000).optional().allow(""),
+    store_contact_number: Joi.string().trim().max(15).optional().allow(""),
+    store_open_time: Joi.string().optional().allow(""),
+    store_close_time: Joi.string().optional().allow(""),
     location: Joi.object({
-        type: Joi.string().valid("Point").required(),
-        coordinates: Joi.array().items(Joi.number()).length(2).required(),
-        address: Joi.string().trim().max(500).optional(),
+        type: Joi.string().valid("Point").optional(),
+        coordinates: Joi.array().items(Joi.number()).length(2).optional(),
+        latitude: Joi.number().optional(),
+        longitude: Joi.number().optional(),
+        address: Joi.string().trim().max(500).optional().allow(""),
     }).optional(),
     is_online: Joi.boolean().optional(),
 }).min(1);

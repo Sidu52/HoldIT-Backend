@@ -414,7 +414,7 @@ export const updateStore = async (req, res) => {
         } = req.body;
 
         const store = await Store.findOne({ _id: id, store_owner_id: ownerId })
-            .select("_id")
+            .select("_id location")
             .lean();
 
         if (!store) {
@@ -423,30 +423,47 @@ export const updateStore = async (req, res) => {
 
         const locationUpdate = {};
         if (location) {
-            const { latitude, longitude, address } = location;
-            const { isServiceable, serviceAreaId } = await checkServiceability(longitude, latitude);
-
-            if (!isServiceable) {
-                return sendError(res, "This location is not in our service area.", STATUS_CODES.FORBIDDEN);
+            let longitude, latitude, address;
+            if (Array.isArray(location.coordinates) && location.coordinates.length === 2) {
+                [longitude, latitude] = location.coordinates;
+                address = location.address;
+            } else {
+                longitude = location.longitude;
+                latitude = location.latitude;
+                address = location.address;
             }
 
-            locationUpdate.location = {
-                type: "Point",
-                coordinates: [longitude, latitude],
-                address: address.trim(),
-            };
-            locationUpdate.service_area_id = serviceAreaId;
+            if (longitude !== undefined && latitude !== undefined && longitude !== null && latitude !== null) {
+                const numLng = Number(longitude);
+                const numLat = Number(latitude);
+                if (!isNaN(numLng) && !isNaN(numLat)) {
+                    const { isServiceable, serviceAreaId } = await checkServiceability(numLng, numLat);
+
+                    if (!isServiceable) {
+                        return sendError(res, "This location is not in our service area.", STATUS_CODES.FORBIDDEN);
+                    }
+
+                    locationUpdate.location = {
+                        type: "Point",
+                        coordinates: [numLng, numLat],
+                        address: (address || store.location?.address || "").trim(),
+                    };
+                    locationUpdate.service_area_id = serviceAreaId;
+                }
+            } else if (address) {
+                locationUpdate["location.address"] = address.trim();
+            }
         }
 
         const updatedStore = await Store.findByIdAndUpdate(
             id,
             {
                 $set: {
-                    ...(store_name && { store_name: store_name.trim() }),
-                    ...(store_description && { store_description: store_description.trim() }),
-                    ...(store_contact_number && { store_contact_number }),
-                    ...(store_open_time && { store_open_time }),
-                    ...(store_close_time && { store_close_time }),
+                    ...(store_name !== undefined && { store_name: store_name.trim() }),
+                    ...(store_description !== undefined && { store_description: store_description.trim() }),
+                    ...(store_contact_number !== undefined && { store_contact_number: store_contact_number.trim() }),
+                    ...(store_open_time !== undefined && { store_open_time }),
+                    ...(store_close_time !== undefined && { store_close_time }),
                     ...locationUpdate,
                 },
             },
@@ -458,7 +475,7 @@ export const updateStore = async (req, res) => {
             deleteCache(StoreKeys.publicView(id)),
         ]);
 
-        return sendResponse({ res, message: "Store updated.", data: { store: updatedStore } });
+        return sendResponse({ res, message: "Store updated successfully.", data: { store: updatedStore } });
     } catch (err) {
         logger.error("StoreOwner updateStore Error:", err);
         return sendError(res, "Failed to update store.");
