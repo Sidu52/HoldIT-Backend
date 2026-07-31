@@ -127,17 +127,18 @@ const start = async () => {
     // Cron jobs (nightly drivers + stores offline)
     initCronJobs();
 
-    // Sync warm caches
-    await syncStoresToRedis();
-    await syncDriversToRedis();
-
-    //  HTTP server
+    //  HTTP server — bind port FIRST so Render/health checks succeed immediately
     const server = app.listen(PORT, () => {
         logger.info(`[Server] Running on port ${PORT}`);
     });
 
     // Socket.IO
     initSocket(server);
+
+    // Sync warm caches in background (non-blocking)
+    Promise.all([syncStoresToRedis(), syncDriversToRedis()])
+        .then(() => logger.info("[Server] Background cache sync complete"))
+        .catch((err) => logger.error("[Server] Background cache sync failed:", err.message));
 
     // GRACEFUL SHUTDOWN
     const shutdown = async (signal) => {

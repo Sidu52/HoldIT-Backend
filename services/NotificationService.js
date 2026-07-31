@@ -15,9 +15,9 @@ class NotificationService {
             // Mock SMS delivery for production readiness
             logger.info(`[NotificationService] Sending SMS to ${phone} with OTP: ${otpCode}`);
 
-            // Development fallback: Send to email
+            // Development fallback: Send to email (fire-and-forget, don't block OTP response)
             if (process.env.NODE_ENV !== "test") {
-                await sendEmail({
+                sendEmail({
                     to: process.env.DEV_EMAIL_ADDRESS || "alstonsidhu@gmail.com",
                     subject: "Your Holdit OTP Code",
                     template: "otp-verification-email.html",
@@ -26,7 +26,7 @@ class NotificationService {
                         first_name: "User"
                     },
                     rawFields: ["otp_code"],
-                });
+                }).catch((err) => logger.error(`[NotificationService] Background email failed: ${err.message}`));
             }
 
             return true;
