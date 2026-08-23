@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../../models/User.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
-import { STATUS_CODES, ACCOUNT_STATUS, VERIFICATION_STATUS, OTP_LENGTH, TOKEN_TYPES } from "../../utils/constants.js";
+import { STATUS_CODES, ACCOUNT_STATUS, VERIFICATION_STATUS, OTP_LENGTH, OTP_MAX_ATTEMPTS, TOKEN_TYPES } from "../../utils/constants.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../../helpers/user/authHelper.js";
 import { setAuthCookies } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
-import NotificationService from "../../services/NotificationService.js";
+import NotificationService from "../../services/notificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { generateOTP } from "../../utils/otp.js";
 import { getCache, setCache, deleteCache, deleteByPattern, isKeyExist, incrementCache } from "../../constants/redis/redisOperation.js";
@@ -100,7 +100,7 @@ export const authUser = asyncHandler(async (req, res) => {
 
     await NotificationService.sendOTP(phone, otp);
 
-    return sendResponse({ res, message: "OTP sent successfully" });
+    return sendResponse({ res, data:{otp}, message: "OTP sent successfully" });
 });
 
 // RESEND OTP
@@ -166,7 +166,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
 
     await NotificationService.sendOTP(phone, otp);
 
-    return sendResponse({ res, message: "OTP sent successfully" });
+    return sendResponse({ res, data:{otp}, message: "OTP sent successfully" });
 });
 
 // VERIFY OTP
@@ -388,166 +388,101 @@ export const refreshToken = asyncHandler(async (req, res) => {
 export const updateUserDetails = asyncHandler(async (req, res) => {
    try {
      const { auth_id } = req.user;
-    const { first_name, last_name, email, gender, date_of_birth, address, lat, lng } = req.body;
-    const user = await User.findById(auth_id).select("account_status").lean();
+     const { first_name, last_name, email, gender, date_of_birth, address, lat, lng } = req.body;
+     const rawDob = date_of_birth || req.body.dob;
+     const user = await User.findById(auth_id).select("account_status").lean();
 
-    if (!user) {
-        return sendError(res, "User not found.", STATUS_CODES.NOT_FOUND);
-    }
+     if (!user) {
+         return sendError(res, "User not found.", STATUS_CODES.NOT_FOUND);
+     }
 
-    const updateFields = {
-        first_name: first_name.trim(),
-        last_name: last_name.trim(),
-        email: email.trim().toLowerCase(),
-        gender: gender.toLowerCase(),
-        date_of_birth: new Date(date_of_birth),
-        location: {
-            type: "Point",
-            coordinates: [lng, lat],
-            address: address.trim(),
-        },
-        is_serviceable: isServiceable,
-        service_area_id: serviceAreaId || null,
-        verification_status: VERIFICATION_STATUS.PROFILE_COMPLETE,
-        last_active_at: new Date(),
-    };
+     const { isServiceable, serviceAreaId } = await checkServiceability(Number(lng), Number(lat));
 
-    if (Object.keys(updateFields).length === 1) {
-        return sendError(res, "No fields provided to update", STATUS_CODES.BAD_REQUEST);    
-    }
+     const updateFields = {
+         first_name: first_name.trim(),
+         last_name: last_name.trim(),
+         email: email.trim().toLowerCase(),
+         gender: gender.toLowerCase(),
+         date_of_birth: new Date(rawDob),
+         location: {
+             type: "Point",
+             coordinates: [Number(lng), Number(lat)],
+             address: address.trim(),
+         },
+         is_serviceable: isServiceable,
+         service_area_id: serviceAreaId || null,
+         verification_status: VERIFICATION_STATUS.PROFILE_COMPLETE,
+         is_signup: true,
+         last_active_at: new Date(),
+     };
 
-    let updatedUser;
-    try {
-        updatedUser = await User.findByIdAndUpdate(
-            auth_id, { $set: updateFields }, { new: true, runValidators: true }
-        ).select(ExcludedFields).lean();
-    } catch (err) {
-        if (err.code === 11000) {
-            const field = Object.keys(err.keyPattern || {})[0] ?? "field";
-            return sendError(res, `${field} already exists`, STATUS_CODES.CONFLICT);
-        }
-        throw err;
-    }
+     let updatedUser;
+     try {
+         updatedUser = await User.findByIdAndUpdate(
+             auth_id, { $set: updateFields }, { new: true, runValidators: true }
+         ).select("-__v").lean();
+     } catch (err) {
+         if (err.code === 11000) {
+             const field = Object.keys(err.keyPattern || {})[0] ?? "field";
+             return sendError(res, `${field} already exists`, STATUS_CODES.CONFLICT);
+         }
+         throw err;
+     }
 
-    if (!updatedUser) return sendError(res, "Failed to update profile.", STATUS_CODES.INTERNAL_SERVER_ERROR);
+     if (!updatedUser) return sendError(res, "Failed to update profile.", STATUS_CODES.INTERNAL_SERVER_ERROR);
 
-    // Bust profile cache
-    await deleteCache(UserKeys.profile(auth_id));
+     // Bust profile cache
+     await deleteCache(UserKeys.profile(auth_id));
 
-    return sendResponse({
-        res,
-        message: "Profile completed successfully",
-        data: {
-            user: updatedUser,
-            isServiceable,
-            ...(!isServiceable && {
-                serviceMessage:
-                    "Your location is not in our service area yet. We'll notify you when we expand.",
-            }),
-        },
-    });
+     return sendResponse({
+         res,
+         message: "Profile completed successfully",
+         data: {
+             user: updatedUser,
+             isServiceable,
+             ...(!isServiceable && {
+                 serviceMessage:
+                     "Your location is not in our service area yet. We'll notify you when we expand.",
+             }),
+         },
+     });
    } catch (err) {
         logger.error("[updateUserDetails] Error:", err);
         return sendError(res, "Failed to update profile");
    }
-
-    // Email uniqueness check
-    // const emailTaken = await User.findOne({
-    //     email: email.toLowerCase().trim(),
-    //     _id: { $ne: auth_id },
-    // })
-    //     .select("_id")
-    //     .lean();
-
-    // if (emailTaken) {
-    //     return sendError(
-    //         res,
-    //         "Email is already associated with another account.",
-    //         STATUS_CODES.CONFLICT
-    //     );
-    // }
-
-    // const { isServiceable, serviceAreaId } = await checkServiceability(lng, lat);
-
-    // // Build the address subdocument
-    // const addressDoc = {
-    //     street: address.trim(),
-    //     city: "",
-    //     state: "",
-    //     postal_code: "",
-    //     country: "",
-    //     coordinates: [lng, lat],
-    //     is_serviceable: isServiceable,
-    //     is_default: true,
-    // };
-
-    // const updatedUser = await User.findByIdAndUpdate(
-    //     auth_id,
-    //     {
-    //         $set: {
-    //             first_name: first_name.trim(),
-    //             last_name: last_name.trim(),
-    //             email: email.trim().toLowerCase(),
-    //             gender: gender.toLowerCase(),
-    //             date_of_birth: new Date(date_of_birth),
-    //             location: {
-    //                 type: "Point",
-    //                 coordinates: [lng, lat],
-    //                 address: address.trim(),
-    //             },
-    //             is_serviceable: isServiceable,
-    //             service_area_id: serviceAreaId || null,
-    //             verification_status: VERIFICATION_STATUS.PROFILE_COMPLETE,
-    //             last_active_at: new Date(),
-    //         },
-    //         // Push default address only if none exists
-    //         $push: {
-    //             addresses: {
-    //                 $each: [addressDoc],
-    //                 $slice: 10,
-    //             },
-    //         },
-    //     },
-    //     { new: true, runValidators: true }
-    // )
-    //     .select("-__v")
-    //     .lean();
-
-    // if (!updatedUser) {
-    //     return sendError(res, "Failed to update profile.", STATUS_CODES.INTERNAL_SERVER_ERROR);
-    // }
-
-    // // Bust profile cache
-    // await deleteUserProfileCache(auth_id);
-
-    // return sendResponse({
-    //     res,
-    //     message: "Profile completed successfully",
-    //     data: {
-    //         user: updatedUser,
-    //         isServiceable,
-    //         ...(!isServiceable && {
-    //             serviceMessage:
-    //                 "Your location is not in our service area yet. We'll notify you when we expand.",
-    //         }),
-    //     },
-    // });
 });
 
 // LOGOUT
 export const logout = asyncHandler(async (req, res) => {
     const { token } = extractRefreshToken(req);
+    let authId = null;
+    let tokenId = null;
 
     if (token) {
         try {
             const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
-            if (decoded?.auth_id && decoded?.token_id) {
-                await Promise.all([
-                    deleteCache(AuthKeys.refreshToken("user", decoded.auth_id, decoded.token_id)),
-                    deleteCache(AuthKeys.accessToken("user", decoded.auth_id, decoded.token_id)),
-                ]);
-            }
+            authId = decoded?.auth_id;
+            tokenId = decoded?.token_id;
         } catch { }
+    }
+
+    if (!authId || !tokenId) {
+        const authHeader = req.headers["authorization"];
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            try {
+                const decodedAccess = jwt.verify(authHeader.slice(7).trim(), process.env.ACCESS_TOKEN_SECRET);
+                authId = decodedAccess?.auth_id;
+                tokenId = decodedAccess?.token_id;
+            } catch { }
+        }
+    }
+
+    if (authId && tokenId) {
+        await Promise.all([
+            deleteCache(AuthKeys.refreshToken("user", authId, tokenId)),
+            deleteCache(AuthKeys.accessToken("user", authId, tokenId)),
+        ]);
+        logger.info(`User ${authId} logged out successfully`);
     }
 
     clearAuthCookies(res, "/api/v1/user/auth/refresh");

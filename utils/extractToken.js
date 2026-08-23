@@ -17,7 +17,6 @@ export const extractRefreshToken = (req) => {
         };
     }
 
-    // Prefer explicit refresh token headers to avoid accidentally treating an access token as a refresh token.
     const refreshHeader = req.headers["x-refresh-token"] || req.headers["refresh-token"];
     if (refreshHeader) {
         return {

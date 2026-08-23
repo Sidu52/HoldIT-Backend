@@ -42,6 +42,25 @@ const locationSchema = Joi.object({
         }),
 });
 
+// BAG PRICING SCHEMA
+const bagPricingItemSchema = Joi.object({
+    basePrice: Joi.number().min(0).required().messages({
+        "any.required": "Base price is required",
+        "number.min": "Base price cannot be negative",
+    }),
+    hourlyRate: Joi.number().min(0).required().messages({
+        "any.required": "Hourly rate is required",
+        "number.min": "Hourly rate cannot be negative",
+    }),
+});
+
+const bagPricingSchema = Joi.object({
+    small: bagPricingItemSchema.optional(),
+    medium: bagPricingItemSchema.optional(),
+    large: bagPricingItemSchema.optional(),
+    other: bagPricingItemSchema.optional(),
+}).optional();
+
 // CREATE SERVICEABLE AREA
 export const createServiceableAreaSchema = Joi.object({
     name: Joi.string().trim().min(2).max(100).required().messages({
@@ -77,6 +96,36 @@ export const createServiceableAreaSchema = Joi.object({
         .messages({
             "number.min": "Delivery charge cannot be negative",
         }),
+    priceRule: Joi.object({
+        name: Joi.string().trim().max(100).optional(),
+        feeBreakdown: Joi.object({
+            platformFee: Joi.number().min(0).required().messages({
+                "any.required": "Platform fee is required in price rule",
+            }),
+            handlingFee: Joi.number().min(0).default(0),
+            packingFee: Joi.number().min(0).default(0),
+        }).required().messages({
+            "any.required": "Fee breakdown is required in price rule",
+        }),
+        perKmRate: Joi.number().min(0).required().messages({
+            "any.required": "Per KM rate is required in price rule",
+        }),
+        hourlyStorageRate: Joi.number().min(0).required().messages({
+            "any.required": "Hourly storage rate is required in price rule",
+        }),
+        maxAdvanceDistanceKm: Joi.number().min(0).default(15),
+        minChargeableHours: Joi.number().min(0).default(1),
+        maxDailyRate: Joi.number().min(0).allow(null).default(null),
+        peakMultiplier: Joi.number().min(1.0).default(1.0),
+        peakHours: Joi.object({
+            startHour: Joi.number().integer().min(0).max(23).allow(null).default(null),
+            endHour: Joi.number().integer().min(0).max(23).allow(null).default(null),
+        }).optional(),
+        bagPricing: bagPricingSchema,
+        currency: Joi.string().max(3).default("INR"),
+    }).required().messages({
+        "any.required": "Pricing rule configuration is required when creating a new Service Area",
+    }),
 });
 
 // UPDATE SERVICEABLE AREA

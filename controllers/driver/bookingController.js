@@ -1,9 +1,10 @@
 import mongoose from "mongoose";
-import { acceptBookingOffer, rejectBookingOffer, getDriverActiveBooking } from "../../helpers/driver/bookingHelper.js";
+import { acceptBookingOffer, rejectBookingOffer, getDriverActiveBooking } from "../../helpers/driver/driverBookingHelper.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { STATUS_CODES } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 import asyncHandler from "../../utils/asyncHandler.js";
+import { buildPagination } from "../../utils/helper.js";
 
 const isValidObjectId = (id) => {
     return mongoose.Types.ObjectId.isValid(id) &&
@@ -356,14 +357,7 @@ export const getBookingHistory = asyncHandler(async (req, res) => {
         message: "Booking history retrieved successfully",
         data: {
             bookings,
-            pagination: {
-                currentPage: pageNum,
-                totalPages: Math.ceil(total / limitNum),
-                totalItems: total,
-                itemsPerPage: limitNum,
-                hasNextPage: pageNum < Math.ceil(total / limitNum),
-                hasPrevPage: pageNum > 1,
-            },
+            pagination: buildPagination(pageNum, limitNum, total),
         },
     });
 });

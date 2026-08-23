@@ -1,6 +1,7 @@
 import express from "express";
 import { apiLimiter } from "../../config/rateLimiter.js";
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { authMiddleware, protectStore } from "../../middlewares/auth.middleware.js";
+import { checkStoreAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 import {
     getProfile,
     updateProfile,
@@ -10,7 +11,7 @@ import {
 
 const router = express.Router();
 
-router.use(authMiddleware);
+router.use(authMiddleware, protectStore, checkStoreAccountStatus);
 
 router.get("/profile", apiLimiter, getProfile);
 router.put("/profile", apiLimiter, updateProfile);

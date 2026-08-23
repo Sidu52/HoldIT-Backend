@@ -3,10 +3,7 @@ import redis from "./redisService.js";
 import { StoreKeys } from "../constants/redis/store.keys.js";
 import logger from "../utils/logger.js";
 
-
-
-// ─── ADD ──────────────────────────────────────────────────────────────────────
-
+//  ADD
 export const addStoreToRedis = async (store) => {
     if (!store?._id) {
         logger.warn("[StoreGeo] addStoreToRedis: missing store or _id");
@@ -28,7 +25,7 @@ export const addStoreToRedis = async (store) => {
     if (
         typeof lng !== "number" || typeof lat !== "number" ||
         lng < -180 || lng > 180 ||
-        lat < -90  || lat > 90
+        lat < -90 || lat > 90
     ) {
         logger.warn(
             `[StoreGeo] Store ${store._id} has invalid coordinates [${lng}, ${lat}]`
@@ -51,12 +48,12 @@ export const addStoreToRedis = async (store) => {
 
         // Store metadata hash
         pipeline.hset(StoreKeys.meta(storeId), {
-            is_online:              "true",
+            is_online: "true",
             current_booking_count: (store.current_booking_count ?? 0).toString(),
-            max_booking_capacity:   (store.max_booking_capacity   ?? 50).toString(),
-            service_area_id:        store.service_area_id?.toString() ?? "",
-            rating:                 (store.rating ?? 0).toString(),
-            updated_at:             Date.now().toString(),
+            max_booking_capacity: (store.max_booking_capacity ?? 50).toString(),
+            service_area_id: store.service_area_id?.toString() ?? "",
+            rating: (store.rating ?? 0).toString(),
+            updated_at: Date.now().toString(),
         });
 
         // Meta TTL — expire after 2 hours of inactivity
@@ -73,8 +70,7 @@ export const addStoreToRedis = async (store) => {
     }
 };
 
-// ─── REMOVE ───────────────────────────────────────────────────────────────────
-
+//  REMOVE
 export const removeStoreFromRedis = async (storeId, serviceAreaId = null) => {
     if (!storeId) {
         logger.warn("[StoreGeo] removeStoreFromRedis: missing storeId");
@@ -112,17 +108,14 @@ export const removeStoreFromRedis = async (storeId, serviceAreaId = null) => {
     }
 };
 
-// ─── UPDATE CAPACITY ─────────────────────────────────────────────────────────
-// Call this after incrementing/decrementing current_booking_count in MongoDB
-// so Redis meta stays in sync without a full re-sync.
-
+// UPDATE CAPACITY
 export const updateStoreCapacityInRedis = async (storeId, newCount) => {
     if (!storeId) return false;
 
     try {
         await redis.hset(StoreKeys.meta(storeId.toString()), {
             current_booking_count: newCount.toString(),
-            updated_at:             Date.now().toString(),
+            updated_at: Date.now().toString(),
         });
         return true;
     } catch (err) {

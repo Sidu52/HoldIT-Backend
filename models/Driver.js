@@ -98,6 +98,12 @@ const DriverSchema = new mongoose.Schema(
             ref: "ServiceableArea",
             index: true,
         },
+        push_token: {
+            type: String,
+            trim: true,
+            default: null,
+            index: true,
+        },
         is_serviceable: {
             type: Boolean,
             default: false,

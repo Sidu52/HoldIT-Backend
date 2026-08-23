@@ -1,415 +1,252 @@
 /**
  * @swagger
- *   /api/v1/admin/booking:
- *     get:
- *       summary: Get All Bookings
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id:
- *     get:
- *       summary: Booking By ID
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/cancel:
- *     put:
- *       summary: Cancel Booking
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ * /api/v1/admin/booking:
+ *   get:
+ *     summary: List All Bookings
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of bookings
+ * 
+ * /api/v1/admin/booking/payment/{bookingId}:
+ *   get:
+ *     summary: Get Payment Details for Booking
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bookingId
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 auth_id:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *                 status:
- *                   type: string
- *                   example: active
- *                 reason:
- *                   type: string
- *                   example: Verified Manually
- *               required:
- *                 - auth_id
- *                 - status
- *                 - reason
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/assign-driver:
- *     patch:
- *       summary: Assign Driver
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Payment record returned
+ * 
+ * /api/v1/admin/booking/{id}:
+ *   get:
+ *     summary: Get Booking Details by ID
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/reassign-driver:
- *     patch:
- *       summary: Reassign Driver
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Booking record details
+ * 
+ * /api/v1/admin/booking/{id}/cancel:
+ *   put:
+ *     summary: Cancel Booking Manually
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/reassign-store:
- *     patch:
- *       summary: Reassign Store
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Booking cancelled
+ * 
+ * /api/v1/admin/booking/{id}/assign-driver:
+ *   patch:
+ *     summary: Assign Driver to Booking
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 storeId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - storeId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/assign-return-driver:
- *     patch:
- *       summary: Assign Return Driver
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - driverId
+ *             properties:
+ *               driverId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Driver assigned
+ * 
+ * /api/v1/admin/booking/{id}/reassign-store:
+ *   patch:
+ *     summary: Reassign Store for Booking
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/mark-arrived:
- *     patch:
- *       summary: Mark Arrived
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - storeId
+ *             properties:
+ *               storeId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Store reassigned
+ * 
+ * /api/v1/admin/booking/{id}/assign-return-driver:
+ *   patch:
+ *     summary: Assign Return Driver to Booking
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/mark-picked-up:
- *     patch:
- *       summary: Mark Picked Up
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - driverId
+ *             properties:
+ *               driverId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Return driver assigned
+ * 
+ * /api/v1/admin/booking/{id}/mark-arrived:
+ *   patch:
+ *     summary: Mark Driver Arrived at Pickup
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/mark-stored:
- *     patch:
- *       summary: Mark Stored
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Status updated to DRIVER_ARRIVED
+ * 
+ * /api/v1/admin/booking/{id}/mark-picked-up:
+ *   patch:
+ *     summary: Mark Luggage Picked Up
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/request-return:
- *     patch:
- *       summary: Request Return
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Status updated to PICKED_UP
+ * 
+ * /api/v1/admin/booking/{id}/mark-stored:
+ *   patch:
+ *     summary: Mark Luggage Stored at Store
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
- */
-
-/**
- * @swagger
- *   /api/v1/admin/booking/:booking_id/mark-delivered:
- *     patch:
- *       summary: Mark Delivered
- *       tags:
- *         - Booking
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Status updated to STORED
+ * 
+ * /api/v1/admin/booking/{id}/request-return:
+ *   patch:
+ *     summary: Request Return Manually for Booking
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 driverId:
- *                   type: string
- *                   example: 69631a69478b39509abeb2b7
- *               required:
- *                 - driverId
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Return requested
+ * 
+ * /api/v1/admin/booking/{id}/mark-delivered:
+ *   patch:
+ *     summary: Mark Booking Delivered to User
+ *     tags:
+ *       - Admin Bookings
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Status updated to DELIVERED
  */

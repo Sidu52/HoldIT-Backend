@@ -1,50 +1,39 @@
 /**
  * @swagger
- * /api/v1/user/payment/checkout:
+ * /api/v1/payment/verify:
  *   post:
- *     summary: Dummy payment checkout for a booking
- *     tags: [User Payment]
+ *     summary: Verify Razorpay Payment Signature
+ *     tags:
+ *       - User Payment
  *     security:
  *       - bearerAuth: []
  *     requestBody:
- *       required: true,
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
  *             required:
- *               - bookingId
+ *               - razorpay_order_id
+ *               - razorpay_payment_id
+ *               - razorpay_signature
  *             properties:
- *               bookingId:
+ *               razorpay_order_id:
  *                 type: string
- *                 example: "64f1a2b3c4d5e6f7a8b9c0d1"
- *               paymentMethod:
+ *               razorpay_payment_id:
  *                 type: string
- *                 default: "dummy_card"
- *                 example: "credit_card"
+ *               razorpay_signature:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Payment successful
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     bookingId:
- *                       type: string
- *                     transactionId:
- *                       type: string
- *                     status:
- *                       type: string
- *       400:
- *         description: Bad request (missing fields or already paid)
- *       404:
- *         description: Booking not found
+ *         description: Payment verified successfully
+ * 
+ * /api/v1/payment/webhook:
+ *   post:
+ *     summary: Razorpay Payment Webhook Receiver
+ *     tags:
+ *       - User Payment
+ *     responses:
+ *       200:
+ *         description: Webhook processed
  */

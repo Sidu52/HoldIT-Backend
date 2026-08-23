@@ -26,7 +26,7 @@ const ReviewSchema = new mongoose.Schema(
         },
         reviewType: {
             type: String,
-            enum: ["DRIVER", "STORE", "SERVICE"],
+            enum: ["DRIVER", "STORE", "PLATFORM", "SERVICE"],
             required: true,
             index: true,
         },
@@ -36,11 +36,22 @@ const ReviewSchema = new mongoose.Schema(
             min: 1,
             max: 5,
         },
+        tags: [
+            {
+                type: String,
+                trim: true,
+            }
+        ],
         comment: {
             type: String,
             trim: true,
             maxlength: 1000,
         },
+        is_active: {
+            type: Boolean,
+            default: true,
+            index: true,
+        }
     },
     { timestamps: true }
 );

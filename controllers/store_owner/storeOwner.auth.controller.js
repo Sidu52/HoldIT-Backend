@@ -21,7 +21,7 @@ import {
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
 import { setAuthCookies } from "../../utils/helper.js";
-import NotificationService from "../../services/NotificationService.js";
+import NotificationService from "../../services/notificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import {
     getCache,
@@ -66,7 +66,7 @@ async function dispatchOTP(res, phone) {
     await setCache(cooldownKey, "1", AuthTTL.OTP_COOLDOWN);
     await NotificationService.sendOTP(normalizedPhone, otp);
 
-    return { limited: false };
+    return { limited: false, otp };
 }
 
 // REGISTER
@@ -87,10 +87,10 @@ export const registerStoreOwner = asyncHandler(async (req, res) => {
     const pendingKey = AuthKeys.pendingOwner(phone);
     await setCache(pendingKey, phone, AuthTTL.PENDING_USER);
 
-    const { limited, response } = await dispatchOTP(res, phone);
+    const { limited, response, otp } = await dispatchOTP(res, phone);
     if (limited) return response;
 
-    return sendResponse({ res, message: "Registration OTP sent successfully" });
+    return sendResponse({ res, data: { otp }, message: "Registration OTP sent successfully" });
 });
 
 // LOGIN
@@ -114,10 +114,10 @@ export const loginStoreOwner = asyncHandler(async (req, res) => {
         return sendError(res, ownerCheck.message, ownerCheck.code);
     }
 
-    const { limited, response } = await dispatchOTP(res, phone);
+    const { limited, response, otp } = await dispatchOTP(res, phone);
     if (limited) return response;
 
-    return sendResponse({ res, message: "Login OTP sent successfully" });
+    return sendResponse({ res, data: { otp }, message: "Login OTP sent successfully" });
 });
 
 // RESEND OTP
@@ -146,10 +146,10 @@ export const sendOTP = asyncHandler(async (req, res) => {
         }
     }
 
-    const { limited, response } = await dispatchOTP(res, phone);
+    const { limited, response, otp } = await dispatchOTP(res, phone);
     if (limited) return response;
 
-    return sendResponse({ res, message: "OTP sent successfully" });
+    return sendResponse({ res, data: { otp }, message: "OTP sent successfully" });
 });
 
 // VERIFY OTP

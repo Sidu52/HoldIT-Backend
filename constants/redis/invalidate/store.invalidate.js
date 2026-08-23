@@ -1,10 +1,8 @@
-
 import { StoreKeys } from "../store.keys.js";
 import { AdminKeys } from "../admin.keys.js";
 import { StoreOwnerKeys } from "../storeOwner.keys.js";
-import { deleteCache, deleteByPattern } from "../redisOperation.js";
+import { deleteCache, deleteByPattern, invalidate } from "../redisOperation.js";
 import logger from "../../../utils/logger.js";
-
 
 export const invalidateStoreCache = async (storeId, { storeOwnerId } = {}) => {
     const jobs = [
@@ -20,8 +18,8 @@ export const invalidateStoreCache = async (storeId, { storeOwnerId } = {}) => {
     ];
 
     if (storeOwnerId) {
-        // this store's counts/status feed into the owner's admin composed view
         jobs.push(deleteCache(StoreOwnerKeys.adminDetail(storeOwnerId)));
+        jobs.push(deleteCache(StoreOwnerKeys.dashboard(storeOwnerId)));
         jobs.push(deleteByPattern(AdminKeys.storeOwnerListPattern()));
     }
 
@@ -30,16 +28,23 @@ export const invalidateStoreCache = async (storeId, { storeOwnerId } = {}) => {
 };
 
 export const invalidateStoreBookingCache = async (storeId, bookingId = null) => {
+    if (!storeId) return null;
+    const strStoreId = storeId.toString();
+
     const keys = [
-        StoreKeys.bookingIncoming(storeId),
-        StoreKeys.bookingSummary(storeId),
-        StoreKeys.dashboard(storeId),
+        StoreKeys.bookingIncoming(strStoreId),
+        StoreKeys.bookingReturnParcel(strStoreId),
+        StoreKeys.bookingSummary(strStoreId),
+        StoreKeys.dashboard(strStoreId),
     ];
-    if (bookingId) keys.push(StoreKeys.bookingDetail(storeId, bookingId));
+    if (bookingId) keys.push(StoreKeys.bookingDetail(strStoreId, bookingId.toString()));
 
     const patterns = [
-        StoreKeys.bookingActiveByStorePattern(storeId),
-        StoreKeys.bookingHistoryByStorePattern(storeId),
+        StoreKeys.bookingActiveByStorePattern(strStoreId),
+        StoreKeys.bookingHistoryByStorePattern(strStoreId),
+        `store_bookings_active:*${strStoreId}*`,
+        `store_bookings_history:*${strStoreId}*`,
+        `store_owner:dashboard:*`,
     ];
 
     return invalidate({ keys, patterns });

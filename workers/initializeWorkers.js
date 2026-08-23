@@ -1,9 +1,11 @@
 import { createAutoCancelWorker } from "./autoCancelWorker.js";
 import { createDeleteUnverifiedWorker } from "./deleteUnverifiedAccountWorker.js";
 import { JOB_QUEUES } from "../utils/constants.js";
-import { createDriverAssignWorker } from "./jobs/driverSearchJob.js";
-import { createReturnProcessWorker } from "./returnProcessWorker.js";
+import { createDriverAssignWorker } from "./jobs/driver/driverassignworker.js";
+import { createReturnProcessWorker } from "./jobs/driver/returnprocessworker.js";
 import { createBookingCancelledWorker } from "./bookingCancelledWorker.js";
+import { createPaymentFollowupWorker } from "./paymentFollowWorker.js";
+
 import logger from "../utils/logger.js";
 
 
@@ -17,6 +19,7 @@ export const initializeWorkers = () => {
     activeWorkers.push(createDriverAssignWorker());
     activeWorkers.push(createReturnProcessWorker());
     activeWorkers.push(createBookingCancelledWorker());
+    activeWorkers.push(createPaymentFollowupWorker());
 };
 
 export const closeAllWorkers = async () => {

@@ -7,6 +7,9 @@ import adminBookingsRoutes from "./bookings.routes.js";
 import adminAdminsRoutes from "./admins.routes.js";
 import storeOwnerRoutes from "./storeowner.routes.js";
 import adminServiceableRoutes from "./serviceableRoutes.js";
+import adminPriceRuleRoutes from "./pricerule.routes.js";
+import adminSupportRoutes from "./support.routes.js";
+import adminNotificationRoutes from "./notification.routes.js";
 
 const adminRoutes = (app) => {
     // Admin
@@ -16,10 +19,12 @@ const adminRoutes = (app) => {
     app.use("/api/v1/admin/driver", adminDriversRoutes);
     app.use("/api/v1/admin/store", adminStoresRoutes);
     app.use("/api/v1/admin/booking", adminBookingsRoutes);
-    app.use("/api/v1/admin", adminAdminsRoutes);
     app.use("/api/v1/admin/storeowner", storeOwnerRoutes);
-    app.use("/api/v1/admin/serviceable", adminServiceableRoutes)
-
+    app.use("/api/v1/admin/serviceable", adminServiceableRoutes);
+    app.use("/api/v1/admin/price-rule", adminPriceRuleRoutes);
+    app.use("/api/v1/admin/support", adminSupportRoutes);
+    app.use("/api/v1/admin/notifications", adminNotificationRoutes);
+    app.use("/api/v1/admin", adminAdminsRoutes);
 }
 
 export default adminRoutes;

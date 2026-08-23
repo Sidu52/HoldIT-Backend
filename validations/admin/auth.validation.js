@@ -55,6 +55,7 @@ export const forgotPasswordSchema = Joi.object({
 });
 
 export const resetPasswordSchema = Joi.object({
+  token: Joi.string().optional(),
   password: passwordField("Password"),
   confirm_password: confirmPasswordField("password"),
 });

@@ -26,7 +26,12 @@ import { USER_ROLES } from "../../utils/constants.js";
 import { roleMiddleware } from "../../middlewares/role.middleware.js";
 import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 
+import { submitJoinTeamRequest } from "../../controllers/admin/teamJoinRequest.admin.controller.js";
+
 const router = express.Router();
+
+// Public Join Team Request (unauthenticated, rate-limited)
+router.post("/request-join-team", apiLimiter, submitJoinTeamRequest);
 
 // Login
 router.post(
@@ -50,14 +55,12 @@ router.post("/forgot-password",apiLimiter,
     validate(forgotPasswordSchema),
     createAdminForgotPasswordToken);
 
-// Verify reset token 
-router.get("/reset-password",apiLimiter,
-    validate(tokenQuerySchema, "query"),verifyAdminForgotPasswordToken);
+// Verify reset token (supports both /reset-password and /verify-reset-token)
+router.get("/reset-password", apiLimiter, validate(tokenQuerySchema, "query"), verifyAdminForgotPasswordToken);
+router.get("/verify-reset-token", apiLimiter, validate(tokenQuerySchema, "query"), verifyAdminForgotPasswordToken);
 
 // Set new password with reset token
-router.post("/forgot-password/reset",apiLimiter,
-    validate(tokenQuerySchema, "query"),
-    validate(resetPasswordSchema),updateAdminPassword);
+router.post("/forgot-password/reset", apiLimiter, validate(resetPasswordSchema), updateAdminPassword);
 
 router.use(
   authMiddleware,

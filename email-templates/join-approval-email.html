@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Join Request Approved</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f4f6f9;
+      margin: 0;
+      padding: 0;
+      color: #333333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 40px auto;
+      background: #ffffff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      border: 1px solid #e2e8f0;
+    }
+    .header {
+      background: linear-gradient(135deg, #1e40af, #0284c7);
+      color: #ffffff;
+      padding: 32px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .content {
+      padding: 32px;
+    }
+    .welcome-text {
+      font-size: 16px;
+      line-height: 1.6;
+      color: #475569;
+      margin-bottom: 24px;
+    }
+    .credentials-card {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .cred-item {
+      margin-bottom: 12px;
+    }
+    .cred-item:last-child {
+      margin-bottom: 0;
+    }
+    .label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.5px;
+    }
+    .value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #0f172a;
+      font-family: 'Courier New', Courier, monospace;
+      margin-top: 2px;
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      box-sizing: border-box;
+      background: #1e40af;
+      color: #ffffff !important;
+      text-decoration: none;
+      text-align: center;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(30, 64, 175, 0.25);
+    }
+    .footer {
+      background: #f8fafc;
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+      border-top: 1px solid #f1f5f9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Welcome to Holdit Team!</h1>
+    </div>
+    <div class="content">
+      <p class="welcome-text">
+        Hello <strong>{{first_name}}</strong>,<br><br>
+        Great news! Your request to join our team has been reviewed and <strong>approved</strong> by the admin team.
+      </p>
+      
+      <div class="credentials-card">
+        <div class="cred-item">
+          <div class="label">Login Email</div>
+          <div class="value">{{email}}</div>
+        </div>
+        <div class="cred-item" style="margin-top: 14px;">
+          <div class="label">Temporary Secure Password</div>
+          <div class="value" style="color: #1e40af;">{{password}}</div>
+        </div>
+      </div>
+
+      <p class="welcome-text" style="font-size: 14px;">
+        Please sign in using your credentials below and change your password upon logging in.
+      </p>
+
+      <a href="{{login_link}}" class="btn">Sign In to Admin Dashboard</a>
+    </div>
+    <div class="footer">
+      &copy; Holdit Logistics Platform. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>

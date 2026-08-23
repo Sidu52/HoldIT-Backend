@@ -1,6 +1,7 @@
 import express from "express";
 import { apiLimiter } from "../../config/rateLimiter.js";
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { authMiddleware, protectUser } from "../../middlewares/auth.middleware.js";
+import { checkUserAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
     getProfile,
@@ -13,6 +14,7 @@ import {
     updateAddress,
     deleteAddress,
     updateLocation,
+    updatePushToken,
 } from "../../controllers/user/user.user.controller.js";
 import {
     nearestStoreSchema,
@@ -26,7 +28,7 @@ import {
 
 const router = express.Router();
 
-router.use(authMiddleware);
+router.use(authMiddleware, protectUser, checkUserAccountStatus);
 
 
 // Get profile
@@ -42,6 +44,13 @@ router.put(
     apiLimiter,
     validate(updateProfileSchema),
     updateProfile
+);
+
+// Update push token
+router.put(
+    "/push-token",
+    apiLimiter,
+    updatePushToken
 );
 
 // ADDRESSES

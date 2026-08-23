@@ -22,7 +22,6 @@ export const emitBookingCreated = (io, booking) => {
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_CREATED, {
         bookingId: booking._id || booking.bookingId,
         userId: booking.userId,
-        storeId: booking.storeId,
         status: booking.status,
         pickupLocation: booking.pickupLocation,
         scheduledAt: booking.scheduledAt,
@@ -52,6 +51,14 @@ export const emitStoreIncomingBooking = (io, bookingId, storeId, bookingSummary)
     });
 };
 
+// export const emitBookingReturnDriverPending = (io, bookingId, userId) => {
+//     const targets = [rooms.adminDashboard(), rooms.user(userId)];
+//     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_RETURN_DRIVER_PENDING, {
+//         bookingId,
+//         message: 'Return driver pending',
+//     });
+// };
+
 // booking:driver_searching
 export const emitBookingDriverSearching = (io, bookingId, userId) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];
@@ -63,11 +70,13 @@ export const emitBookingDriverSearching = (io, bookingId, userId) => {
 
 export const emitBookingDriverAssigned = (io, bookingId, userId, driver) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    const driverId = driver?.id || driver?._id;
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_DRIVER_ASSIGNED, {
         bookingId,
         driver: {
-            id: driver.id || driver._id,
-            name: `${driver.first_name} ${driver.last_name}`,
+            id: driverId,
+            name: `${driver.first_name || ''} ${driver.last_name || ''}`.trim(),
             phone: driver.phone,
             vehicleNumber: driver.vehicle_details?.registration_number,
             currentLocation: driver.live_location,
@@ -77,6 +86,7 @@ export const emitBookingDriverAssigned = (io, bookingId, userId, driver) => {
 
 export const emitBookingDriverArrived = (io, bookingId, userId, driverId, arrivedAt) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_DRIVER_ARRIVED, {
         bookingId,
         driverId,
@@ -85,8 +95,10 @@ export const emitBookingDriverArrived = (io, bookingId, userId, driverId, arrive
     });
 };
 
-export const emitBookingPickedUp = (io, bookingId, userId, storeId, pickedUpAt, driverName) => {
-    const targets = [rooms.adminDashboard(), rooms.user(userId), rooms.store(storeId)];
+export const emitBookingPickedUp = (io, bookingId, userId, storeId, pickedUpAt, driverName, driverId = null) => {
+    const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    if (storeId) targets.push(rooms.store(storeId));
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_PICKED_UP, {
         bookingId,
         pickedUpAt,
@@ -95,7 +107,9 @@ export const emitBookingPickedUp = (io, bookingId, userId, storeId, pickedUpAt, 
 };
 
 export const emitBookingArrivedAtStore = (io, bookingId, storeId, driverId, arrivedAt) => {
-    const targets = [rooms.adminDashboard(), rooms.store(storeId)];
+    const targets = [rooms.adminDashboard()];
+    if (storeId) targets.push(rooms.store(storeId));
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_ARRIVED_AT_STORE, {
         bookingId,
         driverId,
@@ -104,8 +118,10 @@ export const emitBookingArrivedAtStore = (io, bookingId, storeId, driverId, arri
     });
 };
 
-export const emitBookingStored = (io, bookingId, userId, storedAt, storeName) => {
+export const emitBookingStored = (io, bookingId, userId, storeId, storedAt, storeName, driverId = null) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    if (storeId) targets.push(rooms.store(storeId));
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_STORED, {
         bookingId,
         storedAt,
@@ -114,7 +130,8 @@ export const emitBookingStored = (io, bookingId, userId, storedAt, storeName) =>
 };
 
 export const emitBookingReturnRequested = (io, bookingId, userId, storeId, returnLocation, returnScheduledAt) => {
-    const targets = [rooms.adminDashboard(), rooms.store(storeId)];
+    const targets = [rooms.adminDashboard()];
+    if (storeId) targets.push(rooms.store(storeId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_RETURN_REQUESTED, {
         bookingId,
         userId,
@@ -125,11 +142,13 @@ export const emitBookingReturnRequested = (io, bookingId, userId, storeId, retur
 
 export const emitBookingReturnDriverAssigned = (io, bookingId, userId, driver) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    const driverId = driver?.id || driver?._id;
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_RETURN_DRIVER_ASSIGNED, {
         bookingId,
         driver: {
-            id: driver.id || driver._id,
-            name: `${driver.first_name} ${driver.last_name}`,
+            id: driverId,
+            name: `${driver.first_name || ''} ${driver.last_name || ''}`.trim(),
             phone: driver.phone,
             vehicleNumber: driver.vehicle_details?.registration_number,
         }
@@ -138,6 +157,7 @@ export const emitBookingReturnDriverAssigned = (io, bookingId, userId, driver) =
 
 export const emitBookingOutForReturn = (io, bookingId, userId, driverId, pickedFromStoreAt) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_OUT_FOR_RETURN, {
         bookingId,
         driverId,
@@ -147,6 +167,7 @@ export const emitBookingOutForReturn = (io, bookingId, userId, driverId, pickedF
 
 export const emitBookingArrivedForDelivery = (io, bookingId, userId, driverId, arrivedAt) => {
     const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_ARRIVED_FOR_DELIVERY, {
         bookingId,
         driverId,
@@ -155,8 +176,10 @@ export const emitBookingArrivedForDelivery = (io, bookingId, userId, driverId, a
     });
 };
 
-export const emitBookingDelivered = (io, bookingId, userId, storeId, deliveredAt, driverName) => {
-    const targets = [rooms.adminDashboard(), rooms.user(userId), rooms.store(storeId)];
+export const emitBookingDelivered = (io, bookingId, userId, storeId, deliveredAt, driverName, driverId = null) => {
+    const targets = [rooms.adminDashboard(), rooms.user(userId)];
+    if (storeId) targets.push(rooms.store(storeId));
+    if (driverId) targets.push(rooms.driver(driverId));
     safeEmit(io, targets, SOCKET_EVENTS.BOOKING_DELIVERED, {
         bookingId,
         deliveredAt,

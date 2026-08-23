@@ -4,6 +4,7 @@ import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import Admin from "../../models/Admin.js";
 import sendEmail from "../../mailer/emailService.js";
 import { STATUS_CODES, USER_ROLES, VERIFICATION_STATUS, ACCOUNT_STATUS } from "../../utils/constants.js";
+import { buildPagination } from "../../utils/helper.js";
 import { AdminKeys, AdminTTL } from "../../constants/redis/admin.keys.js";
 import { getCache, isKeyExist, setCache, updateCache, cacheAside, deleteByPattern } from "../../constants/redis/redisOperation.js";
 import { ExcludedFields } from "../../helpers/admin/admin.js";
@@ -245,17 +246,9 @@ export const getTeamsMember = async (req, res) => {
                 Admin.countDocuments(filter),
             ]);
 
-            const totalPages = Math.ceil(total / limitNum);
             return {
                 teams,
-                pagination: {
-                    currentPage: pageNum,
-                    totalPages,
-                    totalItems: total,
-                    itemsPerPage: limitNum,
-                    hasNextPage: pageNum < totalPages,
-                    hasPrevPage: pageNum > 1,
-                },
+                pagination: buildPagination(pageNum, limitNum, total),
             };
         });
 
@@ -284,71 +277,6 @@ export const getTeamMemberById = async (req, res) => {
         return sendError(res, "Failed to fetch team member");
     }
 };
-
-// // GET ADMINS BY ROLE 
-// const getAdminsByRole = async (req, res, role) => {
-//     try {
-//         const {
-//             page = 1, limit = 10, search,
-//             sort_by = "createdAt", sort_order = "desc",
-//         } = req.query;
-
-//         const pageNum = Number(page);
-//         const limitNum = Number(limit);
-
-//         const cacheKey = buildCacheKey("admins:list", {
-//             limit: limitNum,
-//             page: pageNum,
-//             role,
-//             search: search || "none",
-//             sort_by,
-//             sort_order,
-//         });
-
-//         const cached = await getCache(cacheKey);
-//         if (cached) return sendResponse({ res, message: `${role}s fetched successfully`, data: cached });
-
-//         const filter = { role };
-//         if (search) {
-//             const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-//             filter.$or = [
-//                 { first_name: { $regex: escaped, $options: "i" } },
-//                 { last_name: { $regex: escaped, $options: "i" } },
-//                 { email: { $regex: escaped, $options: "i" } },
-//             ];
-//         }
-
-//         const sort = { [sort_by]: sort_order === "asc" ? 1 : -1 };
-//         const skip = (pageNum - 1) * limitNum;
-
-//         const [admins, total] = await Promise.all([
-//             Admin.find(filter).select(EXCLUDED_FIELDS).sort(sort).skip(skip).limit(limitNum).lean(),
-//             Admin.countDocuments(filter),
-//         ]);
-
-//         const totalPages = Math.ceil(total / limitNum);
-//         const responseData = {
-//             admins,
-//             pagination: {
-//                 currentPage: pageNum,
-//                 totalPages,
-//                 totalItems: total,
-//                 itemsPerPage: limitNum,
-//                 hasNextPage: pageNum < totalPages,
-//                 hasPrevPage: pageNum > 1,
-//             },
-//         };
-
-//         await setCache(cacheKey, responseData, CACHE_TTL.LIST);
-//         return sendResponse({ res, message: `${role}s fetched successfully`, data: responseData });
-//     } catch (err) {
-//         logger.error(`[getAdminsByRole:${role}] Error:`, err);
-//         return sendError(res, `Failed to fetch ${role}s`);
-//     }
-// };
-
-// export const getAdmins = (req, res) => getAdminsByRole(req, res, USER_ROLES.ADMIN);
-// export const getSuperAdmins = (req, res) => getAdminsByRole(req, res, USER_ROLES.SUPER_ADMIN);
 
 // UPDATE TEAM MEMBER
 export const updateTeamMember = async (req, res) => {

@@ -12,8 +12,12 @@ import {
     getDashboard,
     goOnline,
     sendUpdatePhoneOTP,
+    getOwnerBookings,
+    getOwnerBookingDetail,
+    getOwnerBookingSettlement,
 } from "../../controllers/store_owner/storeOwner.controller.js";
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { authMiddleware, protectStoreOwner } from "../../middlewares/auth.middleware.js";
+import { checkStoreOwnerAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
     completeProfileSchema,
@@ -26,7 +30,7 @@ import {
 const router = express.Router();
 
 // Protected
-router.use(authMiddleware);
+router.use(authMiddleware, protectStoreOwner, checkStoreOwnerAccountStatus);
 
 // Profile
 router.get("/profile", apiLimiter, getProfile);
@@ -36,6 +40,11 @@ router.post("/complete-profile", apiLimiter, validate(completeProfileSchema), co
 
 // Dashboard
 router.get("/dashboard", apiLimiter, getDashboard);
+
+// Bookings & Settlements
+router.get("/bookings", apiLimiter, getOwnerBookings);
+router.get("/bookings/:booking_id/settlement", apiLimiter, getOwnerBookingSettlement);
+router.get("/bookings/:booking_id", apiLimiter, getOwnerBookingDetail);
 
 // Stores
 router.get("/stores", apiLimiter, getStores);

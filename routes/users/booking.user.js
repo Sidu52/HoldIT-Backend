@@ -1,9 +1,11 @@
 import express from "express";
 import { apiLimiter } from "../../config/rateLimiter.js";
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { authMiddleware, protectUser } from "../../middlewares/auth.middleware.js";
+import { checkUserAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 import { validate } from "../../middlewares/validate.middleware.js";
 import {
     schedulePickup,
+    retryPayment,
     getMyBookings,
     getBookingById,
     cancelBooking,
@@ -12,6 +14,9 @@ import {
     getBookingHistory,
     getAssignStore,
     getAssignDriver,
+    getUserInvoice,
+    estimateBookingPrice,
+    getActivePricingRule,
 } from "../../controllers/user/booking.user.controller.js";
 import {
     schedulePickupSchema,
@@ -24,7 +29,13 @@ import {
 
 const router = express.Router();
 
-router.use(authMiddleware);
+router.use(authMiddleware, protectUser, checkUserAccountStatus);
+
+// Get active pricing rule for user location / default
+router.get("/pricing-rule", apiLimiter, getActivePricingRule);
+
+// Estimate booking price & bill breakdown
+router.post("/estimate", apiLimiter, estimateBookingPrice);
 
 // Create new booking
 router.post(
@@ -33,6 +44,8 @@ router.post(
     validate(schedulePickupSchema),
     schedulePickup
 );
+
+router.post("/:bookingId/payment/retry", apiLimiter, retryPayment);
 
 // Get all user bookings
 router.get(
@@ -66,8 +79,15 @@ router.get(
 );
 
 
-// Cancel a booking
+// Cancel a booking (supports both PUT and POST)
 router.put(
+    "/:booking_id/cancel",
+    apiLimiter,
+    validate(bookingIdSchema),
+    validate(cancelBookingSchema),
+    cancelBooking
+);
+router.post(
     "/:booking_id/cancel",
     apiLimiter,
     validate(bookingIdSchema),
@@ -82,6 +102,13 @@ router.post(
     validate(bookingIdSchema),
     validate(requestReturnSchema),
     requestReturn
+);
+
+// Get Customer Invoice
+router.get(
+    "/:booking_id/invoice",
+    apiLimiter,
+    getUserInvoice
 );
 
 // Get Assign Driver
@@ -127,19 +154,14 @@ router.get(
 //     ()=>{}
 // );
 
-// // -------------Reviews--------------
-// // Add review for service
-// router.post(
-//     "/:booking_id/review",
-//     apiLimiter,
-//     ()=>{}
-// );
+import { createReview } from "../../controllers/user/review.controller.js";
 
-// // Update review
-// router.put(
-//     "/:booking_id/review/",
-//     apiLimiter,
-//     ()=>{}
-// );
+// -------------Reviews--------------
+// Add review for booking (Driver, Store, Platform)
+router.post(
+    "/:bookingId/review",
+    apiLimiter,
+    createReview
+);
 
 export default router;

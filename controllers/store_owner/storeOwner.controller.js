@@ -9,6 +9,7 @@ import {
     deleteCache,
     deleteByPattern,
     incrementCache,
+    cacheAside,
 } from "../../constants/redis/redisOperation.js";
 import { StoreOwnerKeys, StoreOwnerTTL } from "../../constants/redis/storeOwner.keys.js";
 import { StoreKeys, StoreTTL } from "../../constants/redis/store.keys.js";
@@ -25,31 +26,24 @@ import {
     checkOTPRateLimit,
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
-import NotificationService from "../../services/NotificationService.js";
+import NotificationService from "../../services/notificationService.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import logger from "../../utils/logger.js";
 
-// ─────────────────────────────────────────────
 // PROFILE
-// ─────────────────────────────────────────────
 export const getProfile = async (req, res) => {
     try {
         const ownerId = req.user.auth_id;
-        const cacheKey = StoreOwnerKeys.profile(ownerId);
 
-        const cached = await getCache(cacheKey);
-        if (cached) {
-            // getCache already returns parsed value; guard both cases
-            const data = typeof cached === "string" ? JSON.parse(cached) : cached;
-            return sendResponse({ res, message: "Profile fetched.", data: { owner: data } });
-        }
+        const owner = await cacheAside(
+            StoreOwnerKeys.profile(ownerId),
+            StoreOwnerTTL.PROFILE,
+            () => StoreOwner.findById(ownerId).select("-__v").lean()
+        );
 
-        const owner = await StoreOwner.findById(ownerId).select("-__v").lean();
         if (!owner) {
             return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
         }
-
-        await setCache(cacheKey, owner, StoreOwnerTTL.PROFILE);
 
         return sendResponse({ res, message: "Profile fetched.", data: { owner } });
     } catch (err) {
@@ -72,7 +66,7 @@ export const updateProfile = async (req, res) => {
             phoneOtp,
         } = req.body;
 
-        const owner = await StoreOwner.findById(ownerId).lean();
+        const owner = await StoreOwner.findById(ownerId).select("phone email").lean();
         if (!owner) {
             return sendError(res, "Owner not found.", STATUS_CODES.NOT_FOUND);
         }
@@ -223,6 +217,7 @@ export const sendUpdatePhoneOTP = async (req, res) => {
         // Never expose OTP in production responses — remove `data.otp`
         return sendResponse({
             res,
+            data: { otp },
             message: "OTP sent successfully to the new phone number.",
         });
     } catch (err) {
@@ -750,5 +745,167 @@ export const goOnline = async (req, res) => {
     } catch (err) {
         logger.error("StoreOwner goOnline Error:", err);
         return sendError(res, "Failed to update store status.");
+    }
+};
+
+// ─────────────────────────────────────────────
+// STORE OWNER BOOKINGS MANAGEMENT
+// ─────────────────────────────────────────────
+export const getOwnerBookings = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const { page = 1, limit = 50, status, storeId, search, only_stored_cancelled } = req.query;
+
+        const pageNum = Math.max(1, Number(page));
+        const limitNum = Math.min(100, Math.max(1, Number(limit)));
+        const skip = (pageNum - 1) * limitNum;
+
+        // Find all stores belonging to this store owner
+        const stores = await Store.find({ store_owner_id: ownerId }).select("_id").lean();
+        const storeIds = stores.map((s) => s._id);
+
+        if (storeIds.length === 0) {
+            return sendResponse({
+                res,
+                message: "No stores found for this owner.",
+                data: { bookings: [], total: 0, pagination: { currentPage: pageNum, totalPages: 0, totalItems: 0 } },
+            });
+        }
+
+        const filter = {
+            storeId: { $in: storeIds },
+        };
+
+        // Filter by specific store if provided
+        if (storeId && mongoose.isValidObjectId(storeId) && storeId !== "all") {
+            filter.storeId = new mongoose.Types.ObjectId(storeId);
+        }
+
+        // Filter by status if provided
+        if (status && status !== "all") {
+            const statusLower = status.toLowerCase();
+            if (statusLower === "incoming") {
+                filter.status = { $in: ["incoming", "driver_assigned", "at_store", "pending", "store_assigned", "driver_arrived", "picked_up"] };
+            } else if (statusLower === "active") {
+                filter.status = { $in: ["stored", "active", "in_vault", "storing", "return_requested"] };
+            } else if (statusLower === "delivered") {
+                filter.status = { $in: ["delivered", "completed"] };
+            } else if (statusLower === "cancelled") {
+                filter.status = { $in: ["cancelled", "canceled"] };
+                if (only_stored_cancelled === "true" || only_stored_cancelled === true) {
+                    filter.$or = [
+                        { "storage.storedAt": { $exists: true, $ne: null } },
+                        { wasStored: true },
+                        { was_stored: true },
+                        { "pickup.assignment.completedAt": { $exists: true, $ne: null } }
+                    ];
+                }
+            } else {
+                filter.status = status;
+            }
+        }
+
+        // Handle search
+        if (search && search.trim()) {
+            const regex = new RegExp(search.trim(), "i");
+            filter.$or = [
+                { bookingCode: regex },
+                { "userInfo.firstName": regex },
+                { "userInfo.lastName": regex },
+            ];
+        }
+
+        const [bookings, total] = await Promise.all([
+            Booking.find(filter)
+                .populate("userId", "first_name last_name phone")
+                .populate("storeId", "store_name store_contact_number location")
+                .populate("pickup.assignment.driverId", "first_name last_name phone")
+                .populate("delivery.assignment.driverId", "first_name last_name phone")
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limitNum)
+                .lean(),
+            Booking.countDocuments(filter),
+        ]);
+
+        return sendResponse({
+            res,
+            message: "Store owner bookings fetched successfully.",
+            data: {
+                bookings,
+                total,
+                pagination: {
+                    currentPage: pageNum,
+                    totalPages: Math.ceil(total / limitNum),
+                    totalItems: total,
+                    itemsPerPage: limitNum,
+                },
+            },
+        });
+    } catch (err) {
+        logger.error("StoreOwner getOwnerBookings Error:", err);
+        return sendError(res, "Failed to fetch store owner bookings.");
+    }
+};
+
+export const getOwnerBookingDetail = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        if (!mongoose.isValidObjectId(booking_id)) {
+            return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        // Find all stores belonging to this store owner
+        const stores = await Store.find({ store_owner_id: ownerId }).select("_id").lean();
+        const storeIds = stores.map((s) => s._id);
+
+        const booking = await Booking.findOne({
+            _id: booking_id,
+            storeId: { $in: storeIds },
+        })
+            .populate("userId", "first_name last_name phone")
+            .populate("storeId", "store_name store_contact_number location gstin")
+            .populate("pickup.assignment.driverId", "first_name last_name phone")
+            .populate("delivery.assignment.driverId", "first_name last_name phone")
+            .lean();
+
+        if (!booking) {
+            return sendError(res, "Booking not found or permission denied.", STATUS_CODES.NOT_FOUND);
+        }
+
+        return sendResponse({
+            res,
+            message: "Booking detail fetched successfully.",
+            data: { booking },
+        });
+    } catch (err) {
+        logger.error("StoreOwner getOwnerBookingDetail Error:", err);
+        return sendError(res, "Failed to fetch booking detail.");
+    }
+};
+
+// GET STORE OWNER SETTLEMENT STATEMENT (STORE_OWNER_SETTLEMENT)
+export const getOwnerBookingSettlement = async (req, res) => {
+    try {
+        const ownerId = req.user.auth_id;
+        const { booking_id } = req.params;
+
+        if (!mongoose.isValidObjectId(booking_id)) {
+            return sendError(res, "Invalid booking ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const { getStoreOwnerSettlementData } = await import("../../services/invoiceService.js");
+        const settlement = await getStoreOwnerSettlementData(booking_id, ownerId);
+
+        return sendResponse({
+            res,
+            message: "Store owner settlement statement fetched successfully.",
+            data: { settlement },
+        });
+    } catch (err) {
+        logger.error("StoreOwner getOwnerBookingSettlement Error:", err);
+        return sendError(res, err.message || "Failed to fetch store settlement statement.", STATUS_CODES.FORBIDDEN);
     }
 };

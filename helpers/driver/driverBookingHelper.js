@@ -47,7 +47,7 @@ export const acceptBookingOffer = async (bookingId, driverId) => {
 
     // Check booking state in MongoDB
     const booking = await Booking.findById(bookingId)
-        .select("status pickup.assignment.driverId userId storeId")
+        .select("status pickup.assignment.driverId delivery.assignment.driverId userId storeId")
         .lean();
 
     if (!booking) {
@@ -58,11 +58,17 @@ export const acceptBookingOffer = async (bookingId, driverId) => {
         return { success: false, reason: "BOOKING_CANCELLED" };
     }
 
-    if (booking.status === BOOKING_STATUS.DRIVER_ASSIGNED) {
+    if ([BOOKING_STATUS.DRIVER_ASSIGNED, BOOKING_STATUS.RETURN_DRIVER_ASSIGNED].includes(booking.status)) {
         return { success: false, reason: "ALREADY_ASSIGNED" };
     }
 
-    if (booking.pickup?.assignment?.driverId) {
+    const isReturn = [BOOKING_STATUS.FINAL_PAYMENT_CAPTURED, BOOKING_STATUS.RETURN_REQUESTED].includes(booking.status);
+
+    if (isReturn && booking.delivery?.assignment?.driverId) {
+        return { success: false, reason: "DRIVER_ALREADY_SET" };
+    }
+
+    if (!isReturn && booking.pickup?.assignment?.driverId) {
         return { success: false, reason: "DRIVER_ALREADY_SET" };
     }
 
@@ -76,37 +82,72 @@ export const acceptBookingOffer = async (bookingId, driverId) => {
 
         const now = new Date();
 
-        updatedBooking = await Booking.findOneAndUpdate(
-            {
-                _id: bookingId,
-                status: {
-                    $in: [
-                        BOOKING_STATUS.STORE_ASSIGNED
-                    ],
+        if (isReturn) {
+            updatedBooking = await Booking.findOneAndUpdate(
+                {
+                    _id: bookingId,
+                    status: {
+                        $in: [
+                            BOOKING_STATUS.FINAL_PAYMENT_CAPTURED,
+                            BOOKING_STATUS.RETURN_REQUESTED,
+                        ],
+                    },
+                    "delivery.assignment.driverId": { $exists: false },
                 },
-                // Ensure no driver was assigned concurrently
-                "pickup.assignment.driverId": { $exists: false },
-            },
-            {
-                $set: {
-                    status: BOOKING_STATUS.DRIVER_ASSIGNED,
-                    lastStatusUpdatedAt: now,
-                   "pickup.assignment.driverId": new mongoose.Types.ObjectId(driverId),
-                    "pickup.assignment.assignedAt": now,
-                    "pickup.assignment.acceptedAt": now,
-                },
-                $push: {
-                    timeline: {
-                        status: BOOKING_STATUS.DRIVER_ASSIGNED,
-                        note: "Driver accepted the booking",
-                        updatedBy: driverId,
-                        updatedByModel: "Driver",
-                        createdAt: now,
+                {
+                    $set: {
+                        status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                        lastStatusUpdatedAt: now,
+                        "delivery.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+                        "delivery.assignment.assignedAt": now,
+                        "delivery.assignment.acceptedAt": now,
+                        "delivery.driverSearchStatus": "assigned",
+                    },
+                    $push: {
+                        timeline: {
+                            status: BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                            note: "Return driver accepted the booking",
+                            updatedBy: driverId,
+                            updatedByModel: "Driver",
+                            createdAt: now,
+                        },
                     },
                 },
-            },
-            { returnDocument: "after", session }
-        );
+                { returnDocument: "after", session }
+            );
+        } else {
+            updatedBooking = await Booking.findOneAndUpdate(
+                {
+                    _id: bookingId,
+                    status: {
+                        $in: [
+                            BOOKING_STATUS.STORE_ASSIGNED,
+                        ],
+                    },
+                    "pickup.assignment.driverId": { $exists: false },
+                },
+                {
+                    $set: {
+                        status: BOOKING_STATUS.DRIVER_ASSIGNED,
+                        lastStatusUpdatedAt: now,
+                        "pickup.assignment.driverId": new mongoose.Types.ObjectId(driverId),
+                        "pickup.assignment.assignedAt": now,
+                        "pickup.assignment.acceptedAt": now,
+                        "pickup.driverSearchStatus": "assigned",
+                    },
+                    $push: {
+                        timeline: {
+                            status: BOOKING_STATUS.DRIVER_ASSIGNED,
+                            note: "Pickup driver accepted the booking",
+                            updatedBy: driverId,
+                            updatedByModel: "Driver",
+                            createdAt: now,
+                        },
+                    },
+                },
+                { returnDocument: "after", session }
+            );
+        }
 
         if (!updatedBooking) {
             await session.abortTransaction();
@@ -138,7 +179,6 @@ export const acceptBookingOffer = async (bookingId, driverId) => {
     }
 
     // Post-commit side effects
-    // These run outside the transaction non-fatal if they fail
     await Promise.allSettled([
 
         // Mark offer accepted in Redis
@@ -154,27 +194,11 @@ export const acceptBookingOffer = async (bookingId, driverId) => {
         markDriverOnTrip(driverId, bookingId),
 
         // Cancel the pending timeout job so it doesn't fire after acceptance
-        // attemptNumber comes from the offer we stored it when creating the offer
         cancelJob(
             JOB_QUEUES.DRIVER_ASSIGN,
             `timeout-${bookingId}-${offer.attemptNumber ?? 1}`
         ),
     ]);
-
-    // TODO: Emit socket event to user
-    // io.to(`user:${updatedBooking.userId}`).emit("booking:driver_assigned", {
-    //     bookingId,
-    //     driverId,
-    //     driverName: ...,
-    //     status: BOOKING_STATUS.DRIVER_ASSIGNED,
-    // });
-
-    // TODO: Send push notification to user
-    // await notifyUser(updatedBooking.userId, {
-    //     title: "Driver Assigned!",
-    //     body: "Your driver is on the way.",
-    //     data: { bookingId, type: "DRIVER_ASSIGNED" },
-    // });
 
     return {
         success: true,
@@ -184,7 +208,6 @@ export const acceptBookingOffer = async (bookingId, driverId) => {
 };
 
 // REJECT BOOKING
-
 export const rejectBookingOffer = async (bookingId, driverId, reason = "") => {
     // Validate the offer is actually for this driver
     const { valid, reason: offerReason } = await getValidOfferForDriver(

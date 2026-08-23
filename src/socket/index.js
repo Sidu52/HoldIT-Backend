@@ -7,6 +7,7 @@ import { registerDriverHandlers } from "./handlers/driver.handler.js";
 import { registerUserHandlers } from "./handlers/user.handler.js";
 import { registerStoreHandlers } from "./handlers/store.handler.js";
 import { registerAdminHandlers } from "./handlers/admin.handler.js";
+import { registerSupportHandlers } from "./handlers/support.handler.js";
 import { startLocationMonitor } from "./services/location.service.js";
 
 let io;
@@ -15,7 +16,30 @@ export const initSocket = (httpServer) => {
     // Initialize Server
     io = new Server(httpServer, {
         cors: {
-            origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",") : "*",
+            origin: function (origin, callback) {
+                if (!origin || origin === "undefined") {
+                    return callback(null, true);
+                }
+                const allowedOrigins = [
+                    process.env.ADMIN_URL,
+                    process.env.STORE_URL,
+                    "http://localhost:3000",
+                    "http://localhost:3001",
+                    "http://localhost:5173",
+                    "http://localhost:4001",
+                    "http://localhost:4000",
+                    "http://localhost:8081",
+                    "http://localhost:8082",
+                    "http://127.0.0.1:3000",
+                ].filter(Boolean);
+
+                if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
+                    callback(null, origin);
+                } else {
+                    callback(null, false);
+                }
+            },
+            credentials: true,
             methods: ["GET", "POST", "PUT", "DELETE"],
         },
         transports: ["websocket", "polling"],
@@ -61,6 +85,7 @@ export const initSocket = (httpServer) => {
         registerUserHandlers(io, socket);
         registerStoreHandlers(io, socket);
         registerAdminHandlers(io, socket);
+        registerSupportHandlers(io, socket);
     });
 
     // Start Background Monitors

@@ -81,7 +81,7 @@ export const schedulePickupSchema = Joi.object({
     tipAmount: Joi.number().min(0).optional().default(0),
 
     // Coupon codes are short — 50 chars is generous; 500 was a copy-paste error
-    coupenCode: Joi.string().trim().max(50).optional().allow(""),
+    couponCode: Joi.string().trim().max(50).optional().allow(""),
 
     notes: Joi.string().trim().max(500).optional().allow(""),
 });
@@ -108,11 +108,7 @@ export const bookingIdSchema = {
 export const cancelBookingSchema = {
     params: bookingIdParamSchema,
     body: Joi.object({
-        reason: Joi.string().trim().min(5).max(500).required().messages({
-            "string.min": "Cancellation reason must be at least 5 characters",
-            "string.max": "Cancellation reason cannot exceed 500 characters",
-            "any.required": "Cancellation reason is required",
-        }),
+        reason: Joi.string().trim().max(500).optional().default("User cancelled booking").allow(""),
     }),
 };
 
@@ -123,7 +119,7 @@ export const requestReturnSchema = {
         returnLocation: locationSchema.required().messages({
             "any.required": "Return location is required",
         }),
-
+ 
         notes: Joi.string().trim().max(500).optional().allow(""),
     }),
 };

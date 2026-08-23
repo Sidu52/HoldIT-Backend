@@ -1,317 +1,198 @@
 /**
  * @swagger
- *   /api/v1/user/profile:
- *     get:
- *       summary: Profile
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- */
-
-/**
- * @swagger
- *   /api/v1/user/profile:
- *     put:
- *       summary: Update Profile
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ * /api/v1/user/profile:
+ *   get:
+ *     summary: Get User Profile Details
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile data returned
+ *   put:
+ *     summary: Update User Profile
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ * 
+ * /api/v1/user/addresses:
+ *   get:
+ *     summary: Get User Stored Addresses
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of saved addresses
+ *   post:
+ *     summary: Add New Stored Address
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - addressLine1:
+ *               - city
+ *               - pincode
+ *             properties:
+ *               addressLine1:
+ *                 type: string
+ *               addressLine2:
+ *                 type: string
+ *               city:
+ *                 type: string
+ *               pincode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *     responses:
+ *       201:
+ *         description: Address added
+ * 
+ * /api/v1/user/address/{id}:
+ *   get:
+ *     summary: Get Stored Address by ID
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 coordinates:
- *                   type: array
- *                   items:
- *                     type: number
- *               required:
- *                 - coordinates
- */
-
-/**
- * @swagger
- *   /api/v1/user/location:
- *     put:
- *       summary: Update Location
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Address details
+ *   put:
+ *     summary: Update Stored Address
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 lat:
- *                   type: number
- *                   example: 19.1367
- *                 lng:
- *                   type: number
- *                   example: 72.8295
- *               required:
- *                 - lat
- *                 - lng
- */
-
-/**
- * @swagger
- *   /api/v1/user/addresses:
- *     get:
- *       summary: User Addresses
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- */
-
-/**
- * @swagger
- *   /api/v1/user/addresses:
- *     post:
- *       summary: Add Address
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               addressLine1:
+ *                 type: string
+ *               city:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Address updated
+ *   delete:
+ *     summary: Delete Stored Address
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 street:
- *                   type: string
- *                   example: SS Schoool
- *                 city:
- *                   type: string
- *                   example: Mumbai
- *                 state:
- *                   type: string
- *                   example: Maharastra
- *                 postal_code:
- *                   type: string
- *                   example: 0000000
- *                 country:
- *                   type: string
- *                   example: India
- *                 coordinates:
- *                   type: array
- *                   items:
- *                     type: number
- *                 is_default:
- *                   type: boolean
- *                   example: false
- *               required:
- *                 - street
- *                 - city
- *                 - state
- *                 - postal_code
- *                 - country
- *                 - coordinates
- *                 - is_default
- */
-
-/**
- * @swagger
- *   /api/v1/user/address/:id:
- *     get:
- *       summary: User Addresses By Id
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- */
-
-/**
- * @swagger
- *   /api/v1/user/address/:id:
- *     put:
- *       summary: Update Addresses By Id
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Address deleted
+ * 
+ * /api/v1/user/stores/nearest:
+ *   get:
+ *     summary: Find Nearest Store to Location
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: lat
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 city:
- *                   type: string
- *                   example: Mumbai
- *               required:
- *                 - city
- */
-
-/**
- * @swagger
- *   /api/v1/user/address/:id:
- *     delete:
- *       summary: Delete Addresses By Id
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- */
-
-/**
- * @swagger
- *   /api/v1/user/stores/nearest:
- *     get:
- *       summary: Nearest Stores
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- */
-
-/**
- * @swagger
- *   /api/v1/user/stores/:id:
- *     get:
- *       summary: Stores By ID
- *       tags:
- *         - User
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
+ *         schema:
+ *           type: number
+ *       - in: query
+ *         name: lng
+ *         required: true
+ *         schema:
+ *           type: number
+ *     responses:
+ *       200:
+ *         description: Nearest store details
+ * 
+ * /api/v1/user/stores/{store_id}:
+ *   get:
+ *     summary: Get Store Details by Store ID
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: store_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Store details
+ * 
+ * /api/v1/user/location:
+ *   put:
+ *     summary: Update Current User Coordinates
+ *     tags:
+ *       - User Profile
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - lat
+ *               - lng
+ *             properties:
+ *               lat:
+ *                 type: number
+ *               lng:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Location updated
  */

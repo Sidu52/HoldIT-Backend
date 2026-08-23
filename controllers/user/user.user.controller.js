@@ -7,13 +7,13 @@ import Store from "../../models/Store.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { ACCOUNT_STATUS, VERIFICATION_STATUS, STATUS_CODES } from "../../utils/constants.js";
 
-import { getCache, setCache, deleteCache } from "../../constants/redis/redisOperation.js";
+import { cacheAside, deleteCache, getCache } from "../../constants/redis/redisOperation.js";
 import { UserKeys, UserTTL } from "../../constants/redis/user.keys.js";
 import { StoreKeys, StoreTTL } from "../../constants/redis/store.keys.js";
 
 import { ADDRESS_LIMITS, ADDRESS_MESSAGES } from "../../constants/user/address.js";
 
-import { checkServiceability, invalidateAddressCache, syncUserLocationWithAddress, buildAddressObject } from "../../helpers/user/addressHelper.js";
+import { checkServiceability, invalidateAddressCache, syncUserLocationWithAddress, buildAddressObject, formatAddressString, isDuplicateAddress } from "../../helpers/user/addressHelper.js";
 
 import asyncHandler from "../../utils/asyncHandler.js";
 import logger from "../../utils/logger.js";
@@ -50,28 +50,15 @@ const sanitizeString = (value) => {
 export const getProfile = asyncHandler(async (req, res) => {
     const userId = req.user.auth_id;
 
-    const cached = await getCache(UserKeys.profile(userId));
-    if (cached) {
-        return sendResponse({
-            res,
-            message: "Profile fetched successfully",
-            data: cached,
-        });
-    }
-
-    const user = await User.findById(userId)
-        .select(EXCLUDED_FIELDS)
-        .lean();
+    const user = await cacheAside(
+        UserKeys.profile(userId),
+        UserTTL.PROFILE,
+        () => User.findById(userId).select(EXCLUDED_FIELDS).lean()
+    );
 
     if (!user) {
-        return sendError(
-            res,
-            "User not found",
-            STATUS_CODES.NOT_FOUND
-        );
+        return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
     }
-
-    await setCache(UserKeys.profile(userId), user, UserTTL.PROFILE);
 
     return sendResponse({
         res,
@@ -172,48 +159,46 @@ export const updateProfile = asyncHandler(async (req, res) => {
 export const getAddresses = asyncHandler(async (req, res) => {
     const userId = req.user.auth_id;
 
-    const cached = await getCache(UserKeys.addressList(userId));
+    const responseData = await cacheAside(
+        UserKeys.addressList(userId),
+        UserTTL.ADDRESS_LIST,
+        async () => {
+            const user = await User.findById(userId)
+                .select("addresses")
+                .lean();
 
-    if (cached) {
-        return sendResponse({
-            res,
-            message: ADDRESS_MESSAGES.FETCHED,
-            data: cached,
-        });
-    }
+            if (!user) {
+                return null;
+            }
 
-    const user = await User.findById(userId)
-        .select("addresses")
-        .lean();
+            const addresses = [...(user.addresses || [])]
+                .map((addr, index) => ({
+                    ...addr,
+                    _index: index,
+                }))
+                .sort((a, b) => {
+                    if (a.is_default !== b.is_default) {
+                        return a.is_default ? -1 : 1;
+                    }
 
-    if (!user) {
+                    return b._index - a._index;
+                })
+                .map(({ _index, ...rest }) => rest);
+
+            return {
+                addresses,
+                total: addresses.length,
+            };
+        }
+    );
+
+    if (!responseData) {
         return sendError(
             res,
             ADDRESS_MESSAGES.USER_NOT_FOUND,
             STATUS_CODES.NOT_FOUND
         );
     }
-
-    const addresses = [...(user.addresses || [])]
-        .map((addr, index) => ({
-            ...addr,
-            _index: index,
-        }))
-        .sort((a, b) => {
-            if (a.is_default !== b.is_default) {
-                return a.is_default ? -1 : 1;
-            }
-
-            return b._index - a._index;
-        })
-        .map(({ _index, ...rest }) => rest);
-
-    const responseData = {
-        addresses,
-        total: addresses.length,
-    };
-
-    await setCache(UserKeys.addressList(userId), responseData, UserTTL.ADDRESS_LIST);
 
     return sendResponse({
         res,
@@ -223,55 +208,42 @@ export const getAddresses = asyncHandler(async (req, res) => {
 });
 
 // GET ADDRESS BY ID
-export const getAddressById = asyncHandler(
-    async (req, res) => {
-        const userId = req.user.auth_id;
-        const { id } = req.params;
+export const getAddressById = asyncHandler(async (req, res) => {
+    const userId = req.user.auth_id;
+    const { id } = req.params;
 
-        const cached = await getCache(UserKeys.addressDetail(userId, id));
+    const address = await cacheAside(
+        UserKeys.addressDetail(userId, id),
+        UserTTL.ADDRESS_DETAIL,
+        async () => {
+            const user = await User.findById(userId)
+                .select("addresses")
+                .lean();
 
-        if (cached) {
-            return sendResponse({
-                res,
-                message: ADDRESS_MESSAGES.FETCHED,
-                data: cached,
-            });
-        }
+            if (!user) return null;
 
-        const user = await User.findById(userId)
-            .select("addresses")
-            .lean();
-
-        if (!user) {
-            return sendError(
-                res,
-                ADDRESS_MESSAGES.USER_NOT_FOUND,
-                STATUS_CODES.NOT_FOUND
+            return (
+                user.addresses.find(
+                    (addr) => String(addr._id) === String(id)
+                ) || null
             );
         }
+    );
 
-        const address = user.addresses.find(
-            (addr) =>
-                String(addr._id) === String(id)
-        );
-
-        if (!address) {
-            return sendError(
-                res,
-                ADDRESS_MESSAGES.ADDRESS_NOT_FOUND,
-                STATUS_CODES.NOT_FOUND
-            );
-        }
-
-        await setCache(UserKeys.addressDetail(userId, id), address, UserTTL.ADDRESS_DETAIL);
-
-        return sendResponse({
+    if (!address) {
+        return sendError(
             res,
-            message: ADDRESS_MESSAGES.FETCHED,
-            data: address,
-        });
+            ADDRESS_MESSAGES.ADDRESS_NOT_FOUND,
+            STATUS_CODES.NOT_FOUND
+        );
     }
-);
+
+    return sendResponse({
+        res,
+        message: ADDRESS_MESSAGES.FETCHED,
+        data: address,
+    });
+});
 
 // ADD ADDRESS
 export const addAddress = asyncHandler(async (req, res) => {
@@ -288,7 +260,7 @@ export const addAddress = asyncHandler(async (req, res) => {
             .session(session);
 
         if (!user) {
-            await session.abortTransaction();
+            if (session.inTransaction()) await session.abortTransaction();
 
             return sendError(
                 res,
@@ -301,7 +273,7 @@ export const addAddress = asyncHandler(async (req, res) => {
             user.addresses.length >=
             ADDRESS_LIMITS.MAX_ADDRESSES
         ) {
-            await session.abortTransaction();
+            if (session.inTransaction()) await session.abortTransaction();
 
             return sendError(
                 res,
@@ -313,6 +285,17 @@ export const addAddress = asyncHandler(async (req, res) => {
         const newAddress =
             await buildAddressObject(req.body);
 
+        // Check for duplicate address
+        if (isDuplicateAddress(user.addresses, newAddress)) {
+            if (session.inTransaction()) await session.abortTransaction();
+
+            return sendError(
+                res,
+                ADDRESS_MESSAGES.DUPLICATE_ADDRESS,
+                STATUS_CODES.CONFLICT
+            );
+        }
+
         const shouldBeDefault =
             req.body.is_default === true ||
             user.addresses.length === 0;
@@ -323,25 +306,30 @@ export const addAddress = asyncHandler(async (req, res) => {
             });
 
             newAddress.is_default = true;
+
+            if (newAddress.coordinates && newAddress.coordinates.length === 2) {
+                const [lng, lat] = newAddress.coordinates;
+                const { isServiceable, serviceAreaId } = await checkServiceability(lng, lat);
+                user.is_serviceable = isServiceable;
+                user.service_area_id = serviceAreaId;
+                user.location = {
+                    type: "Point",
+                    coordinates: [lng, lat],
+                    address: formatAddressString(newAddress),
+                };
+            }
         }
 
         user.addresses.push(newAddress);
 
         await user.save({ session });
 
+        await session.commitTransaction();
+
         const addedAddress =
             user.addresses[
             user.addresses.length - 1
             ];
-
-        if (addedAddress.is_default) {
-            await syncUserLocationWithAddress(
-                userId,
-                addedAddress
-            );
-        }
-
-        await session.commitTransaction();
 
         await invalidateAddressCache(userId);
 
@@ -358,7 +346,9 @@ export const addAddress = asyncHandler(async (req, res) => {
             },
         });
     } catch (error) {
-        await session.abortTransaction();
+        if (session.inTransaction()) {
+            await session.abortTransaction();
+        }
 
         throw error;
     } finally {
@@ -466,12 +456,30 @@ export const updateAddress = asyncHandler(
                 isServiceable,
             } =
                 await checkServiceability(
-                    lat,
-                    lng
+                    lng,
+                    lat
                 );
 
             address.is_serviceable =
                 isServiceable;
+        }
+
+        // Check for duplicate address
+        const potentialAddress = {
+            street: street || address.street,
+            city: city || address.city,
+            state: state || address.state,
+            postal_code: postal_code || address.postal_code,
+            country: country || address.country,
+            coordinates: coordinates !== undefined ? coordinates : address.coordinates,
+        };
+
+        if (isDuplicateAddress(user.addresses, potentialAddress, id)) {
+            return sendError(
+                res,
+                ADDRESS_MESSAGES.DUPLICATE_ADDRESS,
+                STATUS_CODES.CONFLICT
+            );
         }
 
         // Default handling
@@ -486,14 +494,19 @@ export const updateAddress = asyncHandler(
             });
         }
 
-        await user.save();
-
-        if (address.is_default) {
-            await syncUserLocationWithAddress(
-                userId,
-                address
-            );
+        if (address.is_default && address.coordinates?.length === 2) {
+            const [lng, lat] = address.coordinates;
+            const { isServiceable, serviceAreaId } = await checkServiceability(lng, lat);
+            user.is_serviceable = isServiceable;
+            user.service_area_id = serviceAreaId;
+            user.location = {
+                type: "Point",
+                coordinates: [lng, lat],
+                address: formatAddressString(address),
+            };
         }
+
+        await user.save();
 
         await invalidateAddressCache(userId);
         await deleteCache(UserKeys.addressDetail(userId, id));
@@ -554,26 +567,24 @@ export const deleteAddress = asyncHandler(
             user.addresses.length > 0
         ) {
             user.addresses[0].is_default = true;
+            if (user.addresses[0].coordinates?.length === 2) {
+                const [lng, lat] = user.addresses[0].coordinates;
+                const { isServiceable, serviceAreaId } = await checkServiceability(lng, lat);
+                user.is_serviceable = isServiceable;
+                user.service_area_id = serviceAreaId;
+                user.location = {
+                    type: "Point",
+                    coordinates: [lng, lat],
+                    address: formatAddressString(user.addresses[0]),
+                };
+            }
+        } else if (user.addresses.length === 0) {
+            user.is_serviceable = false;
+            user.service_area_id = null;
+            user.location = undefined;
         }
 
         await user.save();
-
-        if (
-            wasDefault &&
-            user.addresses.length > 0
-        ) {
-            await syncUserLocationWithAddress(
-                userId,
-                user.addresses[0]
-            );
-        }
-
-        if (user.addresses.length === 0) {
-            await syncUserLocationWithAddress(
-                userId,
-                null
-            );
-        }
 
         await invalidateAddressCache(userId);
 
@@ -686,195 +697,179 @@ export const updateLocation = asyncHandler(
 );
 
 // GET NEAREST STORE
-export const getNearestStore = asyncHandler(
-    async (req, res) => {
-        const userId = req.user.auth_id;
+export const getNearestStore = asyncHandler(async (req, res) => {
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
 
-        const user = await User.findById(
-            userId
-        )
-            .select("location")
-            .lean();
-
-        if (!user) {
-            return sendError(
-                res,
-                "User not found",
-                STATUS_CODES.NOT_FOUND
-            );
-        }
-
-        const [lng, lat] =
-            user.location?.coordinates || [];
-
-        if (
-            typeof lat !== "number" ||
-            typeof lng !== "number"
-        ) {
-            return sendError(
-                res,
-                "Location not set",
-                STATUS_CODES.BAD_REQUEST
-            );
-        }
-
-        const cached = await getCache(StoreKeys.nearest(lat, lng));
-
-        if (cached) {
-            return sendResponse({
-                res,
-                message:
-                    "Nearest stores fetched successfully",
-                data: cached,
-            });
-        }
-
-        const stores = await Store.aggregate([
-            {
-                $geoNear: {
-                    near: {
-                        type: "Point",
-                        coordinates: [lng, lat],
-                    },
-                    key: "location",
-                    distanceField:
-                        "distance",
-                    spherical: true,
-                    maxDistance:
-                        5 * 1000,
-                    query: {
-                        account_status:
-                            ACCOUNT_STATUS.ACTIVE,
-                        verification_status:
-                            VERIFICATION_STATUS.VERIFIED,
-                    },
-                },
-            },
-            {
-                $addFields: {
-                    availableSlots: {
-                        $subtract: [
-                            {
-                                $ifNull: [
-                                    "$max_booking_capacity",
-                                    50,
-                                ],
-                            },
-                            {
-                                $ifNull: [
-                                    "$current_booking_count",
-                                    0,
-                                ],
-                            },
-                        ],
-                    },
-                },
-            },
-            {
-                $project: {
-                    _id: 1,
-                    store_name: 1,
-                    store_open_time: 1,
-                    store_close_time: 1,
-                    store_description: 1,
-                    location: 1,
-                    rating: 1,
-                    availableSlots: 1,
-                    distanceKm: {
-                        $round: [
-                            {
-                                $divide: [
-                                    "$distance",
-                                    1000,
-                                ],
-                            },
-                            2,
-                        ],
-                    },
-                },
-            },
-            {
-                $limit: 20,
-            },
-        ]);
-
-        if (!stores.length) {
-            return sendError(
-                res,
-                "No nearby stores found",
-                STATUS_CODES.NOT_FOUND
-            );
-        }
-
-        const responseData = {
-            nearest: stores[0],
-            alternatives:
-                stores.slice(1),
-            total: stores.length,
-        };
-
-        await setCache(StoreKeys.nearest(lat, lng), responseData, StoreTTL.NEAREST);
-
-        return sendResponse({
+    if (isNaN(lat) || isNaN(lng)) {
+        return sendError(
             res,
-            message:
-                "Nearest stores fetched successfully",
-            data: responseData,
-        });
+            "Invalid latitude or longitude",
+            STATUS_CODES.BAD_REQUEST
+        );
     }
-);
+
+    const responseData = await cacheAside(
+        StoreKeys.nearest(lat, lng),
+        StoreTTL.NEAREST,
+        async () => {
+            const stores = await Store.aggregate([
+                {
+                    $geoNear: {
+                        near: {
+                            type: "Point",
+                            coordinates: [lng, lat],
+                        },
+                        key: "location",
+                        distanceField: "distance",
+                        spherical: true,
+                        maxDistance: 5 * 1000,
+                        query: {
+                            account_status: ACCOUNT_STATUS.ACTIVE,
+                            verification_status: VERIFICATION_STATUS.VERIFIED,
+                        },
+                    },
+                },
+                {
+                    $addFields: {
+                        availableSlots: {
+                            $subtract: [
+                                {
+                                    $ifNull: [
+                                        "$max_booking_capacity",
+                                        50,
+                                    ],
+                                },
+                                {
+                                    $ifNull: [
+                                        "$current_booking_count",
+                                        0,
+                                    ],
+                                },
+                            ],
+                        },
+                    },
+                },
+                {
+                    $project: {
+                        _id: 1,
+                        store_name: 1,
+                        store_open_time: 1,
+                        store_close_time: 1,
+                        store_description: 1,
+                        location: 1,
+                        rating: 1,
+                        availableSlots: 1,
+                        distanceKm: {
+                            $round: [
+                                {
+                                    $divide: [
+                                        "$distance",
+                                        1000,
+                                    ],
+                                },
+                                2,
+                            ],
+                        },
+                    },
+                },
+                {
+                    $limit: 20,
+                },
+            ]);
+
+            if (!stores.length) {
+                return null;
+            }
+
+            return {
+                nearest: stores[0],
+                alternatives: stores.slice(1),
+                total: stores.length,
+            };
+        }
+    );
+
+    if (!responseData) {
+        return sendError(
+            res,
+            "No nearby stores found",
+            STATUS_CODES.NOT_FOUND
+        );
+    }
+
+    return sendResponse({
+        res,
+        message: "Nearest stores fetched successfully",
+        data: responseData,
+    });
+});
 
 // GET STORE BY ID
-export const getStoreById = asyncHandler(
-    async (req, res) => {
-        const { store_id } = req.params;
+export const getStoreById = asyncHandler(async (req, res) => {
+    const { store_id } = req.params;
 
-        const cached = await getCache(StoreKeys.publicView(store_id));
-
-        if (cached) {
-            return sendResponse({
-                res,
-                message:
-                    "Store fetched successfully",
-                data: cached,
-            });
-        }
-
-        const store = await Store.findOne({
-            _id: store_id,
-            account_status:
-                ACCOUNT_STATUS.ACTIVE,
-            verification_status:
-                VERIFICATION_STATUS.VERIFIED,
-        })
-            .select(
+    const store = await cacheAside(
+        StoreKeys.publicView(store_id),
+        StoreTTL.PUBLIC_VIEW,
+        async () => {
+            return Store.findOne({
+                _id: store_id,
+                account_status: ACCOUNT_STATUS.ACTIVE,
+                verification_status: VERIFICATION_STATUS.VERIFIED,
+            })
+                .select(
+                    `
+                    store_name
+                    store_open_time
+                    store_close_time
+                    store_description
+                    location
+                    store_capacity
+                    rating
                 `
-                store_name
-                store_open_time
-                store_close_time
-                store_description
-                location
-                store_capacity
-                rating
-            `
-            )
-            .lean();
-
-        if (!store) {
-            return sendError(
-                res,
-                "Store not found",
-                STATUS_CODES.NOT_FOUND
-            );
+                )
+                .lean();
         }
+    );
 
-        await setCache(StoreKeys.publicView(store_id), store, StoreTTL.PUBLIC_VIEW);
-
-        return sendResponse({
+    if (!store) {
+        return sendError(
             res,
-            message:
-                "Store fetched successfully",
-            data: store,
-        });
+            "Store not found",
+            STATUS_CODES.NOT_FOUND
+        );
     }
-);
+
+    return sendResponse({
+        res,
+        message: "Store fetched successfully",
+        data: store,
+    });
+});
+
+// UPDATE PUSH TOKEN
+export const updatePushToken = asyncHandler(async (req, res) => {
+    const userId = req.user.auth_id;
+    const { push_token } = req.body;
+
+    if (!push_token || typeof push_token !== "string") {
+        return sendError(res, "push_token string is required", STATUS_CODES.BAD_REQUEST);
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $set: { push_token } },
+        { new: true }
+    ).select("_id push_token").lean();
+
+    if (!updatedUser) {
+        return sendError(res, "User not found", STATUS_CODES.NOT_FOUND);
+    }
+
+    return sendResponse({
+        res,
+        message: "Push token updated successfully",
+        data: { push_token: updatedUser.push_token },
+    });
+});

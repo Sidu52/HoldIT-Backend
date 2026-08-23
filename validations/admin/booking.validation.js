@@ -66,12 +66,11 @@ export const updateBookingStatusSchema = Joi.object({
 
 
 export const assignDriverSchema = Joi.object({
-  driver_id: objectIdField("Driver ID"),
+  driver_id: objectIdField("Driver ID", false),
+  driverId: objectIdField("Driver ID", false),
 });
 
-export const reassignDriverSchema = Joi.object({
-  driver_id: objectIdField("Driver ID"),
-});
+export const reassignDriverSchema = assignDriverSchema;
 
 export const reassignStoreSchema = Joi.object({
   store_id: objectIdField("Store ID"),

@@ -3,7 +3,7 @@ import Booking from "../../models/Booking.js";
 import StoreOwner from "../../models/StoreOwner.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { ACCOUNT_STATUS, STATUS_CODES, VERIFICATION_STATUS, BOOKING_STATUS } from "../../utils/constants.js";
-import { escapeRegex } from "../../utils/helper.js";
+import { escapeRegex, buildPagination } from "../../utils/helper.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import logger from "../../utils/logger.js";
 import { cacheAside, deleteByPattern, deleteManyCache } from "../../constants/redis/redisOperation.js";
@@ -129,10 +129,9 @@ export const getStores = async (req, res) => {
                 Store.countDocuments(filter),
             ]);
 
-            const totalPages = Math.ceil(total / limitNum);
             return {
                 stores,
-                pagination: { currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum, hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1 },
+                pagination: buildPagination(pageNum, limitNum, total),
             };
         });
 

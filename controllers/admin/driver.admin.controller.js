@@ -3,13 +3,14 @@ import Driver from "../../models/Driver.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { STATUS_CODES, ACCOUNT_STATUS } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
-import { escapeRegex } from "../../utils/helper.js";
+import { escapeRegex, buildPagination } from "../../utils/helper.js";
 import { updateDriverLocation } from "../../services/driverGeoService.js";
 import { cacheAside, deleteByPattern, deleteCache, deleteManyCache } from "../../constants/redis/redisOperation.js";
 import { AdminKeys, AdminTTL } from "../../constants/redis/admin.keys.js";
 import { ExcludedFields } from "../../helpers/admin/admin.js";
 import { AuthKeys } from "../../constants/redis/auth.keys.js";
 import { DriverKeys } from "../../constants/redis/driver.keys.js";
+import { NS } from "../../constants/redis/namespaces.js";
 
 
 const invalidateDriverCache = async (driverId) => {
@@ -54,13 +55,9 @@ export const getDrivers = async (req, res) => {
                 Driver.find(filter).select(ExcludedFields).sort(sort).skip(skip).limit(limitNum).lean(),
                 Driver.countDocuments(filter),
             ]);
-            const totalPages = Math.ceil(total / limitNum);
             return {
                 drivers,
-                pagination: {
-                    currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum,
-                    hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1,
-                },
+                pagination: buildPagination(pageNum, limitNum, total),
             };
         }); 
         return sendResponse({ res, message: "Drivers fetched successfully", data: responseData });
@@ -141,9 +138,7 @@ export const updateDriver = async (req, res) => {
         if (!updatedDriver) return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
 
         await invalidateDriverCache(driver_id);
-        results.forEach((r) => r.status === "rejected" && logger.warn("[updateDriver] cache sync failed:", r.reason?.message));
 
-        
         return sendResponse({ res, message: "Driver updated successfully", data: updatedDriver });
     } catch (err) {
         logger.error("[updateDriver] Error:", err);
@@ -170,8 +165,8 @@ export const driverLocation = async (req, res) => {
 
         const driver = await Driver.findById(driver_id).select("_id auth_id account_status service_area_id").lean();
         if (!driver) return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
-
-        if (!driver.auth_id || driver.auth_id.toString() !== auth_id.toString()) {
+        
+        if (!driver._id || driver._id.toString() !== driver_id.toString()) {
             return sendError(res, "Unauthorized access", STATUS_CODES.FORBIDDEN);
         }
         if (driver.account_status !== ACCOUNT_STATUS.ACTIVE) {
@@ -238,18 +233,13 @@ export const updateDriverStatus = async (req, res) => {
             return sendError(res, "Failed to update driver status", STATUS_CODES.CONFLICT);
         }
 
-        const sideEffects = [
-            deleteCache(DriverKeys.profile(driver_id)),
-            deleteByPattern(AdminKeys.driverListPattern()),
-        ];
+        const sideEffects = [invalidateDriverCache(driver_id)];
         if (isDeactivating) {
             sideEffects.push(deleteByPattern(AuthKeys.refreshTokenPattern(NS.DRIVER, driver_id)));
         }
-
         const results = await Promise.allSettled(sideEffects);
         results.forEach((r) => r.status === "rejected" && logger.warn("[updateDriverStatus] cache sync failed:", r.reason?.message));
 
-        await invalidateDriverCache(driver_id);
         return sendResponse({ res, message: "Driver account updated successfully", data: updatedDriver });
     } catch (err) {
         logger.error("[updateDriverStatus] Error:", err);
@@ -361,13 +351,8 @@ export const updateDriverDuty = async (req, res) => {
             return sendError(res, "Failed to update driver duty status", STATUS_CODES.CONFLICT);
         }
 
-        const results = await Promise.allSettled([
-            deleteCache(DriverKeys.profile(driver_id)),
-            deleteByPattern(AdminKeys.driverListPattern()),
-        ]);
-        results.forEach((r) => r.status === "rejected" && logger.warn("[updateDriverDuty] cache sync failed:", r.reason?.message));
-
         await invalidateDriverCache(driver_id);
+
         return sendResponse({ res, message: "Driver duty updated successfully", data: updatedDriver });
     } catch (err) {
         logger.error("[updateDriverDuty] Error:", err);

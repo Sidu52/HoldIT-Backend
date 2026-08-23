@@ -7,6 +7,7 @@ import { assignStoreToBooking, releaseDriver, isValidStatusTransition } from "..
 import logger from "../../utils/logger.js";
 import { getIO } from "../../src/socket/index.js";
 import { STATUS_CODES, BOOKING_STATUS, ACCOUNT_STATUS } from "../../utils/constants.js";
+import { buildPagination, safeAbortSession } from "../../utils/helper.js";
 import {
     emitBookingCancelled, emitBookingDriverAssigned, emitBookingStoreAssigned,
     emitBookingReturnDriverAssigned, emitBookingDriverArrived, emitBookingPickedUp,
@@ -14,8 +15,12 @@ import {
 } from "../../src/socket/emitters/booking.emitter.js";
 import { cacheAside, deleteByPattern, deleteCache } from "../../constants/redis/redisOperation.js";
 import { AdminKeys, AdminTTL } from "../../constants/redis/admin.keys.js";
+import { BookingKeys } from "../../constants/redis/booking.keys.js";
+import redis from "../../services/redisService.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { invalidateBookingCache } from "../../constants/redis/invalidate/booking.invalidate.js";
+import { scheduleDriverSearch, getOfferStatus } from "../../helpers/user/driverAssignHelper.js";
+import { adminProcessCriticalCancel } from "../../helpers/driver/driverRideHelper.js";
 
 const EXCLUDED_FIELDS = "-__v";
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -26,10 +31,6 @@ const createTimelineEntry = (status, note, actorId, role = "Admin") => ({
 
 const releaseStoreCapacity = (storeId, session) =>
     storeId ? Store.findByIdAndUpdate(storeId, { $inc: { current_capacity: -1 } }, { session }) : null;
-
-const safeAbortSession = async (session) => {
-    try { await session.abortTransaction(); session.endSession(); } catch (_) { }
-};
 
 const withSession = async (res, controllerName, fn) => {
     const session = await mongoose.startSession();
@@ -65,7 +66,7 @@ const emitSocketEvent = (toStatus, io, id, booking, extra = {}) => {
         case BOOKING_STATUS.PICKED_UP:
             return emitBookingPickedUp(io, id, userId, storeId?._id || storeId, new Date(), driverName(pickup?.assignment?.driverId));
         case BOOKING_STATUS.STORED:
-            return emitBookingStored(io, id, userId, new Date(), storeId?.store_name || "Store");
+            return emitBookingStored(io, id, userId, storeId?._id || storeId, new Date(), storeId?.store_name || "Store");
         case BOOKING_STATUS.RETURN_REQUESTED:
             return emitBookingReturnRequested(io, id, userId, storeId?._id || storeId, deliveryLocation, delivery?.scheduledAt || delivery?.requestedAt || new Date());
         case BOOKING_STATUS.DELIVERED:
@@ -162,10 +163,9 @@ export const getBookings = async (req, res) => {
                 Booking.countDocuments(filter),
             ]);
 
-            const totalPages = Math.ceil(total / limitNum);
             return {
                 bookings,
-                pagination: { currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum, hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1 },
+                pagination: buildPagination(pageNum, limitNum, total),
             };
         });
         return sendResponse({ res, message: "Bookings fetched successfully", data: responseData });
@@ -179,29 +179,120 @@ export const getBookings = async (req, res) => {
 export const getBookingById = async (req, res) => {
     try {
         const { id } = req.params;
-        const booking = await cacheAside(
-            AdminKeys.bookingDetail(id),
-            AdminTTL.BOOKING_DETAIL,
-            () => Booking.findById(id).select(EXCLUDED_FIELDS)
-                .populate("userId", "first_name last_name phone email")
-                .populate("storeId", "store_name store_contact_number")
-                .lean()
-        );
+
+        // Invalidate stale redis cache to ensure deep populated data
+        await deleteCache(AdminKeys.bookingDetail(id)).catch(() => {});
+
+        const booking = await Booking.findById(id).select(EXCLUDED_FIELDS)
+            .populate("userId", "first_name last_name phone email account_status createdAt")
+            .populate("serviceAreaId", "name city state pincode")
+            .populate({
+                path: "storeId",
+                select: "store_name store_contact_number address location current_capacity max_capacity store_owner_id",
+                populate: {
+                    path: "store_owner_id",
+                    select: "first_name last_name email phone account_status verification_status status",
+                },
+            })
+            .populate("pickup.assignment.driverId", "first_name last_name phone vehicle_details account_status profile_picture is_online is_on_trip currentLocation")
+            .populate("delivery.assignment.driverId", "first_name last_name phone vehicle_details account_status profile_picture is_online is_on_trip currentLocation")
+            .lean();
+
         if (!booking) return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
-        return sendResponse({ res, message: "Booking fetched successfully", data: booking });
+
+        const Earning = (await import("../../models/Earning.js")).default;
+        const Payment = (await import("../../models/Payment.js")).default;
+
+        // 1. Fetch live Redis dispatch state (active offer, candidates, tried drivers)
+        let liveDispatch = {
+            activeOffer: null,
+            triedDrivers: [],
+            remainingCandidates: [],
+            remainingCount: 0,
+            isSearchActive: false,
+        };
+
+        try {
+            const [offerState, triedIds, candidateIds, searchActive] = await Promise.all([
+                getOfferStatus(id),
+                redis.smembers(BookingKeys.tried(id)),
+                redis.lrange(BookingKeys.candidates(id), 0, 10),
+                redis.get(BookingKeys.searchActive(id)),
+            ]);
+
+            liveDispatch.isSearchActive = searchActive === "1";
+
+            // If an active offer is currently live in Redis
+            if (offerState?.exists && offerState.offer?.driverId) {
+                const offeredDriver = await Driver.findById(offerState.offer.driverId)
+                    .select("first_name last_name phone vehicle_details account_status profile_picture is_online is_on_trip currentLocation")
+                    .lean();
+
+                liveDispatch.activeOffer = {
+                    ...offerState.offer,
+                    driver: offeredDriver || null,
+                };
+            }
+
+            // Populate tried drivers list
+            if (triedIds && triedIds.length > 0) {
+                liveDispatch.triedDrivers = await Driver.find({ _id: { $in: triedIds } })
+                    .select("first_name last_name phone vehicle_details account_status profile_picture")
+                    .lean();
+            }
+
+            // Populate remaining candidate drivers list
+            if (candidateIds && candidateIds.length > 0) {
+                liveDispatch.remainingCandidates = await Driver.find({ _id: { $in: candidateIds } })
+                    .select("first_name last_name phone vehicle_details account_status")
+                    .lean();
+            }
+
+            liveDispatch.remainingCount = await redis.llen(BookingKeys.candidates(id));
+        } catch (dispatchErr) {
+            logger.warn(`[getBookingById] Could not fetch live Redis dispatch info for ${id}:`, dispatchErr.message);
+        }
+
+        // 2. Consolidated OTP details
+        const otps = {
+            pickupOtp: booking.pickup?.assignment?.otp || booking.otp || null,
+            storageOtp: booking.pickup?.assignment?.storageOtp || null,
+            storageReturnOtp: booking.delivery?.assignment?.storageReturnOtp || null,
+            returnOtp: booking.delivery?.assignment?.returnOtp || null,
+        };
+
+        // 3. Fetch earnings and payments
+        const [earnings, payments] = await Promise.all([
+            Earning.find({ bookingId: id }).lean(),
+            Payment.find({ bookingId: id }).lean(),
+        ]);
+
+        return sendResponse({
+            res,
+            message: "Booking fetched successfully",
+            data: {
+                ...booking,
+                otps,
+                dispatchInfo: liveDispatch,
+                earnings: earnings || [],
+                payments: payments || [],
+            },
+        });
     } catch (err) {
         logger.error("[getBookingById] Error:", err.message);
         return sendError(res, "Failed to fetch booking");
     }
 };
 
-// CANCEL BOOKING
+// FORCE CANCEL BOOKING (ADMIN)
 export const cancelBooking = (req, res) => withSession(res, "cancelBooking", async (session) => {
     const { id } = req.params;
     const { auth_id } = req.user;
+    const { reason, cancellation_reason } = req.body || {};
+    const cancelReasonText = reason?.trim() || cancellation_reason?.trim() || "Force cancelled by Admin / Support";
 
     const booking = await Booking.findById(id)
-        .select("status userId storeId pickup.assignment.driverId delivery.assignment.driverId")
+        .select("status userId storeId pickup.assignment.driverId delivery.assignment.driverId bookingCode")
         .session(session).lean();
 
     if (!booking) {
@@ -214,87 +305,208 @@ export const cancelBooking = (req, res) => withSession(res, "cancelBooking", asy
     }
     if (booking.status === BOOKING_STATUS.DELIVERED) {
         await safeAbortSession(session);
-        return sendError(res, `Cannot cancel a booking with status: ${booking.status}`, STATUS_CODES.BAD_REQUEST);
+        return sendError(res, `Cannot cancel a completed booking with status: ${booking.status}`, STATUS_CODES.BAD_REQUEST);
     }
 
     const updatedBooking = await Booking.findByIdAndUpdate(id, {
-        $set: { status: BOOKING_STATUS.CANCELLED, updated_at: new Date(), status_updated_by: auth_id, cancellation_reason: "Admin requested cancellation", cancelled_at: new Date(), cancelled_by: auth_id },
-        $push: { timeline: createTimelineEntry(BOOKING_STATUS.CANCELLED, "Booking cancelled by admin", auth_id) },
+        $set: {
+            status: BOOKING_STATUS.CANCELLED,
+            updated_at: new Date(),
+            status_updated_by: auth_id,
+            cancellation_reason: cancelReasonText,
+            cancelled_at: new Date(),
+            cancelled_by: auth_id,
+            "pickup.assignment.cancelledAt": new Date(),
+            "pickup.assignment.cancelReason": cancelReasonText,
+            "delivery.assignment.cancelledAt": new Date(),
+            "delivery.assignment.cancelReason": cancelReasonText,
+        },
+        $push: {
+            timeline: createTimelineEntry(
+                BOOKING_STATUS.CANCELLED,
+                `Booking force cancelled by admin. Reason: ${cancelReasonText}`,
+                auth_id,
+                "Admin"
+            ),
+        },
     }, { new: true, runValidators: true, session }).select(EXCLUDED_FIELDS).lean();
 
-    await releaseStoreCapacity(booking.storeId, session);
+    if (booking.storeId) {
+        await releaseStoreCapacity(booking.storeId, session);
+    }
     await session.commitTransaction();
     session.endSession();
 
-    const driverId = booking.pickup?.assignment?.driverId || booking.delivery?.assignment?.driverId;
-    if (driverId) {
-        await releaseDriver(driverId).catch((err) =>
-            logger.warn("[cancelBooking] Failed to release driver:", err.message)
+    // Release all assigned drivers
+    const pickupDriverId = booking.pickup?.assignment?.driverId;
+    const deliveryDriverId = booking.delivery?.assignment?.driverId;
+    const driverIdsToRelease = [pickupDriverId, deliveryDriverId].filter(Boolean);
+
+    for (const dId of driverIdsToRelease) {
+        await releaseDriver(dId).catch((err) =>
+            logger.warn(`[cancelBooking] Failed to release driver ${dId}:`, err.message)
         );
     }
 
-    await invalidateBookingCache(booking, { driverIds: [driverId], storeId: booking.storeId });
+    await invalidateBookingCache(booking, { driverIds: driverIdsToRelease, storeId: booking.storeId });
 
     await tryEmit(BOOKING_STATUS.CANCELLED, id, booking, {
-        driverId: driverId || null,
-        reason: "Admin requested cancellation",
+        driverId: pickupDriverId || deliveryDriverId || null,
+        reason: cancelReasonText,
     });
 
-    return sendResponse({ res, message: "Booking cancelled successfully", data: updatedBooking });
+    return sendResponse({
+        res,
+        message: "Booking force cancelled successfully by admin",
+        data: updatedBooking,
+    });
 });
 
 // ASSIGN / REASSIGN DRIVER
 export const assignDriver = (req, res) => withSession(res, "assignDriver", async (session) => {
     const { id } = req.params;
-    const { driverId } = req.body;
+    const targetDriverId = req.body.driverId || req.body.driver_id || null;
     const { auth_id } = req.user;
 
-    const booking = await Booking.findById(id).select("status userId storeId pickup.assignment").session(session).lean();
+    const booking = await Booking.findById(id)
+        .select("status userId storeId pickup.assignment delivery.assignment")
+        .session(session)
+        .lean();
+
     if (!booking) {
         await safeAbortSession(session);
         return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
     }
 
-    const isReassign = booking.status === BOOKING_STATUS.DRIVER_ASSIGNED;
-    if (![BOOKING_STATUS.STORE_ASSIGNED, BOOKING_STATUS.DRIVER_ASSIGNED].includes(booking.status)) {
-        await safeAbortSession(session);
-        return sendError(res, `Invalid status for this operation. Current: ${booking.status}`, STATUS_CODES.CONFLICT);
+    // Determine active leg based on status / assignment state
+    const isReturnLeg = [
+        BOOKING_STATUS.RETURN_REQUESTED,
+        BOOKING_STATUS.FINAL_PAYMENT_CAPTURED,
+        BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+        BOOKING_STATUS.OUT_FOR_RETURN,
+        BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
+    ].includes(booking.status) || !!booking.delivery?.assignment?.cancelledAt;
+
+    const leg = isReturnLeg ? "DELIVERY" : "PICKUP";
+    const assignmentPath = leg === "PICKUP" ? "pickup.assignment" : "delivery.assignment";
+    const currentDriverId = (leg === "PICKUP" ? booking.pickup?.assignment?.driverId : booking.delivery?.assignment?.driverId)?.toString();
+
+    // CASE 1: driverId IS PROVIDED in request body -> Direct Driver Assignment
+    if (targetDriverId) {
+        if (currentDriverId === targetDriverId) {
+            await safeAbortSession(session);
+            return sendError(res, "This driver is already assigned to the booking", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const claimedDriver = await Driver.findOneAndUpdate(
+            { _id: targetDriverId, account_status: ACCOUNT_STATUS.ACTIVE, is_online: true, is_on_trip: false },
+            { $set: { is_on_trip: true, current_booking_id: id } },
+            { new: true, session }
+        ).select("_id first_name last_name phone vehicle_details").lean();
+
+        if (!claimedDriver) {
+            await safeAbortSession(session);
+            return sendError(res, "Driver not available", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const targetStatus = leg === "PICKUP" ? BOOKING_STATUS.DRIVER_ASSIGNED : BOOKING_STATUS.RETURN_DRIVER_ASSIGNED;
+
+        // Check if luggage was already in transit with the previous driver
+        const isLuggageWithPreviousDriver = [
+            BOOKING_STATUS.PICKED_UP,
+            BOOKING_STATUS.AT_STORE,
+            BOOKING_STATUS.OUT_FOR_RETURN,
+            BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
+        ].includes(booking.status);
+
+        let handoverLocation = null;
+        if (currentDriverId && isLuggageWithPreviousDriver) {
+            const oldDriver = await Driver.findById(currentDriverId)
+                .select("first_name last_name phone currentLocation")
+                .session(session)
+                .lean();
+
+            if (oldDriver?.currentLocation?.coordinates?.length === 2) {
+                handoverLocation = {
+                    lat: oldDriver.currentLocation.coordinates[1],
+                    lng: oldDriver.currentLocation.coordinates[0],
+                    address: oldDriver.currentLocation.address || `Handover from previous driver (${oldDriver.first_name} ${oldDriver.last_name || ""})`.trim(),
+                };
+            }
+        }
+
+        const updateFields = {
+            status: targetStatus,
+            [`${assignmentPath}.driverId`]: targetDriverId,
+            [`${assignmentPath}.assignedAt`]: new Date(),
+            [`${assignmentPath}.acceptedAt`]: new Date(),
+            updated_at: new Date(),
+            status_updated_by: auth_id,
+        };
+
+        if (handoverLocation) {
+            updateFields.pickupLocation = handoverLocation;
+            updateFields.criticalHandoverLocation = handoverLocation;
+        }
+
+        const updatedBooking = await Booking.findByIdAndUpdate(
+            id,
+            {
+                $set: updateFields,
+                $push: {
+                    timeline: createTimelineEntry(
+                        targetStatus,
+                        currentDriverId
+                            ? `Driver reassigned by admin from ${currentDriverId} to ${targetDriverId} (${leg})${handoverLocation ? " - Pickup updated to previous driver's current location" : ""}`
+                            : `Driver manually assigned by admin: ${claimedDriver.first_name} (${leg})`,
+                        auth_id
+                    ),
+                },
+            },
+            { new: true, runValidators: true, session }
+        ).select(EXCLUDED_FIELDS).lean();
+
+        if (currentDriverId) {
+            await Driver.findByIdAndUpdate(currentDriverId, { $set: { is_on_trip: false, current_booking_id: null } }, { session });
+        }
+
+        await session.commitTransaction();
+        session.endSession();
+
+        await invalidateBookingCache(booking, {
+            driverIds: [targetDriverId, currentDriverId].filter(Boolean),
+            storeId: booking.storeId,
+        });
+
+        await tryEmit(targetStatus, id, booking, { driver: claimedDriver });
+
+        return sendResponse({
+            res,
+            message: currentDriverId ? "Driver reassigned successfully" : "Driver assigned successfully",
+            data: updatedBooking,
+        });
     }
 
-    const currentDriverId = booking.pickup?.assignment?.driverId?.toString();
-    if (isReassign && currentDriverId === driverId) {
-        await safeAbortSession(session);
-        return sendError(res, "This driver is already assigned to the booking", STATUS_CODES.BAD_REQUEST);
-    }
-
-    // atomic claim — matches the SAME fields fetchAvailableDriver checks, fixes the typo'd field name
-    const claimedDriver = await Driver.findOneAndUpdate(
-        { _id: driverId, account_status: ACCOUNT_STATUS.ACTIVE, is_online: true, is_on_trip: false },
-        { $set: { is_on_trip: true } },
-        { new: true, session }
-    ).select("_id first_name last_name phone vehicle_details").lean();
-
-    if (!claimedDriver) {
-        await safeAbortSession(session);
-        return sendError(res, "Driver not available", STATUS_CODES.BAD_REQUEST);
-    }
+    // CASE 2: driverId IS NOT PROVIDED -> Trigger Automated Driver Search
+    const searchResetStatus = leg === "PICKUP" ? BOOKING_STATUS.STORE_ASSIGNED : BOOKING_STATUS.FINAL_PAYMENT_CAPTURED;
 
     const updatedBooking = await Booking.findByIdAndUpdate(
         id,
         {
             $set: {
-                status: BOOKING_STATUS.DRIVER_ASSIGNED,
-                "pickup.assignment.driverId": driverId,
-                "pickup.assignment.assignedAt": new Date(),
+                status: searchResetStatus,
                 updated_at: new Date(),
                 status_updated_by: auth_id,
             },
+            $unset: {
+                [`${assignmentPath}.driverId`]: "",
+                [`${assignmentPath}.assignedAt`]: "",
+                [`${assignmentPath}.acceptedAt`]: "",
+            },
             $push: {
                 timeline: createTimelineEntry(
-                    BOOKING_STATUS.DRIVER_ASSIGNED,
-                    isReassign
-                        ? `Driver reassigned by admin from ${currentDriverId} to ${driverId}`
-                        : `Driver manually assigned by admin: ${claimedDriver.first_name}`,
+                    searchResetStatus,
+                    `Admin triggered automated driver search for ${leg.toLowerCase()}`,
                     auth_id
                 ),
             },
@@ -302,26 +514,56 @@ export const assignDriver = (req, res) => withSession(res, "assignDriver", async
         { new: true, runValidators: true, session }
     ).select(EXCLUDED_FIELDS).lean();
 
-    if (isReassign && currentDriverId) {
-        await Driver.findByIdAndUpdate(currentDriverId, { $set: { is_on_trip: false } }, { session });
+    if (currentDriverId) {
+        await Driver.findByIdAndUpdate(currentDriverId, { $set: { is_on_trip: false, current_booking_id: null } }, { session });
     }
 
     await session.commitTransaction();
     session.endSession();
 
-    await invalidateBookingCache(booking, {
-        driverIds: [driverId, isReassign ? currentDriverId : null],
-        storeId: booking.storeId,
-    });
+    if (currentDriverId) {
+        await invalidateBookingCache(booking, { driverIds: [currentDriverId], storeId: booking.storeId });
+    }
 
-    await tryEmit(BOOKING_STATUS.DRIVER_ASSIGNED, id, booking, { driver: claimedDriver });
+    // Schedule automated driver search asynchronously
+    await scheduleDriverSearch(id, leg);
 
     return sendResponse({
         res,
-        message: isReassign ? "Driver reassigned successfully" : "Driver assigned successfully",
+        message: `Automated driver search triggered successfully for ${leg.toLowerCase()}`,
         data: updatedBooking,
     });
 });
+
+export const reassignDriver = assignDriver;
+
+// PROCESS CRITICAL CANCELLATION (ADMIN DECISION)
+export const processCriticalCancel = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { reason = "" } = req.body;
+        const { auth_id } = req.user;
+
+        const result = await adminProcessCriticalCancel(id, auth_id, reason);
+
+        if (!result.success) {
+            const statusMap = {
+                BOOKING_NOT_FOUND: STATUS_CODES.NOT_FOUND,
+                UPDATE_FAILED: STATUS_CODES.CONFLICT,
+            };
+            return sendError(res, result.reason, statusMap[result.reason] ?? STATUS_CODES.BAD_REQUEST);
+        }
+
+        return sendResponse({
+            res,
+            message: "Critical cancellation approved and processed by Admin.",
+            data: result.booking,
+        });
+    } catch (err) {
+        logger.error("[processCriticalCancel] Error:", err);
+        return sendError(res, "Failed to process critical cancellation.");
+    }
+};
 
 // REASSIGN STORE
 export const reassignStore = (req, res) => withSession(res, "reassignStore", async (session) => {
@@ -471,3 +713,45 @@ export const markPickedUp = createStatusProgressController({ toStatus: BOOKING_S
 export const markStored = createStatusProgressController({ toStatus: BOOKING_STATUS.STORED, successMessage: "Booking marked as stored", timelineMessage: "Luggage stored at facility (admin)", controllerName: "markStored" });
 export const requestReturn = createStatusProgressController({ toStatus: BOOKING_STATUS.RETURN_REQUESTED, successMessage: "Return requested successfully", timelineMessage: "Return requested by admin", controllerName: "requestReturn" });
 export const markDelivered = createStatusProgressController({ toStatus: BOOKING_STATUS.DELIVERED, successMessage: "Booking marked as delivered", timelineMessage: "Luggage delivered to customer (admin)", controllerName: "markDelivered" });
+
+// REGENERATE STATEMENT / RECALCULATE SETTLEMENT
+export const regenerateBookingStatement = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const booking = await Booking.findById(id).lean();
+        if (!booking) return sendError(res, "Booking not found", STATUS_CODES.NOT_FOUND);
+
+        const { processAdvancePaymentDistribution, processFinalPaymentDistribution } = await import("../../services/fundDistributionService.js");
+        const Payment = (await import("../../models/Payment.js")).default;
+        const Earning = (await import("../../models/Earning.js")).default;
+
+        const payments = await Payment.find({ bookingId: id, status: "CAPTURED" }).lean();
+        for (const p of payments) {
+            if (p.type === "ADVANCE") {
+                await processAdvancePaymentDistribution(p._id);
+            } else if (p.type === "FINAL") {
+                await processFinalPaymentDistribution(p._id);
+            }
+        }
+
+        const earnings = await Earning.find({ bookingId: id })
+            .populate("driverId", "first_name last_name phone")
+            .populate("storeId", "store_name")
+            .lean();
+
+        await invalidateBookingCache(booking);
+
+        return sendResponse({
+            res,
+            message: "Settlement statement regenerated successfully",
+            data: {
+                bookingId: id,
+                regeneratedAt: new Date(),
+                earnings,
+            },
+        });
+    } catch (err) {
+        logger.error("[regenerateBookingStatement] Error:", err);
+        return sendError(res, "Failed to regenerate settlement statement");
+    }
+};

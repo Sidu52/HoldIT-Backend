@@ -1,46 +1,148 @@
 import multer from "multer";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
-import fs from "fs";
+import { UPLOAD_LIMITS } from "../constants/cloudinary.folders.js";
+import { sendError } from "../utils/apiResponse.js";
+import { STATUS_CODES } from "../utils/constants.js";
 
-// Ensure upload directories exist
-const uploadDirs = ["public/uploads/pickup", "public/uploads/storage", "public/uploads/delivery"];
-uploadDirs.forEach(dir => {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-});
+// Memory storage keeps files in RAM buffers for immediate streaming to Cloudinary
+const memoryStorage = multer.memoryStorage();
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const type = req.body.uploadType || "general";
-        let dest = "public/uploads";
-        
-        if (type === "PICKUP") dest += "/pickup";
-        else if (type === "STORAGE") dest += "/storage";
-        else if (type === "DELIVERY") dest += "/delivery";
-        
-        cb(null, dest);
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        cb(null, `${uuidv4()}${ext}`);
-    }
-});
+/**
+ * Creates a generic file filter based on allowed MIME types
+ */
+const createFileFilter = (allowedMimes = UPLOAD_LIMITS.ALLOWED_IMAGE_MIMES) => {
+    return (req, file, cb) => {
+        if (!file) {
+            return cb(null, false);
+        }
 
-const fileFilter = (req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-    if (allowedTypes.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error("Invalid file type. Only JPEG, PNG and WebP are allowed."), false);
-    }
+        if (allowedMimes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            const error = new Error(`Invalid file type: ${file.mimetype}. Allowed types: ${allowedMimes.join(", ")}`);
+            error.code = "INVALID_FILE_TYPE";
+            cb(error, false);
+        }
+    };
 };
 
-export const upload = multer({
-    storage,
-    fileFilter,
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
+/**
+ * Configures a Multer instance with customized size and type limits
+ */
+export const createMulterUpload = ({
+    maxSizeMB = UPLOAD_LIMITS.PHOTO_MAX_SIZE_MB,
+    allowedMimes = UPLOAD_LIMITS.ALLOWED_IMAGE_MIMES,
+    maxFiles = 5,
+} = {}) => {
+    return multer({
+        storage: memoryStorage,
+        fileFilter: createFileFilter(allowedMimes),
+        limits: {
+            fileSize: maxSizeMB * 1024 * 1024,
+            files: maxFiles,
+        },
+    });
+};
+
+/**
+ * Express error handler middleware specifically for Multer upload errors
+ */
+export const handleUploadError = (err, req, res, next) => {
+    if (!err) return next();
+
+    if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+            return sendError(
+                res,
+                `File too large. Maximum allowed file size is restricted.`,
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
+        if (err.code === "LIMIT_FILE_COUNT") {
+            return sendError(
+                res,
+                `Too many files uploaded at once. Maximum allowed is restricted.`,
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
+        if (err.code === "LIMIT_UNEXPECTED_FILE") {
+            return sendError(
+                res,
+                `Unexpected upload field: '${err.field || "unknown"}'.`,
+                STATUS_CODES.BAD_REQUEST
+            );
+        }
+        return sendError(res, `Upload error: ${err.message}`, STATUS_CODES.BAD_REQUEST);
     }
+
+    if (err.code === "INVALID_FILE_TYPE") {
+        return sendError(res, err.message, STATUS_CODES.BAD_REQUEST);
+    }
+
+    next(err);
+};
+
+/**
+ * Middleware factory for single image upload
+ */
+export const uploadSingleImage = (fieldName = "photo", options = {}) => {
+    const uploadInstance = createMulterUpload({
+        maxSizeMB: options.maxSizeMB || UPLOAD_LIMITS.PHOTO_MAX_SIZE_MB,
+        allowedMimes: options.allowedMimes || UPLOAD_LIMITS.ALLOWED_IMAGE_MIMES,
+        maxFiles: 1,
+    });
+
+    return (req, res, next) => {
+        uploadInstance.single(fieldName)(req, res, (err) => {
+            if (err) {
+                return handleUploadError(err, req, res, next);
+            }
+            next();
+        });
+    };
+};
+
+/**
+ * Middleware factory for multiple images upload
+ */
+export const uploadMultipleImages = (fieldName = "photos", maxCount = 5, options = {}) => {
+    const uploadInstance = createMulterUpload({
+        maxSizeMB: options.maxSizeMB || UPLOAD_LIMITS.PHOTO_MAX_SIZE_MB,
+        allowedMimes: options.allowedMimes || UPLOAD_LIMITS.ALLOWED_IMAGE_MIMES,
+        maxFiles: maxCount,
+    });
+
+    return (req, res, next) => {
+        uploadInstance.array(fieldName, maxCount)(req, res, (err) => {
+            if (err) {
+                return handleUploadError(err, req, res, next);
+            }
+            next();
+        });
+    };
+};
+
+/**
+ * Middleware factory for multiple named fields upload
+ */
+export const uploadFields = (fields = [], options = {}) => {
+    const uploadInstance = createMulterUpload({
+        maxSizeMB: options.maxSizeMB || UPLOAD_LIMITS.DOCUMENT_MAX_SIZE_MB,
+        allowedMimes: options.allowedMimes || UPLOAD_LIMITS.ALLOWED_DOCUMENT_MIMES,
+    });
+
+    return (req, res, next) => {
+        uploadInstance.fields(fields)(req, res, (err) => {
+            if (err) {
+                return handleUploadError(err, req, res, next);
+            }
+            next();
+        });
+    };
+};
+
+// Default export / drop-in instance
+export const upload = createMulterUpload({
+    maxSizeMB: UPLOAD_LIMITS.PHOTO_MAX_SIZE_MB,
+    allowedMimes: UPLOAD_LIMITS.ALLOWED_IMAGE_MIMES,
+    maxFiles: 5,
 });

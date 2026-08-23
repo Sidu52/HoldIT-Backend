@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import Admin from "../../models/Admin.js";
 import sendEmail from "../../mailer/emailService.js";
-import { ACCOUNT_STATUS, STATUS_CODES, TOKEN_TYPES, VERIFICATION_STATUS, REFRESH_TOKEN_EXPIRY } from "../../utils/constants.js";
+import { ACCOUNT_STATUS, STATUS_CODES, TOKEN_TYPES, VERIFICATION_STATUS, REFRESH_TOKEN_EXPIRY, BCRYPT_SALT_ROUNDS } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 import { extractRefreshToken } from "../../utils/extractToken.js";
 import { clearAuthCookies, setAuthCookies, generateRefreshToken, generateAccessToken } from "../../utils/token.js";
@@ -14,10 +14,6 @@ import { AdminKeys, AdminTTL } from "../../constants/redis/admin.keys.js";
 import { AuthKeys } from "../../constants/redis/auth.keys.js";
 import { deleteCache, getCache, setCache, deleteByPattern } from "../../constants/redis/redisOperation.js";
 import { NS } from "../../constants/redis/namespaces.js";
-
-
-const BCRYPT_SALT_ROUNDS = 12;
-
 
 // VERIFY INVITE TOKEN
 export const verifyAdminInviteToken = async (req, res) => {
@@ -82,7 +78,7 @@ export const adminLogin = async (req, res) => {
     try {
         const { email, password } = req.body;
         const admin = await Admin.findOne({ email }).lean();
-        if (!admin || !(await bcrypt.compare(password, admin.password_hash))) {
+        if (!admin || !admin.password_hash || !(await bcrypt.compare(password, admin.password_hash))) {
             return sendError(res, "Invalid email or password", STATUS_CODES.UNAUTHORIZED);
         }
 
@@ -133,17 +129,10 @@ export const refresh = async (req, res) => {
     try {
         const { token: refreshToken } = extractRefreshToken(req);
         if (!refreshToken) return sendError(res, "Refresh token missing", STATUS_CODES.UNAUTHORIZED);
-console.log(refreshToken);
         const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
         if (decoded.type !== TOKEN_TYPES.REFRESH) return sendError(res, "Invalid token type", STATUS_CODES.UNAUTHORIZED);
-
-        console.log(decoded);
-
         const redisKey = AuthKeys.refreshToken(decoded.role, decoded.auth_id, decoded.token_id);
         const stored = await getCache(redisKey, AdminTTL.REFRESH_TOKEN_EXPIRY);
-
-        console.log(redisKey, stored);
-
         if (!stored) {
             clearAuthCookies(res);
             return sendError(res, "Token reuse detected", STATUS_CODES.FORBIDDEN);
@@ -183,18 +172,33 @@ export const createAdminForgotPasswordToken = async (req, res) => {
             return sendResponse({ res, message: successMessage });
         }
 
-        // prevent duplicate tokens
-        const existing = await getCache(AdminKeys.forgotEmail(email));
-        if (existing) return sendResponse({ res, message: successMessage });
+        // Check if there is an active forgot password token in Redis
+        let token = await getCache(AdminKeys.forgotEmail(email));
+        if (!token) {
+            token = crypto.randomBytes(32).toString("hex");
+            await Promise.all([
+                setCache(AdminKeys.forgotToken(token), { adminId: admin._id, email }, AdminTTL.FORGOT_PASSWORD_EXPIRY),
+                setCache(AdminKeys.forgotEmail(email), token, AdminTTL.FORGOT_PASSWORD_EXPIRY),
+            ]);
+        }
 
-        const token = crypto.randomBytes(32).toString("hex");
+        let baseUrl = process.env.ADMIN_URL || process.env.ADMIN_UI_URL || "http://localhost:4000";
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            baseUrl = "http://localhost:4000";
+        }
+        baseUrl = baseUrl.replace(/\/+$/, "");
+        const resetLink = `${baseUrl}/reset-password?token=${token}`;
 
-        await Promise.all([
-            setCache(AdminKeys.forgotToken(token), { adminId: admin._id, email }, AdminTTL.FORGOT_PASSWORD_EXPIRY),
-            setCache(AdminKeys.forgotEmail(email), token, AdminTTL.FORGOT_PASSWORD_EXPIRY),
-        ]);
+        // TERMINAL LOGGING FOR DEV/TEST ENVIRONMENT
+        logger.info(`
+============================================================
+🔑 [DEV FORGOT PASSWORD LINK GENERATED]
+Email:      ${admin.email}
+Reset Link: ${resetLink}
+Token:      ${token}
+============================================================
+        `);
 
-        const resetLink = `${process.env.ADMIN_UI_URL}/reset-password?token=${token}`;
         sendEmail({
             to: admin.email,
             subject: "Password Reset Request",
@@ -203,7 +207,11 @@ export const createAdminForgotPasswordToken = async (req, res) => {
             rawFields: ["reset_link"],
         }).catch((err) => logger.error("Failed to send reset email:", err.message));
 
-        return sendResponse({ res, message: successMessage, ...(process.env.NODE_ENV === "development" && { data: { resetLink } }) });
+        return sendResponse({
+            res,
+            message: successMessage,
+            ...(process.env.NODE_ENV !== "production" && { data: { resetLink, token } }),
+        });
     } catch (err) {
         logger.error("[createAdminForgotPasswordToken] Error:", err);
         return sendError(res, "Failed to process request");
@@ -213,11 +221,13 @@ export const createAdminForgotPasswordToken = async (req, res) => {
 // VERIFY FORGOT PASSWORD TOKEN
 export const verifyAdminForgotPasswordToken = async (req, res) => {
     try {
-        const { token } = req.query;
+        const token = req.query.token || req.body?.token;
+        if (!token) return sendError(res, "Reset token is required", STATUS_CODES.BAD_REQUEST);
+
         const data = await getCache(AdminKeys.forgotToken(token));
         if (!data) return sendError(res, "Invalid or expired reset token", STATUS_CODES.BAD_REQUEST);
 
-        return sendResponse({ res, message: "Token is valid", data: { valid: true } });
+        return sendResponse({ res, message: "Token is valid", data: { valid: true, email: data.email } });
     } catch (err) {
         logger.error("[verifyAdminForgotPasswordToken] Error:", err);
         return sendError(res, "Token verification failed");
@@ -227,8 +237,10 @@ export const verifyAdminForgotPasswordToken = async (req, res) => {
 // RESET PASSWORD
 export const updateAdminPassword = async (req, res) => {
     try {
-        const { token } = req.query;
+        const token = req.query.token || req.body?.token;
         const { password, confirm_password } = req.body;
+
+        if (!token) return sendError(res, "Reset token is required", STATUS_CODES.BAD_REQUEST);
 
         const data = await getCache(AdminKeys.forgotToken(token));
         if (!data) return sendError(res, "Invalid or expired reset token", STATUS_CODES.BAD_REQUEST);
@@ -236,7 +248,8 @@ export const updateAdminPassword = async (req, res) => {
         const { adminId, email } = data;
         if (password !== confirm_password) return sendError(res, "Passwords do not match", STATUS_CODES.BAD_REQUEST);
 
-        const result = await Admin.findByIdAndUpdate(adminId, { $set: { password_hash: await bcrypt.hash(password, BCRYPT_SALT_ROUNDS) } });
+        const hashedPassword = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+        const result = await Admin.findByIdAndUpdate(adminId, { $set: { password_hash: hashedPassword } });
         if (!result) return sendError(res, "Account not found", STATUS_CODES.NOT_FOUND);
 
         await Promise.all([
@@ -244,6 +257,8 @@ export const updateAdminPassword = async (req, res) => {
             deleteCache(AdminKeys.forgotEmail(email)),
             deleteByPattern(AuthKeys.refreshTokenPattern(NS.ADMIN, adminId)),
         ]);
+
+        logger.info(`[FORGOT PASSWORD RESET] Password successfully reset for admin ID: ${adminId} (${email})`);
 
         return sendResponse({ res, message: "Password updated successfully. Please login again." });
     } catch (err) {

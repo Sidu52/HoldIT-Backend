@@ -3,7 +3,7 @@ import User from "../../models/User.js";
 import { invalidateUserCache } from "../../constants/redis/invalidate/user.invalidate.js";
 import logger from "../../utils/logger.js";
 
-// Check Serviceability
+// // Check Serviceability
 export const checkServiceability = async (lng, lat) => {
     if (
         typeof lat !== "number" || typeof lng !== "number" ||
@@ -112,4 +112,42 @@ export const findAddressById = (addresses, index) => {
         return { address: null, index: -1 };
     }
     return { address: addresses[idx], index: idx };
+};
+
+// Check for duplicate address in user's saved list
+export const isDuplicateAddress = (existingAddresses, newAddress, excludeAddressId = null) => {
+    if (!existingAddresses || !Array.isArray(existingAddresses)) return false;
+
+    const normStreet = (newAddress.street || "").trim().toLowerCase();
+    const normCity = (newAddress.city || "").trim().toLowerCase();
+    const normPostal = (newAddress.postal_code || "").trim().toLowerCase();
+    const [newLng, newLat] = newAddress.coordinates || [];
+
+    return existingAddresses.some((addr) => {
+        if (excludeAddressId && String(addr._id) === String(excludeAddressId)) {
+            return false;
+        }
+
+        const existingStreet = (addr.street || "").trim().toLowerCase();
+        const existingCity = (addr.city || "").trim().toLowerCase();
+        const existingPostal = (addr.postal_code || "").trim().toLowerCase();
+        const [existLng, existLat] = addr.coordinates || [];
+
+        // 1. Text match on same street and postal code / city
+        const isTextMatch =
+            normStreet.length > 0 &&
+            existingStreet === normStreet &&
+            (existingPostal === normPostal || existingCity === normCity);
+
+        // 2. Coordinate match (within ~5 meters)
+        const isCoordMatch =
+            typeof newLng === "number" &&
+            typeof newLat === "number" &&
+            typeof existLng === "number" &&
+            typeof existLat === "number" &&
+            Math.abs(existLng - newLng) < 0.00005 &&
+            Math.abs(existLat - newLat) < 0.00005;
+
+        return isTextMatch || isCoordMatch;
+    });
 };

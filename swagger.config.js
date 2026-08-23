@@ -71,6 +71,18 @@ export const storeSwaggerSpec = swaggerJSDoc({
     ],
 });
 
+// Store Owner Swagger
+export const storeOwnerSwaggerSpec = swaggerJSDoc({
+    definition: {
+        ...baseDefinition,
+        info: { ...baseDefinition.info, title: "Holdit Store Owner API" },
+    },
+    apis: [
+        path.join(__dirname, "./docs/swagger/swagger.tags.js"),
+        path.join(__dirname, "./docs/swagger/storeOwner/*.js"),
+    ],
+});
+
 // All Swagger
 export const allSwaggerSpec = swaggerJSDoc({
     definition: {
@@ -80,9 +92,11 @@ export const allSwaggerSpec = swaggerJSDoc({
     apis: [
         path.join(__dirname, "./docs/swagger/swagger.tags.js"),
         path.join(__dirname, "./docs/swagger/bulk.upload.swagger.js"),
+        path.join(__dirname, "./docs/swagger/*.js"),
         path.join(__dirname, "./docs/swagger/admin/*.js"),
         path.join(__dirname, "./docs/swagger/user/*.js"),
         path.join(__dirname, "./docs/swagger/driver/*.js"),
         path.join(__dirname, "./docs/swagger/store/*.js"),
+        path.join(__dirname, "./docs/swagger/storeOwner/*.js"),
     ],
 });

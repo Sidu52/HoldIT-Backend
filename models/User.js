@@ -87,6 +87,7 @@ const UserSchema = new mongoose.Schema(
         },
 
         // Tracks whether the user has verified their phone and completed profile
+        is_signup: { type: Boolean, default: false },
         verification_status: {
             type: String,
             enum: Object.values(VERIFICATION_STATUS),
@@ -102,6 +103,13 @@ const UserSchema = new mongoose.Schema(
         updated_by: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Admin",
+        },
+
+        push_token: {
+            type: String,
+            trim: true,
+            default: null,
+            index: true,
         },
 
         last_login_at: { type: Date },

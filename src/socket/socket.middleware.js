@@ -22,9 +22,6 @@ const parseCookies = (cookieString) => {
  */
 export const socketAuthMiddleware = async (socket, next) => {
     try {
-        // 1. Check auth object (passed manually)
-        // 2. Check authorization header
-        // 3. Check cookies (for web clients with withCredentials: true)
         let tokenRaw = socket.handshake.auth?.token || socket.handshake.headers?.authorization;
 
         if (!tokenRaw) {
@@ -53,7 +50,7 @@ export const socketAuthMiddleware = async (socket, next) => {
 
         logger.info(`[Socket] Authorized connection | Role: ${socket.user.role} | ID: ${socket.user.id} | Socket: ${socket.id}`);
 
-        // --- Auto Room Join on Connect ---
+        // Auto Room Join on Connect
         const { role, id } = socket.user;
 
         if (role === USER_ROLES.USER) {
@@ -62,8 +59,9 @@ export const socketAuthMiddleware = async (socket, next) => {
             socket.join(rooms.driver(id));
         } else if (role === USER_ROLES.STORE_OWNER || role === USER_ROLES.STORE) {
             socket.join(rooms.store(id));
-        } else if (role === USER_ROLES.ADMIN || role === USER_ROLES.SUPER_ADMIN || role === USER_ROLES.OPERATION_MANAGER) {
+        } else if (role === USER_ROLES.ADMIN || role === USER_ROLES.SUPER_ADMIN || role === USER_ROLES.OPERATION_MANAGER || role === USER_ROLES.CUSTOMER_SUPPORT) {
             socket.join(rooms.adminDashboard());
+            socket.join(rooms.adminSupport());
         }
 
         next();

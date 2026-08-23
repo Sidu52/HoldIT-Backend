@@ -19,7 +19,7 @@ import { setAuthCookies } from "../../utils/helper.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
-import NotificationService from "../../services/NotificationService.js";
+import NotificationService from "../../services/notificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 
 // Login / Register
@@ -91,7 +91,7 @@ export const authDriver = asyncHandler(async (req, res) => {
     return sendResponse({
         res,
         message: "OTP sent successfully",
-        data: process.env.NODE_ENV === "development" ? { otp } : {},
+        data: { otp },
     });
 });
 
@@ -162,7 +162,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
     return sendResponse({
         res,
         message: "OTP sent successfully",
-        data: process.env.NODE_ENV === "development" ? { otp } : {},
+        data: { otp },
     });
 });
 
@@ -622,20 +622,36 @@ export const updateDriverDetails = asyncHandler(async (req, res) => {
 //LOGOUT
 export const logout = asyncHandler(async (req, res) => {
     const { token } = extractRefreshToken(req);
+    let authId = null;
+    let tokenId = null;
 
     if (token) {
         try {
             const decoded = jwt.decode(token);
-            if (decoded?.auth_id && decoded?.token_id) {
-                await Promise.all([
-                    deleteCache(AuthKeys.refreshToken("driver", decoded.auth_id, decoded.token_id)),
-                    deleteCache(AuthKeys.accessToken("driver", decoded.auth_id, decoded.token_id)),
-                ]);
-                logger.info(`User ${decoded.auth_id} logged out successfully`);
-            }
+            authId = decoded?.auth_id;
+            tokenId = decoded?.token_id;
         } catch (err) {
             logger.warn("Failed to decode refresh token during logout:", err.message);
         }
+    }
+
+    if (!authId || !tokenId) {
+        const authHeader = req.headers["authorization"];
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            try {
+                const decodedAccess = jwt.decode(authHeader.slice(7).trim());
+                authId = decodedAccess?.auth_id;
+                tokenId = decodedAccess?.token_id;
+            } catch { }
+        }
+    }
+
+    if (authId && tokenId) {
+        await Promise.all([
+            deleteCache(AuthKeys.refreshToken("driver", authId, tokenId)),
+            deleteCache(AuthKeys.accessToken("driver", authId, tokenId)),
+        ]);
+        logger.info(`Driver ${authId} logged out successfully`);
     }
 
     clearAuthCookies(res, "/api/v1/driver/auth/refresh");

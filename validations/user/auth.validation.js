@@ -62,11 +62,18 @@ export const updateUserDetailsSchema = Joi.object({
     date_of_birth: Joi.date()
         .less("now")
         .greater("1900-01-01")
-        .required()
         .messages({
             "date.less": "Date of birth must be in the past",
             "date.greater": "Please enter a valid date of birth",
             "any.required": "Date of birth is required",
+        }),
+
+    dob: Joi.date()
+        .less("now")
+        .greater("1900-01-01")
+        .messages({
+            "date.less": "Date of birth must be in the past",
+            "date.greater": "Please enter a valid date of birth",
         }),
 
     address: Joi.string().trim().min(5).max(255).required().messages({
@@ -87,4 +94,4 @@ export const updateUserDetailsSchema = Joi.object({
         "number.max": "Longitude must be between -180 and 180",
         "any.required": "Longitude is required",
     }),
-});
+}).or("date_of_birth", "dob");

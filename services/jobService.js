@@ -37,7 +37,7 @@ for (const name of QUEUE_NAMES) {
     getOrCreateQueue(name);
 }
 
-logger.info(`✅ [Queues] Initialized: ${QUEUE_NAMES.join(", ")}`);
+logger.info(`[Queues] Initialized: ${QUEUE_NAMES.join(", ")}`);
 
 //  PUBLIC API
 export const addJobToQueue = async (queueName, jobData, options = {}) => {
@@ -77,7 +77,7 @@ export const cancelJob = async (queueName, jobId) => {
 
 /**
  * Gracefully close all queues.
- * Call this during process shutdown (SIGTERM/SIGINT handler).
+ * Call only this during process shutdown (SIGTERM/SIGINT handler).
  */
 export const closeQueues = async () => {
     await Promise.allSettled(

@@ -25,23 +25,15 @@ export const createAutoCancelWorker = () => {
                     return { success: false, reason: "not_found" };
                 }
 
-                // Guard: If booking has already progressed, do not cancel
-                const skipStatuses = [
-                    BOOKING_STATUS.DRIVER_ARRIVED,
-                    BOOKING_STATUS.PICKED_UP,
-                    BOOKING_STATUS.AT_STORE,
-                    BOOKING_STATUS.STORED,
-                    BOOKING_STATUS.RETURN_REQUESTED,
-                    BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
-                    BOOKING_STATUS.OUT_FOR_RETURN,
-                    BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
-                    BOOKING_STATUS.DELIVERED,
-                    BOOKING_STATUS.CANCELLED,
-                    BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL
+                // GOnly cancel if booking is still in a pending/pre-driver-assigned state
+                const pendingStatuses = [
+                    BOOKING_STATUS.CREATED,
+                    BOOKING_STATUS.PAYMENT_PENDING,
+                    BOOKING_STATUS.STORE_ASSIGNED,
                 ];
 
-                if (skipStatuses.includes(booking.status)) {
-                    logger.info(`[Auto Cancel] Booking ${bookingId} is ${booking.status}, skipping.`);
+                if (!pendingStatuses.includes(booking.status)) {
+                    logger.info(`[Auto Cancel] Booking ${bookingId} status is '${booking.status}' (already progressed/paid), skipping auto-cancel.`);
                     return { success: false, reason: "already_progressed" };
                 }
 

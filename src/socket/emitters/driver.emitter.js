@@ -52,6 +52,7 @@ export const emitAdminAlertNoDriver = (io, bookingId, userId, pickupLocation, at
 };
 
 export const emitDriverNewOffer = (io, driverId, offerData) => {
+    console.log("OFFER DATA: ", offerData);
     safeEmit(io, rooms.driver(driverId), SOCKET_EVENTS.DRIVER_NEW_OFFER, offerData);
 };
 

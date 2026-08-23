@@ -57,7 +57,15 @@ router.put(
 
 router.delete("/bulk-delete", manageTeamOnly, apiLimiter, bulkDeactivateAdmins);
 
-router.post("/invite", manageTeamOnly, apiLimiter, validate(inviteSchema), createAdminInvite);
+import {
+  getJoinRequests,
+  approveJoinRequest,
+  rejectJoinRequest,
+} from "../../controllers/admin/teamJoinRequest.admin.controller.js";
+
+router.get("/join-requests", apiLimiter, getJoinRequests);
+router.patch("/join-requests/:id/approve", manageTeamOnly, apiLimiter, approveJoinRequest);
+router.patch("/join-requests/:id/reject", manageTeamOnly, apiLimiter, rejectJoinRequest);
 router.put("/resend-invite/:id", manageTeamOnly, apiLimiter, validate(userIdSchema, "params"), resendInvite);
 
 router.put("/account-status/:id", manageTeamOnly, apiLimiter, 

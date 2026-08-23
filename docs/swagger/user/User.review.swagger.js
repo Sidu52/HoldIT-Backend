@@ -1,13 +1,23 @@
 /**
  * @swagger
  * /api/v1/user/reviews:
+ *   get:
+ *     summary: Get User Service Reviews
+ *     tags:
+ *       - User Reviews
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of submitted reviews
  *   post:
- *     summary: Create a review for a Driver or Store
- *     tags: [User Reviews]
+ *     summary: Create Review for Completed Booking
+ *     tags:
+ *       - User Reviews
  *     security:
  *       - bearerAuth: []
  *     requestBody:
- *       required: true,
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
@@ -15,7 +25,6 @@
  *             required:
  *               - bookingId
  *               - rating
- *               - reviewType
  *             properties:
  *               bookingId:
  *                 type: string
@@ -23,42 +32,11 @@
  *                 type: number
  *                 minimum: 1
  *                 maximum: 5
- *               reviewType:
- *                 type: string
- *                 enum: [DRIVER, STORE]
+ *                 example: 5
  *               comment:
  *                 type: string
+ *                 example: Excellent luggage storage service!
  *     responses:
- *       200:
+ *       201:
  *         description: Review submitted
- *       400:
- *         description: Invalid status or missing fields
- *       409:
- *         description: Already reviewed
- *
- *   get:
- *     summary: Get reviews for a Driver or Store
- *     tags: [User Reviews]
- *     parameters:
- *       - in: query
- *         name: driverId
- *         schema:
- *           type: string
- *       - in: query
- *         name: storeId
- *         schema:
- *           type: string
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *     responses:
- *       200:
- *         description: Reviews fetched successfully
  */

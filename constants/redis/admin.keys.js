@@ -40,6 +40,14 @@ export const AdminKeys = {
   storeOwnerDetail: (ownerId) => key("admin_store_owner", ownerId),
   storeOwnerList: (params) => dynamicKey("store_owners", params),
   storeOwnerListPattern: () => pattern("store_owners"),
+
+  // INVITE KEYS
+  inviteToken: (token) => key(NS.ADMIN, "invite", "token", token),
+  invite: (email) => key(NS.ADMIN, "invite", "email", email),
+
+  // FORGOT PASSWORD
+  forgotToken: (token) => key(NS.ADMIN, "forgot", "token", token),
+  forgotEmail: (email) => key(NS.ADMIN, "forgot", "email", email),
 };
 
 export const AdminTTL = Object.freeze({

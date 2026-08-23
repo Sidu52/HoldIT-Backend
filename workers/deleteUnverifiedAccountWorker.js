@@ -25,8 +25,8 @@ export const createDeleteUnverifiedWorker = (queueName) => {
                 let model;
                 switch (entity) {
                     case "driver": model = Driver; break;
-                    case "store":  model = Store;  break;
-                    default:       model = User;   break;
+                    case "store": model = Store; break;
+                    default: model = User; break;
                 }
 
                 const deleted = await model.findOneAndDelete({

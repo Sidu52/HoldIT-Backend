@@ -15,13 +15,31 @@ export const getCache = async (key) => {
 };
 
 /**
- * Set a value in cache with TTL (seconds). Overwrites if exists.
+ * Calculate jittered TTL (seconds) to prevent cache stampedes / thundering herd problem.
+ * Adds a random variation (default ±10%) for any TTL > 5 seconds.
+ * Short lock/state TTLs (<= 5s) skip jitter to preserve exact timing semantics.
+ *
+ * @param {number} ttl - Base TTL in seconds
+ * @param {number} jitterRatio - Jitter factor (default 0.10 for ±10%)
+ * @returns {number} Jittered TTL in seconds
  */
-export const setCache = async (key, value, ttl = 300) => {
+export const getJitteredTTL = (ttl, jitterRatio = 0.10) => {
+    if (!ttl || typeof ttl !== "number" || ttl <= 5) return ttl;
+    const min = Math.floor(ttl * (1 - jitterRatio));
+    const max = Math.ceil(ttl * (1 + jitterRatio));
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+/**
+ * Set a value in cache with TTL (seconds). Overwrites if exists.
+ * Applies TTL jitter by default to prevent simultaneous cache expirations.
+ */
+export const setCache = async (key, value, ttl = 300, enableJitter = true) => {
     try {
         const payload = JSON.stringify(value);
         if (ttl) {
-            await redisClient.set(key, payload, "EX", ttl);
+            const finalTtl = enableJitter ? getJitteredTTL(ttl) : ttl;
+            await redisClient.set(key, payload, "EX", finalTtl);
         } else {
             await redisClient.set(key, payload);
         }
@@ -141,8 +159,9 @@ export const incrementCache = async (key, ttl = 60, by = 1) => {
     try {
         const value = await redisClient.incrby(key, by);
         if (value === by) {
-            // key was just created this call — attach TTL
-            await redisClient.expire(key, ttl);
+            // key was just created this call — attach TTL (with jitter)
+            const finalTtl = getJitteredTTL(ttl);
+            await redisClient.expire(key, finalTtl);
         }
         return value;
     } catch (err) {
@@ -225,5 +244,19 @@ export const getManyCache = async (keys = []) => {
     } catch (err) {
         logger.error(`[getManyCache]:`, err.message);
         return keys.map(() => null);
+    }
+};
+
+/* DISTRIBUTED LOCK (SET EX NX)                                                */
+/**
+ * Atomic lock acquisition. Returns true if acquired, false otherwise.
+ */
+export const acquireLock = async (key, ttlSeconds = 55, value = "1") => {
+    try {
+        const result = await redisClient.set(key, value, "EX", ttlSeconds, "NX");
+        return result === "OK";
+    } catch (err) {
+        logger.error(`[acquireLock] "${key}":`, err.message);
+        return false;
     }
 };

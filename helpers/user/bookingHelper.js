@@ -14,11 +14,86 @@ import {
     BOOKING_JOB_NAMES,
     BOOKING_TRANSITIONS,
 } from "../../constants/user/booking.js";
+import Payment from "../../models/Payment.js";
+import { triggerAutoRefund } from "../payment/paymentHelper.js";
+import { scheduleDriverSearch, scheduleReturnProcessing } from "../driver/driver.js";
 import { safeAbortSession } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 
 export const isValidStatusTransition = (fromStatus, toStatus) => BOOKING_TRANSITIONS[fromStatus]?.includes(toStatus);
 
+
+// STORE SEARCH & ASSIGNMENT
+export const findNearestAvailableStore = async (lat, lng, session = null, maxDistanceKm = null) => {
+    try {
+        let radiusKm = maxDistanceKm;
+        if (!radiusKm) {
+            try {
+                const { checkServiceability } = await import("./addressHelper.js");
+                const serviceability = await checkServiceability(lng, lat);
+                if (serviceability.isServiceable && serviceability.serviceAreaId) {
+                    const ServiceableArea = (await import("../../models/ServiceableArea.js")).default;
+                    const area = await ServiceableArea.findById(serviceability.serviceAreaId).select("service_radius_km").lean();
+                    if (area?.service_radius_km) {
+                        radiusKm = area.service_radius_km;
+                    }
+                }
+            } catch (_) {}
+        }
+        const searchRadiusKm = radiusKm || STORE_SEARCH.MAX_DISTANCE_KM;
+
+        const pipeline = [
+            {
+                $geoNear: {
+                    near: { type: "Point", coordinates: [lng, lat] },
+                    distanceField: "distance",
+                    spherical: true,
+                    maxDistance: searchRadiusKm * 1000,
+                    query: {
+                        is_online: true,
+                        verification_status: "verified",
+                        account_status: ACCOUNT_STATUS.ACTIVE,
+                    },
+                },
+            },
+            {
+                $addFields: {
+                    availableSlots: {
+                        $subtract: ["$max_booking_capacity", "$current_booking_count"],
+                    },
+                },
+            },
+            // Only consider stores that actually have capacity
+            { $match: { availableSlots: { $gt: 0 } } },
+            { $sort: { distance: 1, availableSlots: -1 } },
+            { $limit: 1 },
+            {
+                $project: {
+                    _id: 1,
+                    store_name: 1,
+                    location: 1,
+                    distance: 1,
+                    availableSlots: 1,
+                    max_booking_capacity: 1,
+                    current_booking_count: 1,
+                    service_area_id: 1,
+                },
+            },
+        ];
+
+        const aggregateOptions = session ? { session } : {};
+        const results = await Store.aggregate(pipeline, aggregateOptions);
+
+        if (!results.length) {
+            return { store: null, error: "NO_STORE" };
+        }
+
+        return { store: results[0], error: null };
+    } catch (err) {
+        logger.error("[bookingHelper] findNearestAvailableStore error:", err.message);
+        return { store: null, error: "SEARCH_FAILED" };
+    }
+};
 // Atomically increments the store's booking count, guarded by a capacity check.
 export const assignStoreToBooking = async (storeId, session) => {
     try {
@@ -125,61 +200,7 @@ export const checkActiveBookingLimit = async (userId, session = null) => {
     };
 };
 
-// STORE SEARCH & ASSIGNMENT
-export const findNearestAvailableStore = async (lat, lng, session = null) => {
-    try {
-        const pipeline = [
-            {
-                $geoNear: {
-                    near: { type: "Point", coordinates: [lng, lat] },
-                    distanceField: "distance",
-                    spherical: true,
-                    maxDistance: STORE_SEARCH.MAX_DISTANCE_KM * 1000,
-                    query: {
-                        is_online: true,
-                        verification_status: "verified",
-                        account_status: ACCOUNT_STATUS.ACTIVE,
-                    },
-                },
-            },
-            {
-                $addFields: {
-                    availableSlots: {
-                        $subtract: ["$max_booking_capacity", "$current_booking_count"],
-                    },
-                },
-            },
-            // Only consider stores that actually have capacity
-            { $match: { availableSlots: { $gt: 0 } } },
-            { $sort: { distance: 1, availableSlots: -1 } },
-            { $limit: 1 },
-            {
-                $project: {
-                    _id: 1,
-                    store_name: 1,
-                    location: 1,
-                    distance: 1,
-                    availableSlots: 1,
-                    max_booking_capacity: 1,
-                    current_booking_count: 1,
-                    service_area_id: 1,
-                },
-            },
-        ];
 
-        const aggregateOptions = session ? { session } : {};
-        const results = await Store.aggregate(pipeline, aggregateOptions);
-
-        if (!results.length) {
-            return { store: null, error: "NO_STORE" };
-        }
-
-        return { store: results[0], error: null };
-    } catch (err) {
-        logger.error("[bookingHelper] findNearestAvailableStore error:", err.message);
-        return { store: null, error: "SEARCH_FAILED" };
-    }
-};
 
 
 
@@ -464,7 +485,7 @@ export const invalidateBookingCache = async (userId, bookingId = null, storeId =
             logger.error("[Cache] Error fetching booking for invalidation:", err.message);
         }
     }
-    
+
     await coreInvalidateBooking({ _id: bookingId, userId }, { driverIds: resolvedDriverIds, storeId: resolvedStoreId });
 };
 
@@ -474,7 +495,12 @@ export const invalidateBookingCache = async (userId, bookingId = null, storeId =
  * Lean read — use for any handler that only needs to read booking data.
  */
 export const findUserBooking = async (bookingId, userId, selectFields = "") => {
-    return Booking.findOne({ _id: bookingId, userId }).select(selectFields).lean();
+    return Booking.findOne({ _id: bookingId, userId })
+        .select(selectFields)
+        .populate("pickup.assignment.driverId", "first_name last_name phone profile_picture vehicle_type")
+        .populate("delivery.assignment.driverId", "first_name last_name phone profile_picture vehicle_type")
+        .populate("storeId", "name phone coordinates address")
+        .lean();
 };
 
 /**
@@ -601,7 +627,7 @@ export const processReturnBooking = async (bookingId, userId, returnLocation, no
                 BOOKING_JOB_NAMES.REVERT_IF_NO_DRIVER,
                 { bookingId },
                 {
-                    jobId: `revert-return-${bookingId}`, 
+                    jobId: `revert-return-${bookingId}`,
                     delay: 2000,
                 }
             ),
@@ -620,4 +646,178 @@ export const processReturnBooking = async (bookingId, userId, returnLocation, no
     });
 
     return booking;
+};
+
+// ASSIGN STORE AND DRIVER
+export const assignStoreDriverToBooking = async ({ bookingId, paymentId }) => {
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+
+        const booking = await Booking.findById(bookingId).session(session);
+
+        if (!booking) {
+            await session.abortTransaction();
+            session.endSession();
+            return { success: false, booking: null };
+        }
+
+        if (booking.status !== BOOKING_STATUS.PAYMENT_PENDING) {
+            await session.abortTransaction();
+            session.endSession();
+            return { success: false, booking: null };
+        }
+
+        const payment = await Payment.findById(paymentId)
+            .select("bookingId")
+            .session(session);
+
+        if (!payment) {
+            await session.abortTransaction();
+            session.endSession();
+            return { success: false, booking: null };
+        }
+
+        if (payment.bookingId.toString() !== bookingId.toString()) {
+            await session.abortTransaction();
+            session.endSession();
+            return { success: false, booking: null };
+        }
+
+        const { store, error } = await findNearestAvailableStore(
+            booking.pickupLocation.lat,
+            booking.pickupLocation.lng,
+            session
+        );
+
+        if (!store) {
+            logger.error(
+                `[assignStoreToBooking] No store for booking ${bookingId}: ${error}`
+            );
+
+            booking.status = BOOKING_STATUS.CANCELLED;
+            booking.cancelledBy = "SYSTEM";
+            booking.cancelReason = "No store capacity after payment";
+            booking.timeline.push(
+                createTimelineEntry(
+                    BOOKING_STATUS.CANCELLED,
+                    "Auto-cancelled: no store capacity after payment",
+                    null,
+                    null
+                )
+            );
+
+            await booking.save({ session });
+            await session.commitTransaction();
+            session.endSession();
+
+            await triggerAutoRefund(paymentId);
+
+            return { success: false, booking: null };
+        }
+
+        await assignStoreToBooking(store._id, session);
+
+        booking.storeId = store._id;
+        booking.status = BOOKING_STATUS.STORE_ASSIGNED;
+        booking.timeline.push(
+            createTimelineEntry(
+                BOOKING_STATUS.STORE_ASSIGNED,
+                `Store assigned: ${store.store_name}`,
+                null,
+                null
+            )
+        );
+
+        await booking.save({ session });
+        await session.commitTransaction();
+        session.endSession();
+
+        // Bust Redis cache for user, store, and admin so status updates immediately
+        await invalidateBookingCache(booking.userId.toString(), bookingId.toString(), store._id.toString()).catch((err) =>
+            logger.warn(`[assignStoreDriverToBooking] invalidateBookingCache error: ${err.message}`)
+        );
+
+        // Emit Socket event so user app updates in real-time to "Finding your driver"
+        try {
+            const { getIO } = await import("../../src/socket/index.js");
+            const { rooms } = await import("../../src/socket/socket.rooms.js");
+            const { SOCKET_EVENTS } = await import("../../src/socket/socket.events.js");
+            const io = getIO();
+            if (io) {
+                io.to(rooms.user(booking.userId.toString())).emit(SOCKET_EVENTS.BOOKING_STORE_ASSIGNED, {
+                    bookingId: booking._id,
+                    status: BOOKING_STATUS.STORE_ASSIGNED,
+                    store: { id: store._id, name: store.store_name, location: store.location },
+                });
+            }
+        } catch (_) {}
+
+        await scheduleDriverSearch(bookingId, "PICKUP");
+
+        return { success: true, booking };
+    } catch (err) {
+        if (session.inTransaction()) {
+            await session.abortTransaction();
+        }
+        session.endSession();
+        logger.error(
+            `[assignStoreDriverToBooking] failed for ${bookingId}: ${err.message}`
+        );
+        throw err;
+    }
+};
+
+export const assignDriverToBooking = async ({ bookingId, paymentId }) => {
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+
+        const booking = await Booking.findById(bookingId).session(session);
+
+        if (!booking || booking.status !== BOOKING_STATUS.FINAL_PAYMENT_PENDING) {
+            await session.abortTransaction();
+            return { success: false, reason: "already_processed_or_invalid_state" };
+        }
+
+        const payment = await Payment.findById(paymentId).select("bookingId").session(session);
+
+        if (!payment || payment.bookingId.toString() !== bookingId.toString()) {
+            await session.abortTransaction();
+            return { success: false, reason: "already_processed_or_invalid_state" };
+        }
+
+        const now = new Date();
+        booking.requestedAt = now;
+        booking.status = BOOKING_STATUS.FINAL_PAYMENT_CAPTURED;
+        booking.lastStatusUpdatedAt = now;
+        booking.timeline.push(
+            createTimelineEntry(
+                BOOKING_STATUS.FINAL_PAYMENT_CAPTURED,
+                "Final payment captured — searching for return driver",
+                booking.userId,
+                "User"
+            )
+        );
+
+        await booking.save({ session });
+        await session.commitTransaction();
+
+        // Bust Redis cache
+        await invalidateBookingCache(booking.userId.toString(), bookingId.toString(), booking.storeId?.toString()).catch((err) =>
+            logger.warn(`[assignDriverToBooking] invalidateBookingCache error: ${err.message}`)
+        );
+
+        await scheduleReturnProcessing(bookingId);
+
+        return { success: true, bookingId };
+    } catch (err) {
+        if (session.inTransaction()) await session.abortTransaction();
+        logger.error(`[assignDriverToBooking] failed for ${bookingId}: ${err.message}`);
+        throw err;
+    } finally {
+        session.endSession();
+    }
 };

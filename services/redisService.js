@@ -82,7 +82,7 @@ const createRedisClient = (config, label = "Redis") => {
 const redis = createRedisClient(redisConnectionConfig, "Redis");
 
 
-// Shared connection for ALL Queue instances (not workers)
+// Shared connection for ALL Queue instances
 export const sharedQueueConnection = createRedisClient(
     { ...redisConnectionConfig, enableReadyCheck: false },
     "Shared Queue"
@@ -95,7 +95,6 @@ export const sharedWorkerConnection = createRedisClient(
 );
 
 // BULLMQ CONNECTION FACTORY
-// Each BullMQ Queue/Worker needs its own connection
 export const createBullConnection = (label = "BullMQ") => {
     return createRedisClient(redisConnectionConfig, label);
 };
@@ -112,7 +111,5 @@ export const initRedis = async () => {
     }
 };
 
-// Removed basic operations and helper functions (get, set, update, exists, del, delMany, delByPattern).
-// Use constants/redis/redisOperation.js for all cache operations.
 export const redisClient = redis;
 export default redis;

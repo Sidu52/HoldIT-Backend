@@ -81,40 +81,6 @@ export const normalizeChartData = (data = [], range) => {
   throw new Error(`Unsupported chart range: "${range}"`);
 };
 
-
-export const getDistanceInKm = (lat1, lon1, lat2, lon2) => {
-  // Validate inputs
-  const coords = [lat1, lon1, lat2, lon2];
-  if (coords.some((c) => typeof c !== "number" || Number.isNaN(c))) {
-    throw new Error("All coordinates must be valid numbers");
-  }
-
-  if (
-    lat1 < -90 || lat1 > 90 || lat2 < -90 || lat2 > 90 ||
-    lon1 < -180 || lon1 > 180 || lon2 < -180 || lon2 > 180
-  ) {
-    throw new Error("Coordinates out of valid range");
-  }
-
-  // Same point optimization
-  if (lat1 === lat2 && lon1 === lon2) return 0;
-
-  const toRad = (v) => (v * Math.PI) / 180;
-  const R = 6371; // Earth's radius in km
-
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-    Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-
 // Add this helper at the top of booking.admin.controller.js (after imports)
 export const safeAbortSession = async (session) => {
   try {
@@ -140,23 +106,4 @@ export const buildPagination = (page, limit, total) => {
   };
 };
 
-export const isValidStatusTransition = (currentStatus, targetStatus) => {
-  const transitions = {
-    [BOOKING_STATUS.CREATED]: [BOOKING_STATUS.STORE_ASSIGNED, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.STORE_ASSIGNED]: [BOOKING_STATUS.DRIVER_ASSIGNED, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.DRIVER_ASSIGNED]: [BOOKING_STATUS.DRIVER_ARRIVED, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.DRIVER_ARRIVED]: [BOOKING_STATUS.PICKED_UP, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.PICKED_UP]: [BOOKING_STATUS.AT_STORE, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.AT_STORE]: [BOOKING_STATUS.STORED, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.STORED]: [BOOKING_STATUS.RETURN_REQUESTED, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.RETURN_REQUESTED]: [BOOKING_STATUS.RETURN_DRIVER_ASSIGNED, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.RETURN_DRIVER_ASSIGNED]: [BOOKING_STATUS.OUT_FOR_RETURN, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.OUT_FOR_RETURN]: [BOOKING_STATUS.ARRIVED_FOR_DELIVERY, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.ARRIVED_FOR_DELIVERY]: [BOOKING_STATUS.DELIVERED, BOOKING_STATUS.CANCELLED],
-    [BOOKING_STATUS.DELIVERED]: [],
-    [BOOKING_STATUS.CANCELLED]: [],
-    [BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL]: [BOOKING_STATUS.STORE_ASSIGNED, BOOKING_STATUS.CANCELLED], // Can be reassigned by ops
-  };
-
-  return transitions[currentStatus]?.includes(targetStatus) || false;
-};
+export { isValidStatusTransition } from "../helpers/user/bookingHelper.js";

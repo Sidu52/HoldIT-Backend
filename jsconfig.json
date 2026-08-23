@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "checkJs": false,
+    "forceConsistentCasingInFileNames": false,
+    "allowJs": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.js"],
+  "exclude": ["node_modules", "public"]
+}

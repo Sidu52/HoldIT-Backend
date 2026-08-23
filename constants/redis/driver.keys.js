@@ -9,9 +9,11 @@ export const DriverKeys = {
   geoGlobal: () => key("drivers", "global"),
   meta: (driverId) => key(NS.DRIVER, "meta", driverId),
   offered: (driverId) => key(NS.DRIVER, "offered", driverId),
+  history: (driverId) => key(NS.DRIVER, "history", driverId),
 
   // driver-portal ride state (driver.ride.controller.js)
   assigned: (driverId) => key(NS.DRIVER, "assigned", driverId),
+  active: (driverId) => key(NS.DRIVER, "active", driverId),
   activeRide: (driverId) => key(NS.DRIVER, "active", driverId),
   rideDetail: (driverId, bookingId) => key(NS.DRIVER, "ride", driverId, bookingId),
   rideHistory: (driverId, page, limit) => key(RIDE_HISTORY_PREFIX, driverId, page, limit),
@@ -25,8 +27,9 @@ export const DriverKeys = {
   reviews: (driverId, page, limit) => key(NS.DRIVER, "reviews", driverId, page, limit),
   reviewsPattern: (driverId) => pattern(NS.DRIVER, "reviews", driverId),
 
-  // live location (src/socket/services/location.service.js)
+  // live location & socket
   location: (driverId) => key(NS.DRIVER, "location", driverId),
+  socketSession: (driverId) => key(NS.DRIVER, driverId, "socket"),
 
   // pickup/return OTP rate-limit (driverRideHelper.js)
   otpRateLimit: (driverId, bookingId) => key("rate_limit", "otp", driverId, bookingId),
@@ -36,6 +39,7 @@ export const DriverTTL = Object.freeze({
   META: 300,
   GEO_META: 3600,
   ASSIGNED: 60,
+  ACTIVE: 120,
   ACTIVE_RIDE: 120,
   RIDE_DETAIL: 300,
   RIDE_HISTORY: 120,

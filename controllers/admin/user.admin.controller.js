@@ -3,7 +3,7 @@ import User from "../../models/User.js";
 import Booking from "../../models/Booking.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { ACCOUNT_STATUS, STATUS_CODES, BOOKING_STATUS } from "../../utils/constants.js";
-import { escapeRegex } from "../../utils/helper.js";
+import { escapeRegex, buildPagination, safeAbortSession } from "../../utils/helper.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import logger from "../../utils/logger.js";
 import { cacheAside, deleteCache, deleteByPattern, deleteManyCache } from "../../constants/redis/redisOperation.js";
@@ -21,10 +21,6 @@ const USER_BLOCKING_BOOKING_STATUSES = [
     BOOKING_STATUS.STORED, BOOKING_STATUS.RETURN_REQUESTED,
     BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
 ].filter(Boolean);
-
-const safeAbortSession = async (session) => {
-    try { await session.abortTransaction(); session.endSession(); } catch (_) { }
-};
 
 const invalidateUserCache = async (userId) => {
     const results = await Promise.allSettled([
@@ -60,10 +56,9 @@ export const getUsers = async (req, res) => {
                 User.countDocuments(filter),
             ]);
 
-            const totalPages = Math.ceil(total / limitNum);
             return {
                 users,
-                pagination: { currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum, hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1 },
+                pagination: buildPagination(pageNum, limitNum, total),
             };
         });
 

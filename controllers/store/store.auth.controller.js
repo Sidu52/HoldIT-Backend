@@ -25,7 +25,7 @@ import {
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
 import { setAuthCookies } from "../../utils/helper.js";
-import NotificationService from "../../services/NotificationService.js";
+import NotificationService from "../../services/notificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 
 // LOGIN
@@ -80,6 +80,7 @@ export const loginStore = asyncHandler(async (req, res) => {
 
     return sendResponse({
         res,
+        data: { otp },
         message: "Login OTP sent successfully",
     });
 });
@@ -114,7 +115,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
 
     await NotificationService.sendOTP(phone, otp);
 
-    return sendResponse({ res, message: "OTP sent successfully" });
+    return sendResponse({ res, data: { otp }, message: "OTP sent successfully" });
 });
 
 // VERIFY OTP

@@ -35,7 +35,7 @@ router.use(authMiddleware,
   checkAdminAccountStatus
 );
 
-// const manageModify = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.OPERATION_MANAGER);
+const manageModify = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.OPERATION_MANAGER);
 
 // Bulk deactivate
 

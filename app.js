@@ -17,6 +17,9 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Payment
+import { initRazorpay } from "./config/razorpay.js";
+
 // Services
 import { connectMongo, disconnectMongo } from "./services/mongoService.js";
 import { initRedis } from "./services/redisService.js";
@@ -36,9 +39,15 @@ import UserRoutes from "./routes/users/index.js";
 import DriverRoutes from "./routes/driver/index.js";
 import StoreRoutes from "./routes/store/index.js";
 import StoreOwnerRoutes from "./routes/store_owner/index.js";
+import PaymentRoutes from "./routes/payment/index.js";
+import { requestIdMiddleware } from "./middlewares/requestId.middleware.js";
 
 const app = express();
 
+// Trust proxy (required for AWS ALB / Cloudflare / Nginx reverse proxy header resolution)
+app.set("trust proxy", 1);
+
+app.use(requestIdMiddleware);
 app.use(cookieParser());
 
 // Helmet
@@ -64,10 +73,14 @@ app.use(
             if (!origin || origin === "undefined") {
                 return callback(null, true);
             }
-
             const allowedOrigins = [
                 process.env.ADMIN_URL,
                 process.env.STORE_URL,
+                "http://localhost:5173",
+                "http://localhost:4001",
+                "http://localhost:4000",
+                "http://localhost:8081",
+                "http://localhost:8082",
             ].filter(Boolean);
 
             if (allowedOrigins.includes(origin)) {
@@ -80,7 +93,12 @@ app.use(
     })
 );
 
-app.use(express.json());
+app.use((req, res, next) => {
+    if (req.originalUrl === "/api/v1/payments/webhook") {
+        return next();
+    }
+    express.json()(req, res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
     if (req.body === undefined) req.body = {};
@@ -91,7 +109,13 @@ app.use((req, res, next) => {
 app.use(validateObjectIdParams);
 app.use(enforcePaginationLimit);
 
-// Serve static files
+// Serve static files with subfolder fallbacks
+app.use("/uploads/pickup", express.static(path.join(__dirname, "public/uploads/pickup")));
+app.use("/uploads/pickup", express.static(path.join(__dirname, "public/uploads"))); // fallback for legacy uploads
+app.use("/uploads/delivery", express.static(path.join(__dirname, "public/uploads/delivery")));
+app.use("/uploads/delivery", express.static(path.join(__dirname, "public/uploads"))); // fallback for legacy uploads
+app.use("/uploads/storage", express.static(path.join(__dirname, "public/uploads/storage")));
+app.use("/uploads/storage", express.static(path.join(__dirname, "public/uploads"))); // fallback for legacy uploads
 app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
 // ROUTES
@@ -101,6 +125,7 @@ DriverRoutes(app);
 StoreRoutes(app);
 UserRoutes(app);
 StoreOwnerRoutes(app);
+PaymentRoutes(app);
 
 setupSwagger(app);
 
@@ -120,6 +145,7 @@ const PORT = process.env.PORT || 3000;
 const start = async () => {
     await initRedis();
     await connectMongo();
+     await initRazorpay();
 
     // BullMQ workers
     initializeWorkers();
@@ -127,7 +153,7 @@ const start = async () => {
     // Cron jobs (nightly drivers + stores offline)
     initCronJobs();
 
-    //  HTTP server — bind port FIRST so Render/health checks succeed immediately
+    //  HTTP server bind port FIRST so Render/health checks succeed immediately
     const server = app.listen(PORT, () => {
         logger.info(`[Server] Running on port ${PORT}`);
     });

@@ -31,7 +31,9 @@ const startStatsInterval = (io) => {
                             BOOKING_STATUS.DRIVER_ARRIVED,
                             BOOKING_STATUS.PICKED_UP,
                             BOOKING_STATUS.AT_STORE,
-                            BOOKING_STATUS.RETURN_DRIVER_ASSIGNED
+                            BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+                            BOOKING_STATUS.OUT_FOR_DELIVERY,
+                            BOOKING_STATUS.ARRIVED_FOR_DELIVERY
                         ]
                     }
                 }),
@@ -75,7 +77,7 @@ export const registerAdminHandlers = (io, socket) => {
     logger.info(`[Socket:Admin] Admin ${adminId} connected to dashboard. Total: ${adminConnectedCount}`);
 
     // Handle specific driver location subscription
-    socket.on("admin:subscribe_driver_location", async (payload) => {
+    socket.on(SOCKET_EVENTS.ADMIN_SUBSCRIBE_DRIVER_LOCATION, async (payload) => {
         try {
             const { driverId } = payload;
             if (!driverId) {
@@ -94,7 +96,7 @@ export const registerAdminHandlers = (io, socket) => {
             socket.join(rooms.driverLocation(driverId));
             logger.info(`[Socket:Admin] Admin ${adminId} subscribed to driver ${driverId} location`);
 
-            socket.emit("admin:subscribed_driver_location", {
+            socket.emit(SOCKET_EVENTS.ADMIN_SUBSCRIBE_DRIVER_LIST, {
                 driverId,
                 success: true,
                 message: `Subscribed to driver ${driverId} location updates`,
@@ -106,7 +108,7 @@ export const registerAdminHandlers = (io, socket) => {
     });
 
     // Handle driver location unsubscription
-    socket.on("admin:unsubscribe_driver_location", (payload) => {
+    socket.on(SOCKET_EVENTS.ADMIN_UNSUBSCRIBE_DRIVER_LOCATION, (payload) => {
         try {
             const { driverId } = payload;
             if (!driverId) return;
@@ -114,7 +116,7 @@ export const registerAdminHandlers = (io, socket) => {
             socket.leave(rooms.driverLocation(driverId));
             logger.info(`[Socket:Admin] Admin ${adminId} unsubscribed from driver ${driverId}`);
 
-            socket.emit("admin:unsubscribed_driver_location", {
+            socket.emit(SOCKET_EVENTS.ADMIN_UNSUBSCRIBE_DRIVER_LIST, {
                 driverId,
                 success: true,
             });
@@ -124,7 +126,7 @@ export const registerAdminHandlers = (io, socket) => {
     });
 
     // Handle bulk driver location subscription (for driver list page)
-    socket.on("admin:subscribe_driver_list", async (payload) => {
+    socket.on(SOCKET_EVENTS.ADMIN_SUBSCRIBE_DRIVER_LIST, async (payload) => {
         try {
             const { driverIds } = payload;
             if (!Array.isArray(driverIds) || driverIds.length === 0) {
@@ -138,7 +140,7 @@ export const registerAdminHandlers = (io, socket) => {
             });
 
             logger.info(`[Socket:Admin] Admin ${adminId} subscribed to ${driverIds.length} drivers`);
-            socket.emit("admin:subscribed_driver_list", {
+            socket.emit(SOCKET_EVENTS.ADMIN_SUBSCRIBE_DRIVER_LIST, {
                 count: driverIds.length,
                 success: true,
             });

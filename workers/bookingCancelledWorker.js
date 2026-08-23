@@ -31,7 +31,6 @@ export const createBookingCancelledWorker = () => {
                 }
 
                 // Notify User
-                // Could call NotificationService here if we had the payload, but just logging is fine for this phase.
                 logger.info(`[Booking Cancelled Worker] Successfully processed cancellation effects for ${bookingId}`);
 
                 return { success: true, bookingId };

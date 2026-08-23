@@ -10,6 +10,9 @@ const envSchema = z.object({
   REDIS_PORT: z.string().transform(Number).optional(),
   ACCESS_TOKEN_SECRET: z.string().min(10, "ACCESS_TOKEN_SECRET must be at least 10 chars"),
   REFRESH_TOKEN_SECRET: z.string().min(10, "REFRESH_TOKEN_SECRET must be at least 10 chars"),
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 });
 
 export const validateEnv = () => {

@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
-import { markDriverAvailable } from "../../services/driverGeoService.js";
+import { markDriverAvailable, addDriverToRedis } from "../../services/driverGeoService.js";
 import { ACCOUNT_STATUS, BOOKING_STATUS, STATUS_CODES } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 
@@ -34,6 +34,12 @@ export const verifyStore = (store, owner = null) => {
     return { valid: true };
 };
 
+import { invalidateBookingCache } from "../../constants/redis/invalidate/booking.invalidate.js";
+import { invalidateDriverCache } from "../../constants/redis/invalidate/driver.invalidate.js";
+import { deleteCache } from "../../constants/redis/redisOperation.js";
+import { DriverKeys } from "../../constants/redis/driver.keys.js";
+import { BookingKeys } from "../../constants/redis/booking.keys.js";
+
 // Called by the store (or driver on store's behalf). Completes the pickup leg.
 export const processMarkStored = async (bookingId, storeId, notes) => {
     const now = new Date();
@@ -48,6 +54,7 @@ export const processMarkStored = async (bookingId, storeId, notes) => {
             $set: {
                 status: BOOKING_STATUS.STORED,
                 lastStatusUpdatedAt: now,
+                "storage.startedAt": now,
                 "storage.storedAt": now,
                 "storage.notes": notes,
             },
@@ -68,21 +75,51 @@ export const processMarkStored = async (bookingId, storeId, notes) => {
 
     if (!booking) return null;
 
+    // Invalidate Redis caches for store and booking
+    invalidateBookingCache(booking, { storeId }).catch((err) =>
+        logger.error(`[processMarkStored] Cache invalidation failed for ${bookingId}:`, err)
+    );
+
+    // Transition Driver 1 Pickup Earning to PAYABLE
+    import("../../services/fundDistributionService.js")
+        .then(({ updateEarningStatus }) => updateEarningStatus(bookingId, "PICKUP", "PAYABLE"))
+        .catch((err) => logger.error(`[processMarkStored] Driver 1 earning update failed for ${bookingId}:`, err));
+
     const driverId = booking.pickup?.assignment?.driverId;
 
     // Release driver, if one was assigned
     if (driverId) {
         try {
+            const Store = (await import("../../models/Store.js")).default;
+            const storeDoc = await Store.findById(storeId).select("location service_area_id").lean();
+
             const driver = await Driver.findById(driverId);
             if (driver) {
                 driver.is_on_trip = false;
                 driver.current_booking_id = null;
-                await driver.save();
 
-                // Re-sync geo index BEFORE marking available, or the driver
-                // won't be discoverable for new nearby-driver queries
-                await addDriverToRedis(driver);
+                if (storeDoc?.location?.coordinates?.length >= 2) {
+                    driver.currentLocation = {
+                        type: "Point",
+                        coordinates: storeDoc.location.coordinates,
+                        updatedAt: new Date(),
+                    };
+                    if (!driver.service_area_id && storeDoc.service_area_id) {
+                        driver.service_area_id = storeDoc.service_area_id;
+                    }
+                }
+
+                await driver.save();
                 await markDriverAvailable(driverId);
+                await addDriverToRedis(driver);
+
+
+                await Promise.allSettled([
+                    deleteCache(DriverKeys.assigned(driverId)),
+                    deleteCache(DriverKeys.offered(driverId)),
+                    deleteCache(BookingKeys.offer(bookingId)),
+                    invalidateDriverCache(driverId, bookingId),
+                ]);
             }
         } catch (err) {
             logger.error(`[processMarkStored] Driver release/sync failed for ${driverId}:`, err);

@@ -24,8 +24,10 @@ import {
 } from "../../validations/admin/store.validation.js";
 import { updateLocationSchema } from "../../validations/admin/driver.validation.js";
 
+import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
+
 const router = express.Router();
-router.use(authMiddleware);
+router.use(authMiddleware, checkAdminAccountStatus);
 
 const VIEW_ROLES = [
     USER_ROLES.SUPER_ADMIN,
@@ -36,6 +38,7 @@ const VIEW_ROLES = [
 const MODIFY_ROLES = [
     USER_ROLES.SUPER_ADMIN,
     USER_ROLES.ADMIN,
+    USER_ROLES.OPERATION_MANAGER,
 ];
 
 router.get("/",

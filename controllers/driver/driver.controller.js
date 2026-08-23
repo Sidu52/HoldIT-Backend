@@ -23,11 +23,9 @@ const safeGetIO = () => {
 // Get Driver Profile
 export const getDriverProfile = asyncHandler(async (req, res) => {
   const driverId = req.user.auth_id;
-  console.log("driverId", driverId);
   const driver = await Driver.findById(driverId)
     .select("-password_hash -__v")
     .lean();
-  console.log("driver", driver);
   if (!driver) {
     return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
   }
@@ -185,5 +183,31 @@ export const updateDriverLocation = asyncHandler(async (req, res) => {
     res,
     message: "Location updated",
     data: { location: driver.currentLocation },
+  });
+});
+
+// Update Driver Push Token
+export const updatePushToken = asyncHandler(async (req, res) => {
+  const driverId = req.user.auth_id;
+  const { push_token } = req.body;
+
+  if (!push_token || typeof push_token !== "string") {
+    return sendError(res, "push_token string is required", STATUS_CODES.BAD_REQUEST);
+  }
+
+  const updatedDriver = await Driver.findByIdAndUpdate(
+    driverId,
+    { $set: { push_token } },
+    { new: true }
+  ).select("_id push_token").lean();
+
+  if (!updatedDriver) {
+    return sendError(res, "Driver not found", STATUS_CODES.NOT_FOUND);
+  }
+
+  return sendResponse({
+    res,
+    message: "Driver push token updated successfully",
+    data: { push_token: updatedDriver.push_token },
   });
 });

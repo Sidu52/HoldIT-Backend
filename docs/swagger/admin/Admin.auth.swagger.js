@@ -1,239 +1,210 @@
 /**
  * @swagger
- *   /api/v1/admin/invite:
- *     post:
- *       summary: Invite Admin
- *       tags:
- *         - Auth
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ * /api/v1/admin/auth/login:
+ *   post:
+ *     summary: Admin Login
+ *     tags:
+ *       - Admin Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: admin@holdit.com
+ *               password:
+ *                 type: string
+ *                 example: Admin@12345
+ *     responses:
+ *       200:
+ *         description: Login successful, returns access token
+ *       400:
+ *         description: Invalid credentials
+ * 
+ * /api/v1/admin/auth/signup:
+ *   post:
+ *     summary: Admin Signup via Invite Token
+ *     tags:
+ *       - Admin Auth
+ *     parameters:
+ *       - in: query
+ *         name: token
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 email:
- *                   type: string
- *                   example: ss1@gmail.com
- *                 role:
- *                   type: string
- *                   example: operation_manager
- *               required:
- *                 - email
- *                 - role
- */
-
-/**
- * @swagger
- *   /api/v1/admin/auth/verify:
- *     get:
- *       summary: Verify Admin Invite Token
- *       tags:
- *         - Auth
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- */
-
-/**
- * @swagger
- *   /api/v1/admin/auth/signup:
- *     post:
- *       summary: Admin Signup With Token
- *       tags:
- *         - Auth
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       requestBody:
+ *         schema:
+ *           type: string
+ *         description: Invite token sent via email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - password
+ *               - gender
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: John Admin
+ *               password:
+ *                 type: string
+ *                 example: Admin@12345
+ *               gender:
+ *                 type: string
+ *                 enum: [MALE, FEMALE, OTHER]
+ *                 example: MALE
+ *     responses:
+ *       200:
+ *         description: Admin account created successfully
+ * 
+ * /api/v1/admin/auth/verify-invite:
+ *   get:
+ *     summary: Verify Admin Invite Token
+ *     tags:
+ *       - Admin Auth
+ *     parameters:
+ *       - in: query
+ *         name: token
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 name:
- *                   type: string
- *                   example: Sidhu Als
- *                 password:
- *                   type: string
- *                   example: Sidhu&7879
- *                 gender:
- *                   type: string
- *                   example: MALE
- *               required:
- *                 - name
- *                 - password
- *                 - gender
- */
-
-/**
- * @swagger
- *   /api/v1/admin/auth/login:
- *     post:
- *       summary: Admin Login
- *       tags:
- *         - Auth
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Invite token is valid
+ * 
+ * /api/v1/admin/auth/refresh:
+ *   post:
+ *     summary: Refresh Admin Access Token
+ *     tags:
+ *       - Admin Auth
+ *     responses:
+ *       200:
+ *         description: New access token issued
+ * 
+ * /api/v1/admin/auth/forgot-password:
+ *   post:
+ *     summary: Request Password Reset Email
+ *     tags:
+ *       - Admin Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: admin@holdit.com
+ *     responses:
+ *       200:
+ *         description: Password reset email sent
+ * 
+ * /api/v1/admin/auth/reset-password:
+ *   get:
+ *     summary: Verify Password Reset Token
+ *     tags:
+ *       - Admin Auth
+ *     parameters:
+ *       - in: query
+ *         name: token
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 email:
- *                   type: string
- *                   example: hitechsidu992@gmail.com
- *                 password:
- *                   type: string
- *                   example: Sidhu&7879
- *               required:
- *                 - email
- *                 - password
- */
-
-/**
- * @swagger
- *   /api/v1/admin/auth/logout:
- *     post:
- *       summary: Admin Logout
- *       tags:
- *         - Auth
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- */
-
-/**
- * @swagger
- *   /api/v1/admin/auth/refresh:
- *     post:
- *       summary: Refresh Token
- *       tags:
- *         - Auth
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Token is valid
+ * 
+ * /api/v1/admin/auth/forgot-password/reset:
+ *   post:
+ *     summary: Set New Password via Reset Token
+ *     tags:
+ *       - Admin Auth
+ *     parameters:
+ *       - in: query
+ *         name: token
  *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 email:
- *                   type: string
- *                   example: ss1@gmail.com
- *                 role:
- *                   type: string
- *                   example: operation_manager
- *               required:
- *                 - email
- *                 - role
- */
-
-/**
- * @swagger
- *   /api/v1/admin/auth/verify:
- *     put:
- *       summary: Verify Users
- *       tags:
- *         - Auth
- *       responses:
- *         200:
- *           description: Successful response
- *           content:
- *             application/json:
- *               schema:
- *                 type: object
- *                 properties:
- *                   status:
- *                     type: boolean
- *                     example: true
- *                 required:
- *                   - status
- *       security:
- *         - bearerAuth:
- *       requestBody:
- *         required: true
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 email:
- *                   type: string
- *                   example: siddhantsharma9926@gmail.com
- *               required:
- *                 - email
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *               - confirmPassword
+ *             properties:
+ *               password:
+ *                 type: string
+ *                 example: NewAdminPass@123
+ *               confirmPassword:
+ *                 type: string
+ *                 example: NewAdminPass@123
+ *     responses:
+ *       200:
+ *         description: Password updated successfully
+ * 
+ * /api/v1/admin/auth/verify:
+ *   get:
+ *     summary: Verify Current Admin Session
+ *     tags:
+ *       - Admin Auth
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Session is valid
+ * 
+ * /api/v1/admin/auth/logout:
+ *   post:
+ *     summary: Admin Logout
+ *     tags:
+ *       - Admin Auth
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ * 
+ * /api/v1/admin/auth/change-password:
+ *   put:
+ *     summary: Change Admin Password
+ *     tags:
+ *       - Admin Auth
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *               - confirmPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *                 example: OldPass@123
+ *               newPassword:
+ *                 type: string
+ *                 example: NewPass@123
+ *               confirmPassword:
+ *                 type: string
+ *                 example: NewPass@123
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
  */

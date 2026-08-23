@@ -1,78 +1,113 @@
+import mongoose from "mongoose";
 import Booking from "../../models/Booking.js";
+import Earning, { EARNING_RECIPIENT } from "../../models/Earning.js";
+import PaymentDistribution from "../../models/PaymentDistribution.js";
 import { sendResponse, sendError } from "../../utils/apiResponse.js";
 import { BOOKING_STATUS } from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 
+// Day labels indexed by MongoDB $dayOfWeek (1 = Sun … 7 = Sat)
+const DAYS_INDEXED = { 1: "SUN", 2: "MON", 3: "TUE", 4: "WED", 5: "THU", 6: "FRI", 7: "SAT" };
+
+// Reorder from MON → SUN for the response
+const ORDERED_DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
 export const getDriverStats = async (req, res) => {
-  try {
-    const driverId = req.user.auth_id;
+    try {
+        const driverId = new mongoose.Types.ObjectId(req.user.auth_id);
 
-    // Get today's start and end date
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
 
-    // Get this week's start
-    const startOfWeek = new Date();
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
+        const startOfWeek = new Date();
+        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
 
-    // Aggregate query to find bookings where this driver was involved
-    const driverBookings = await Booking.find({
-      $or: [
-        { "pickup.assignment.driverId": driverId },
-        { "delivery.assignment.driverId": driverId }
-      ],
-      status: BOOKING_STATUS.DELIVERED
-    }).select("pricing delivery createdAt");
+        // Find all completed bookings assigned to this driver
+        const COMPLETED_PICKUP_STATUSES = [
+            BOOKING_STATUS.STORED,
+            BOOKING_STATUS.RETURN_REQUESTED,
+            BOOKING_STATUS.RETURN_DRIVER_ASSIGNED,
+            BOOKING_STATUS.OUT_FOR_RETURN,
+            BOOKING_STATUS.ARRIVED_FOR_DELIVERY,
+            BOOKING_STATUS.DELIVERED,
+        ];
 
-    let totalDeliveries = driverBookings.length;
-    let earningsToday = 0;
-    let earningsThisWeek = 0;
-    let availableBalance = 0; // Total all time earnings for now
+        const filter = {
+            $or: [
+                { "pickup.assignment.driverId": driverId, status: { $in: COMPLETED_PICKUP_STATUSES } },
+                { "delivery.assignment.driverId": driverId, status: BOOKING_STATUS.DELIVERED },
+            ],
+        };
 
-    // Weekly Chart Data Initialization (Mon-Sun)
-    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-    const weeklyChart = days.map(day => ({ day, amount: 0 }));
+        const bookings = await Booking.find(filter)
+            .select("pickup delivery pricing tipAmount createdAt updatedAt status")
+            .lean();
 
-    driverBookings.forEach((booking) => {
-      // In a real app, driver cut would be calculated. Using totalAmount * 0.8 for mock realistic payout
-      const payout = (booking.pricing?.totalAmount || 0) * 0.8;
-      
-      availableBalance += payout;
+        let totalDeliveries = bookings.length;
+        let availableBalance = 0;
+        let earningsToday = 0;
+        let earningsThisWeek = 0;
+        const chartByDay = {};
 
-      const completionDate = booking.delivery?.completedAt || booking.createdAt;
+        for (const booking of bookings) {
+            const isPickup = booking.pickup?.assignment?.driverId?.toString() === driverId.toString();
+            const isDelivery = booking.delivery?.assignment?.driverId?.toString() === driverId.toString();
 
-      if (completionDate >= startOfToday && completionDate <= endOfToday) {
-        earningsToday += payout;
-      }
+            // Default standard driver payout fee for pickup or delivery + tips
+            let fee = 0;
+            if (isPickup) {
+                fee += (booking.pricing?.advanceBreakdown?.deliveryFee || 30);
+            }
+            if (isDelivery && isPickup) {
+                fee += (booking.pricing?.distanceCharge || 30);
+            } else if (isDelivery) {
+                fee += (booking.pricing?.distanceCharge || 30);
+            }
 
-      if (completionDate >= startOfWeek) {
-        earningsThisWeek += payout;
-        const dayIndex = new Date(completionDate).getDay();
-        weeklyChart[dayIndex].amount += payout;
-      }
-    });
+            const totalPayout = fee + (booking.tipAmount || 0);
 
-    // Reorder chart from MON to SUN
-    const reorderedChart = [...weeklyChart.slice(1), weeklyChart[0]];
+            // Determine date
+            const completionDate = (isPickup ? booking.pickup?.assignment?.completedAt : booking.delivery?.assignment?.completedAt)
+                || booking.updatedAt
+                || booking.createdAt;
+            const dateObj = new Date(completionDate);
 
-    return sendResponse({
-      res,
-      message: "Stats fetched successfully",
-      data: {
-        availableBalance,
-        earningsToday,
-        earningsThisWeek,
-        totalDeliveries,
-        rating: 4.9, // Mock rating as DB doesn't have review collection yet
-        weeklyChart: reorderedChart
-      }
-    });
+            availableBalance += totalPayout;
 
-  } catch (err) {
-    logger.error("Get Driver Stats Error:", err);
-    return sendError(res, "Failed to fetch driver statistics");
-  }
+            if (dateObj >= startOfToday && dateObj <= endOfToday) {
+                earningsToday += totalPayout;
+            }
+
+            if (dateObj >= startOfWeek) {
+                earningsThisWeek += totalPayout;
+                const dayIndex = dateObj.getDay() + 1; // 1 = Sun, 2 = Mon ...
+                const dayLabel = DAYS_INDEXED[dayIndex];
+                if (dayLabel) {
+                    chartByDay[dayLabel] = (chartByDay[dayLabel] || 0) + totalPayout;
+                }
+            }
+        }
+
+        // Build weekly chart keyed MON → SUN
+        const weeklyChart = ORDERED_DAYS.map((day) => ({ day, amount: chartByDay[day] ?? 0 }));
+
+        return sendResponse({
+            res,
+            message: "Stats fetched successfully",
+            data: {
+                availableBalance: Number(availableBalance.toFixed(2)),
+                earningsToday: Number(earningsToday.toFixed(2)),
+                earningsThisWeek: Number(earningsThisWeek.toFixed(2)),
+                totalDeliveries,
+                rating: 4.9,
+                weeklyChart,
+            },
+        });
+    } catch (err) {
+        logger.error("Get Driver Stats Error:", err);
+        return sendError(res, "Failed to fetch driver statistics");
+    }
 };

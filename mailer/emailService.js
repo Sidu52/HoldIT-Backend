@@ -17,18 +17,27 @@ if (!EMAIL_USER || !EMAIL_PASS) {
 }
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: process.env.SMTP_HOST || "smtp.gmail.com",
+  port: parseInt(process.env.SMTP_PORT || "587", 10),
+  secure: process.env.SMTP_SECURE === "true", // false for port 587 (STARTTLS)
   auth: {
     user: EMAIL_USER,
-    pass: EMAIL_PASS,
+    pass: EMAIL_PASS ? EMAIL_PASS.replace(/\s+/g, "") : "",
   },
+  tls: {
+    rejectUnauthorized: false,
+  },
+  family: 4, // Force IPv4 to prevent ECONNRESET issues from IPv6 routing failures
+  connectionTimeout: 15000, // 15 seconds timeout
+  greetingTimeout: 15000,
+  socketTimeout: 20000,
 });
 
 // Verify connection on startup
 transporter.verify().then(() => {
   logger.info("Email service ready");
 }).catch((err) => {
-  logger.error("Email service failed to initialize:", err.message);
+  logger.error(`Email service failed to initialize: ${err?.message || err} (code: ${err?.code || "N/A"})`);
 });
 
 
@@ -150,7 +159,7 @@ const sendEmail = async ({
 
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    logger.error(`Failed to send email to ${to}:`, error.message);
+    logger.error(`Failed to send email to ${to}: ${error.message}`);
     throw new Error(`Failed to send email: ${error.message}`);
   }
 };

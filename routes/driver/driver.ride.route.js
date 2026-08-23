@@ -16,9 +16,11 @@ import {
     arriveAtUserReturnController,
     completeDeliveryController,
     completePickupAtStoreController,
+    getDriverSettlementController,
 } from "../../controllers/driver/driver.ride.controller.js";
 
-import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { authMiddleware, protectDriver } from "../../middlewares/auth.middleware.js";
+import { checkDriverAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
 import {
     cancelRideSchema,
     completeRideSchema
@@ -28,13 +30,14 @@ import { validate } from "../../middlewares/validate.middleware.js";
 
 const router = express.Router();
 
-router.use(authMiddleware);
+router.use(authMiddleware, protectDriver, checkDriverAccountStatus);
 
 router.get("/offer/pending", apiLimiter, getPendingOfferController);
 router.get("/assigned", apiLimiter, getAssignedRidesController);
 router.get("/active", apiLimiter, getActiveRideController);
 
 router.get("/history", apiLimiter, getRideHistoryController);
+router.get("/:booking_id/settlement", apiLimiter, getDriverSettlementController);
 router.get("/:booking_id", apiLimiter, getRideDetailsController);
 
 // OFFER
@@ -50,7 +53,13 @@ router.put(
     validate(completeRideSchema),
     completePickupController
 );
-router.put("/:booking_id/complete-pickup-at-store", apiLimiter, completePickupAtStoreController);
+router.put(
+    "/:booking_id/complete-pickup-at-store",
+    apiLimiter,
+    upload.array("photos", 5),
+    validate(completeRideSchema),
+    completePickupAtStoreController
+);
 
 router.put("/:booking_id/arrive-store", apiLimiter, arriveAtStoreController);
 router.put("/:booking_id/arrive-store-return", apiLimiter, arriveAtStoreForReturnController);

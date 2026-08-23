@@ -33,45 +33,46 @@ export const createTicketSchema = {
     body: Joi.object({
         subject: Joi.string()
             .trim()
-            .min(5)
+            .min(3)
             .max(SUPPORT_LIMITS.MAX_SUBJECT_LENGTH)
             .required()
             .messages({
-                "string.min": "Subject must be at least 5 characters",
+                "string.min": "Subject must be at least 3 characters",
                 "string.max": `Subject cannot exceed ${SUPPORT_LIMITS.MAX_SUBJECT_LENGTH} characters`,
                 "any.required": "Subject is required",
             }),
         category: Joi.string()
-            .valid(...Object.values(TICKET_CATEGORY))
-            .required()
-            .messages({
-                "any.only": `Category must be one of: ${Object.values(TICKET_CATEGORY).join(", ")}`,
-                "any.required": "Category is required",
-            }),
-        priority: Joi.string()
-            .valid(...Object.values(TICKET_PRIORITY))
             .optional()
-            .default(TICKET_PRIORITY.MEDIUM)
-            .messages({
-                "any.only": `Priority must be one of: ${Object.values(TICKET_PRIORITY).join(", ")}`,
-            }),
+            .default("other"),
+        priority: Joi.string()
+            .optional()
+            .default(TICKET_PRIORITY.MEDIUM),
         message: Joi.string()
             .trim()
-            .min(10)
+            .min(3)
             .max(SUPPORT_LIMITS.MAX_MESSAGE_LENGTH)
-            .required()
-            .messages({
-                "string.min": "Message must be at least 10 characters",
-                "string.max": `Message cannot exceed ${SUPPORT_LIMITS.MAX_MESSAGE_LENGTH} characters`,
-                "any.required": "Message is required",
-            }),
+            .optional(),
+        initialMessage: Joi.string()
+            .trim()
+            .min(3)
+            .max(SUPPORT_LIMITS.MAX_MESSAGE_LENGTH)
+            .optional(),
         bookingId: Joi.string()
-            .pattern(/^[0-9a-fA-F]{24}$/)
+            .trim()
+            .max(100)
             .optional()
-            .allow(null)
+            .allow(null, "")
             .messages({
-                "string.pattern.base": "Invalid booking ID format",
+                "string.base": "Invalid booking ID",
             }),
+        chatType: Joi.string()
+            .valid(
+                "TICKET", "BOT_CHAT", "LIVE_CHAT",
+                "ticket", "bot_chat", "live_chat",
+                "ai_bot", "live_agent"
+            )
+            .optional()
+            .default("TICKET"),
         attachments: Joi.array()
             .items(attachmentSchema)
             .max(SUPPORT_LIMITS.MAX_ATTACHMENTS_PER_MESSAGE)
@@ -80,6 +81,8 @@ export const createTicketSchema = {
             .messages({
                 "array.max": `Maximum ${SUPPORT_LIMITS.MAX_ATTACHMENTS_PER_MESSAGE} attachments allowed`,
             }),
+    }).or("message", "initialMessage").messages({
+        "object.missing": "Message is required",
     }),
 };
 

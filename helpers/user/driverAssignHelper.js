@@ -3,99 +3,40 @@ import Driver from "../../models/Driver.js";
 import Booking from "../../models/Booking.js";
 import Store from "../../models/Store.js";
 import { addJobToQueue } from "../../services/jobService.js";
-import { ACCOUNT_STATUS, BOOKING_STATUS, VERIFICATION_STATUS } from "../../utils/constants.js";
+import { ACCOUNT_STATUS, BOOKING_STATUS, JOB_QUEUES, VERIFICATION_STATUS } from "../../utils/constants.js";
 import {
     DRIVER_ASSIGNMENT,
     DRIVER_JOB_NAMES,
     DRIVER_ASSIGN_QUEUE,
     DRIVER_SEARCH_STATUSES,
+    BOOKING_JOB_NAMES,
 } from "../../constants/user/booking.js";
 import { BookingKeys, BookingTTL } from "../../constants/redis/booking.keys.js";
 import { DriverKeys, DriverTTL } from "../../constants/redis/driver.keys.js";
 import logger from "../../utils/logger.js";
-// CANDIDATE PIPELINE
-export const storeCandidates = async (bookingId, driverIds) => {
-    if (!driverIds.length) return 0;
 
-    const key = BookingKeys.candidates(bookingId);
-    const pipeline = redis.pipeline();
-    pipeline.del(key);
-    pipeline.rpush(key, ...driverIds);
-    pipeline.expire(key, BookingTTL.CANDIDATES);
-    await pipeline.exec();
+import {
+    storeCandidates,
+    popNextCandidate,
+    getRemainingCandidateCount,
+    markDriverTried,
+    wasDriverTried,
+    createDriverOffer,
+    getOfferStatus,
+    markOfferAccepted,
+    clearOffer,
+} from "../cache/driverOfferCache.js";
 
-    return driverIds.length;
-};
-
-export const popNextCandidate = async (bookingId) => {
-    return redis.lpop(BookingKeys.candidates(bookingId));
-};
-
-export const getRemainingCandidateCount = async (bookingId) => {
-    return redis.llen(BookingKeys.candidates(bookingId));
-};
-
-// TRIED-DRIVERS SET
-export const markDriverTried = async (bookingId, driverId) => {
-    const key = BookingKeys.tried(bookingId);
-    const pipeline = redis.pipeline();
-    pipeline.sadd(key, driverId.toString());
-    pipeline.expire(key, BookingTTL.TRIED_DRIVERS);
-    await pipeline.exec();
-};
-
-export const wasDriverTried = async (bookingId, driverId) => {
-    const result = await redis.sismember(
-        BookingKeys.tried(bookingId),
-        driverId.toString()
-    );
-    return result === 1;
-};
-
-// OFFER STATE
-export const createDriverOffer = async (bookingId, driverId, attemptNumber = 1) => {
-    const offerKey = BookingKeys.offer(bookingId);
-    const driverLockKey = DriverKeys.offered(driverId);
-
-    const existingLock = await redis.get(driverLockKey);
-    if (existingLock) {
-        return { created: false, reason: "DRIVER_HAS_PENDING_OFFER" };
-    }
-
-    const currentOffer = await redis.hgetall(offerKey);
-    if (currentOffer?.driverId && currentOffer?.status === "pending") {
-        return { created: false, reason: "BOOKING_HAS_ACTIVE_OFFER" };
-    }
-
-    const pipeline = redis.pipeline();
-    pipeline.hset(offerKey, {
-        driverId: driverId.toString(),
-        offeredAt: Date.now().toString(),
-        status: "pending",
-        attemptNumber: attemptNumber.toString(),
-    });
-    pipeline.expire(offerKey, BookingTTL.OFFER);
-    pipeline.set(driverLockKey, bookingId.toString(), "EX", BookingTTL.OFFER);
-    await pipeline.exec();
-
-    return { created: true, reason: null };
-};
-
-export const getOfferStatus = async (bookingId) => {
-    const offer = await redis.hgetall(BookingKeys.offer(bookingId));
-    if (!offer || !offer.driverId) return { exists: false, offer: null };
-    return { exists: true, offer };
-};
-
-export const markOfferAccepted = async (bookingId) => {
-    await redis.hset(BookingKeys.offer(bookingId), "status", "accepted");
-};
-
-export const clearOffer = async (bookingId, driverId) => {
-    await Promise.all([
-        redis.del(BookingKeys.offer(bookingId)),
-        redis.del(DriverKeys.offered(driverId)),
-    ]);
+export {
+    storeCandidates,
+    popNextCandidate,
+    getRemainingCandidateCount,
+    markDriverTried,
+    wasDriverTried,
+    createDriverOffer,
+    getOfferStatus,
+    markOfferAccepted,
+    clearOffer,
 };
 
 // SEARCH ACTIVE LOCK
@@ -152,7 +93,29 @@ export const getDriverGeoKeys = async (serviceAreaId) => {
     return keys;
 };
 
-export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
+export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId, maxRadiusKm = null) => {
+    let effectiveMaxRadius = maxRadiusKm;
+
+    if (!effectiveMaxRadius) {
+        try {
+            const ServiceableArea = (await import("../../models/ServiceableArea.js")).default;
+            const { checkServiceability } = await import("./addressHelper.js");
+            const serviceability = await checkServiceability(lng, lat);
+            if (serviceability.isServiceable && serviceability.serviceAreaId) {
+                const area = await ServiceableArea.findById(serviceability.serviceAreaId).select("service_radius_km").lean();
+                if (area?.service_radius_km) {
+                    effectiveMaxRadius = area.service_radius_km;
+                }
+            }
+        } catch (_) {}
+    }
+
+    effectiveMaxRadius = effectiveMaxRadius || 5;
+
+    const radiiToSearch = [1, 3, effectiveMaxRadius]
+        .filter((r, i, arr) => r <= effectiveMaxRadius && arr.indexOf(r) === i)
+        .sort((a, b) => a - b);
+
     const allDrivers = [];
     const seenIds = new Set();
 
@@ -164,15 +127,12 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
     lng = parseFloat(lng);
     lat = parseFloat(lat);
 
-    console.log(`[DEBUG_GEO_SEARCH] Starting nearby driver query. BookingId: ${bookingId}, Search Origin: [lng: ${lng}, lat: ${lat}]`);
-    logger.info(`[GeoSearch] Starting search: lng=${lng}, lat=${lat}, bookingId=${bookingId}`);
+    logger.info(`[GeoSearch] Starting search: lng=${lng}, lat=${lat}, bookingId=${bookingId}, maxRadius=${effectiveMaxRadius}km`);
 
-    for (const radius of DRIVER_ASSIGNMENT.SEARCH_RADII_KM) {
-        console.log(`[DEBUG_GEO_SEARCH] Querying drivers within radius: ${radius} km`);
+    for (const radius of radiiToSearch) {
         for (const geoKey of geoKeys) {
             try {
                 const keyExists = await redis.exists(geoKey);
-                console.log(`[DEBUG_GEO_SEARCH] Checking Redis Key: "${geoKey}". Exists: ${keyExists}`);
                 if (!keyExists) continue;
 
                 const results = await redis.call(
@@ -188,16 +148,12 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
                     "COUNT",
                     DRIVER_ASSIGNMENT.MAX_CANDIDATES_PER_SEARCH.toString()
                 );
-
-                console.log(`[DEBUG_GEO_SEARCH] GEORADIUS result count for Key "${geoKey}": ${results?.length || 0}`);
                 logger.info(`[GeoSearch] key="${geoKey}" radius=${radius}km → ${results?.length || 0} result(s)`);
                 if (!results?.length) continue;
 
                 for (const result of results) {
                     const [driverId, distance, coords] = result;
-                    console.log(`[DEBUG_GEO_SEARCH] Found DriverId: ${driverId}, Distance: ${distance} km, Coordinates: [${coords?.[0]}, ${coords?.[1]}]`);
                     if (!driverId || seenIds.has(driverId)) {
-                        console.log(`[DEBUG_GEO_SEARCH] Skipping DriverId: ${driverId} (duplicate or empty)`);
                         continue;
                     }
                     seenIds.add(driverId);
@@ -205,12 +161,7 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
                     const meta = await redis.hgetall(DriverKeys.meta(driverId));
                     const tried = await wasDriverTried(bookingId, driverId);
                     const pendingOffer = await redis.get(DriverKeys.offered(driverId));
-                    
-                    console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} Redis Meta:`, JSON.stringify(meta));
-                    console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} already tried: ${tried}, pendingOffer key status: ${pendingOffer}`);
-
                     const eligible = await isDriverEligibleInRedis(driverId, bookingId);
-                    console.log(`[DEBUG_GEO_SEARCH] Driver ${driverId} Eligibility: ${eligible}`);
                     if (!eligible) continue;
 
                     allDrivers.push({
@@ -219,22 +170,17 @@ export const searchNearbyDrivers = async (geoKeys, lng, lat, bookingId) => {
                     });
                 }
             } catch (err) {
-                console.error(`[DEBUG_GEO_SEARCH] Error querying Key "${geoKey}":`, err);
                 logger.error(`[GeoSearch] ERROR key="${geoKey}" radius=${radius}km:`, err.message);
             }
         }
 
         if (allDrivers.length > 0) {
-            console.log(`[DEBUG_GEO_SEARCH] Found ${allDrivers.length} eligible driver(s) within ${radius} km radius:`, JSON.stringify(allDrivers));
             logger.info(`[GeoSearch] Found ${allDrivers.length} driver(s) within ${radius}km`);
             break;
         }
-
-        console.log(`[DEBUG_GEO_SEARCH] No eligible drivers found within ${radius} km`);
         logger.info(`[GeoSearch] 0 drivers found within ${radius}km — expanding`);
     }
 
-    console.log(`[DEBUG_GEO_SEARCH] Final driver discovery list:`, JSON.stringify(allDrivers));
     logger.info(`[GeoSearch] Final result: ${allDrivers.length} driver(s)`);
 
     allDrivers.sort((a, b) => a.distanceKm - b.distanceKm);
@@ -333,7 +279,9 @@ export const isBookingAwaitingDriver = async (bookingId) => {
 
 export const getBookingForDriverSearch = async (bookingId) => {
     return Booking.findById(bookingId)
-        .select("status pickupLocation deliveryLocation serviceAreaId storeId")
+        .select("status pickupLocation deliveryLocation criticalHandoverLocation serviceAreaId storeId pricing tipAmount luggage userId")
+        .populate("storeId", "store_name location")
+        .populate("userId", "first_name last_name phone")
         .lean();
 };
 
@@ -443,27 +391,58 @@ export const updateBookingStatus = async (bookingId, status, note) => {
             // Socket might not be initialized in some contexts (e.g. CLI tools)
             logger.debug(`[updateBookingStatus] Socket emission skipped: ${socketErr.message}`);
         }
+
+        // Send Push Notification to User
+        const titleMap = {
+            "driver_assigned": "Driver Assigned 🛵",
+            "driver_arrived": "Driver Arrived 📍",
+            "picked_up": "Luggage Picked Up 🧳",
+            "at_store": "Arrived at Storage Vault 🏬",
+            "stored": "Luggage Securely Stored 🔒",
+            "return_requested": "Return Delivery Requested 🔄",
+            "return_driver_assigned": "Return Driver Assigned 🛵",
+            "delivered": "Luggage Delivered 🎉",
+            "cancelled": "Booking Cancelled ❌",
+        };
+
+        if (titleMap[status]) {
+            import("../../services/notificationService.js")
+                .then(({ default: NotificationService }) => {
+                    NotificationService.sendPushToUser(userId, {
+                        title: titleMap[status],
+                        body: note || `Your booking status is now: ${status}`,
+                        data: {
+                            screen: "tracking",
+                            bookingId,
+                            status,
+                        },
+                    });
+                })
+                .catch(() => {});
+        }
     }
 
     return booking;
 };
 
 export const scheduleDriverSearch = async (bookingId, type = "PICKUP") => {
-    // Clear stale search state so the new search starts clean
     await Promise.all([
         redis.del(BookingKeys.candidates(bookingId)),
         redis.del(BookingKeys.tried(bookingId)),
         redis.del(BookingKeys.searchActive(bookingId)),
     ]);
 
+    // Always targets the real driver search/offer pipeline (DriverAssignWorker /
+    // JOB_QUEUES.DRIVER_ASSIGN), regardless of type. type only controls which
+    // location handleSearchDrivers reads (pickupLocation vs deliveryLocation).
+    // RETURN_PROCESS routing lives exclusively in scheduleReturnProcessing now —
+    // this function must never branch to JOB_QUEUES.RETURN_PROCESS again, or
+    // you get exactly the infinite loop you just saw in the logs.
     await addJobToQueue(
-        DRIVER_ASSIGN_QUEUE,
+        JOB_QUEUES.DRIVER_ASSIGN,
+        { name: DRIVER_JOB_NAMES.SEARCH_DRIVERS, data: { bookingId, type } },
         {
-            name: DRIVER_JOB_NAMES.SEARCH_DRIVERS,
-            data: { bookingId, type },
-        },
-        {
-            jobId: `search-drivers-${bookingId}-retry-${Date.now()}`,
+            jobId: `search-drivers-${bookingId}-${type}-retry-${Date.now()}`,
             delay: 2000,
             removeOnComplete: true,
             removeOnFail: { count: 50 },
@@ -471,7 +450,6 @@ export const scheduleDriverSearch = async (bookingId, type = "PICKUP") => {
     );
 };
 
-// --- Removed redundant autoCancelBooking (moved to bookingHelper.js) ---
 
 // JOB SCHEDULERS
 export const scheduleOfferNextDriver = async (bookingId, type, attemptNumber, delay = 0) => {
@@ -510,4 +488,97 @@ export const scheduleOfferTimeoutCheck = async (bookingId, type, driverId, attem
 export const getDriverName = (driver) => {
     if (!driver) return "Unknown";
     return `${driver.first_name || ""} ${driver.last_name || ""}`.trim() || "Unknown";
+};
+
+export const checkDriverAvailability = async (serviceAreaId, lat, lng) => {
+    try {
+        let maxRadiusKm = 5;
+        if (serviceAreaId) {
+            const ServiceableArea = (await import("../../models/ServiceableArea.js")).default;
+            const area = await ServiceableArea.findById(serviceAreaId).select("service_radius_km").lean();
+            if (area?.service_radius_km) {
+                maxRadiusKm = area.service_radius_km;
+            }
+        }
+
+        const geoKeys = await getDriverGeoKeys(serviceAreaId);
+        const nearbyDrivers = await searchNearbyDrivers(geoKeys, lng, lat, "PRE_PAYMENT_CHECK", maxRadiusKm);
+        if (nearbyDrivers && nearbyDrivers.length > 0) {
+            const driverIds = nearbyDrivers.map((d) => d.driverId);
+            const verifiedDrivers = await verifyDriversInDB(driverIds);
+            if (verifiedDrivers && verifiedDrivers.length > 0) {
+                return true;
+            }
+        }
+
+        const mongoDriver = await Driver.findOne({
+            is_online: true,
+            account_status: ACCOUNT_STATUS.ACTIVE,
+            verification_status: VERIFICATION_STATUS.VERIFIED,
+            $or: [{ is_on_trip: false }, { is_on_trip: { $exists: false } }],
+            ...(serviceAreaId ? { service_area_id: serviceAreaId } : {}),
+        }).lean();
+
+        return !!mongoDriver;
+    } catch (err) {
+        logger.error(`[checkDriverAvailability] Error: ${err.message}`);
+        return false;
+    }
+};
+
+export const failDriverSearch = async (bookingId, type, reason) => {
+    if (type === "PICKUP") {
+        const { autoCancelBooking } = await import("./bookingHelper.js");
+        return await autoCancelBooking(bookingId, reason || AUTO_CANCEL_REASONS.NO_DRIVER_FOUND);
+    }
+
+    const now = new Date();
+    const existing = await Booking.findById(bookingId).select("status").lean();
+    const currentStatus = existing?.status || BOOKING_STATUS.FINAL_PAYMENT_CAPTURED;
+
+    const booking = await Booking.findByIdAndUpdate(
+        bookingId,
+        {
+            $set: {
+                lastStatusUpdatedAt: now,
+                "delivery.returnOtp": null, // Clear transient OTP
+                "delivery.assignment": null, // Clear assignment attempt
+                "delivery.driverSearchStatus": "failed",
+            },
+            $push: {
+                timeline: {
+                    status: currentStatus,
+                    note: `No driver found for ${type}: ${reason}. You can retry requesting return.`,
+                    createdAt: now
+                }
+            },
+        },
+        { new: true }
+    ).select("userId status").lean();
+
+    if (booking?.userId) {
+        const userId = booking.userId.toString();
+
+        // 1. Invalidate Cache
+        const { invalidateBookingCache } = await import("./bookingHelper.js");
+        await invalidateBookingCache(userId, bookingId).catch(() => { });
+
+        // 2. Emit Socket Event
+        try {
+            const { getIO } = await import("../../src/socket/index.js");
+            const { rooms } = await import("../../src/socket/socket.rooms.js");
+            const { SOCKET_EVENTS } = await import("../../src/socket/socket.events.js");
+            const io = getIO();
+
+            io.to(rooms.user(userId)).emit(SOCKET_EVENTS.BOOKING_NO_DRIVER, {
+                bookingId,
+                status: booking.status || BOOKING_STATUS.FINAL_PAYMENT_CAPTURED,
+                message: "No driver found for your return request. Please try again."
+            });
+        } catch (socketErr) {
+            logger.debug(`[handleReturnDriverNotFound] Socket emission skipped: ${socketErr.message}`);
+        }
+    }
+
+    return booking;
 };

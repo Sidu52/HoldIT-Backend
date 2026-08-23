@@ -9,7 +9,8 @@ import {
   getBookingById,
   cancelBooking,
   assignDriver,
-  // reassignDriver,
+  reassignDriver,
+  processCriticalCancel,
   reassignStore,
   assignReturnDriver,
   markDriverArrived,
@@ -17,6 +18,7 @@ import {
   markStored,
   requestReturn,
   markDelivered,
+  regenerateBookingStatement,
 } from "../../controllers/admin/booking.admin.controller.js";
 import {
   listBookingsSchema,
@@ -27,6 +29,7 @@ import {
   assignReturnDriverSchema,
 } from "../../validations/admin/booking.validation.js";
 import { checkAdminAccountStatus } from "../../middlewares/checkAccountStatus.middleware.js";
+import { getPaymentByBookingId } from "../../controllers/payment/paymentController.js";
 
 
 
@@ -43,9 +46,9 @@ router.use(authMiddleware,
   checkAdminAccountStatus
 );
 
-const manageModify = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.OPERATION_MANAGER);
+const manageModify = roleMiddleware(USER_ROLES.SUPER_ADMIN, USER_ROLES.ADMIN, USER_ROLES.OPERATION_MANAGER, USER_ROLES.CUSTOMER_SUPPORT);
 
-
+router.get("/payment/:bookingId", manageModify, getPaymentByBookingId);
 
 // Read Routes
 router.get(
@@ -71,6 +74,22 @@ router.put(
   cancelBooking
 );
 
+router.patch(
+  "/:id/cancel",
+  apiLimiter,
+  manageModify,
+  validate(bookingIdSchema, "params"),
+  cancelBooking
+);
+
+router.post(
+  "/:id/cancel",
+  apiLimiter,
+  manageModify,
+  validate(bookingIdSchema, "params"),
+  cancelBooking
+);
+
 // Driver & Store Assignment
 router.patch(
   "/:id/assign-driver",
@@ -81,14 +100,30 @@ router.patch(
   assignDriver
 );
 
-// router.patch(
-//   "/:id/reassign-driver",
-//   apiLimiter,
-//   manageModify,
-//   validate(bookingIdSchema, "params"),
-//   validate(reassignDriverSchema, "body"),
-//   reassignDriver
-// );
+router.patch(
+  "/:id/reassign-driver",
+  apiLimiter,
+  manageModify,
+  validate(bookingIdSchema, "params"),
+  validate(reassignDriverSchema, "body"),
+  reassignDriver
+);
+
+router.patch(
+  "/:id/process-critical-cancel",
+  apiLimiter,
+  manageModify,
+  validate(bookingIdSchema, "params"),
+  processCriticalCancel
+);
+
+router.post(
+  "/:id/regenerate-statement",
+  apiLimiter,
+  manageModify,
+  validate(bookingIdSchema, "params"),
+  regenerateBookingStatement
+);
 
 router.patch(
   "/:id/reassign-store",

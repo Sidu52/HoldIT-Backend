@@ -1,26 +1,7 @@
-import { sendResponse } from "../utils/apiResponse.js";
-import { STATUS_CODES } from "../utils/constants.js";
+import { authorize } from "./auth.middleware.js";
 
-export const roleMiddleware = (...allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user?.role) {
-      return sendResponse({
-        res,
-        message: "Authentication required",
-        statusCode: STATUS_CODES.UNAUTHORIZED,
-      });
-    }
-
-    if (!allowedRoles.includes(req.user.role)) {
-      return sendResponse({
-        res,
-        message: "Insufficient permissions",
-        statusCode: STATUS_CODES.FORBIDDEN,
-      });
-    }
-
-    next();
-  };
-};
-
-
+/**
+ * Re-export authorize for backwards compatibility across existing routes
+ */
+export const roleMiddleware = authorize;
+export default roleMiddleware;

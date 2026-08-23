@@ -288,8 +288,8 @@ export const getDashboard = async (req, res) => {
                     (statusCounts[BOOKING_STATUS.PICKED_UP] || 0) +
                     (statusCounts[BOOKING_STATUS.AT_STORE] || 0),
                 stored: (statusCounts[BOOKING_STATUS.STORED] || 0) +
-                    (statusCounts[BOOKING_STATUS.RETURN_REQUESTED] || 0) +
-                    (statusCounts[BOOKING_STATUS.RETURN_DRIVER_ASSIGNED] || 0),
+                    (statusCounts[BOOKING_STATUS.RETURN_REQUESTED] || 0),
+                returned: (statusCounts[BOOKING_STATUS.RETURN_DRIVER_ASSIGNED] || 0) || 0,
                 delivered: statusCounts[BOOKING_STATUS.DELIVERED] || 0,
                 cancelled: (statusCounts[BOOKING_STATUS.CANCELLED] || 0) +
                     (statusCounts[BOOKING_STATUS.DRIVER_CANCELLED_CRITICAL] || 0),

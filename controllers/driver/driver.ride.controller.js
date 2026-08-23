@@ -31,6 +31,8 @@ import redis from "../../services/redisService.js";
 import Booking from "../../models/Booking.js";
 import Driver from "../../models/Driver.js";
 import logger from "../../utils/logger.js";
+import { uploadMultipleBuffers } from "../../services/cloudinaryService.js";
+import { CLOUDINARY_FOLDERS } from "../../constants/cloudinary.folders.js";
 
 // Socket helpers
 import { getIO } from "../../src/socket/index.js";
@@ -42,8 +44,10 @@ import {
     emitBookingDelivered,
     emitBookingReturnDriverAssigned,
     emitBookingArrivedForDelivery,
+    emitBookingOutForReturn,
 } from "../../src/socket/emitters/booking.emitter.js";
 import { emitDriverOfferRemoved } from "../../src/socket/emitters/driver.emitter.js";
+import mongoose from "mongoose";
 
 
 /** Safely get Socket.IO instance; returns null if not initialized */
@@ -61,14 +65,14 @@ export const getPendingOfferController = async (req, res) => {
         const bookingId = await redis.get(offerKey);
 
         if (!bookingId) {
-            return sendError(res, "No pending offer found.", STATUS_CODES.NOT_FOUND);
+            return sendResponse({ res, message: "No pending offer.", data: null });
         }
 
         const { exists, offer } = await getOfferStatus(bookingId);
 
         if (!exists || offer.status !== "pending") {
             await redis.del(offerKey);
-            return sendError(res, "Offer has expired.", STATUS_CODES.NOT_FOUND);
+            return sendResponse({ res, message: "No pending offer.", data: null });
         }
 
         if (offer.driverId !== driverId) {
@@ -83,10 +87,19 @@ export const getPendingOfferController = async (req, res) => {
 
         if (!booking) {
             await redis.del(offerKey);
-            return sendError(res, "Booking not found.", STATUS_CODES.NOT_FOUND);
+            return sendResponse({ res, message: "No pending offer.", data: null });
         }
 
         const offerTTL = await redis.ttl(BookingKeys.offer(bookingId));
+        const remainingSeconds = offerTTL > 0 ? offerTTL : 0;
+        const now = Date.now();
+        const expiresAt = now + remainingSeconds * 1000;
+
+        const isReturn = offer.type === "RETURN" || booking.status === BOOKING_STATUS.RETURN_DRIVER_ASSIGNED;
+        const fee = isReturn
+            ? (booking.pricing?.distanceCharge || 0)
+            : (booking.pricing?.advanceBreakdown?.deliveryFee || 0);
+        const fare = fee + (booking.tipAmount || 0);
 
         return sendResponse({
             res,
@@ -95,9 +108,17 @@ export const getPendingOfferController = async (req, res) => {
                 offer: {
                     bookingId,
                     attemptNumber: offer.attemptNumber,
-                    expiresInSeconds: offerTTL > 0 ? offerTTL : 0,
+                    expiresInSeconds: remainingSeconds,
+                    offeredAt: offer.offeredAt ? Number(offer.offeredAt) : now,
+                    expiresAt,
+                    fare,
+                    driverEarnings: fare,
                 },
-                booking,
+                booking: {
+                    ...booking,
+                    fare,
+                    driverEarnings: fare,
+                },
             },
         });
     } catch (err) {
@@ -133,7 +154,7 @@ export const getAssignedRidesController = async (req, res) => {
 export const getActiveRideController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
-        const cacheKey = DriverKeys.active(driverId);
+        const cacheKey = DriverKeys.activeRide(driverId);
         const cached = await getCache(cacheKey);
 
         if (cached) {
@@ -143,7 +164,7 @@ export const getActiveRideController = async (req, res) => {
         const ride = await getDriverActiveRide(driverId, DRIVER_RIDE_SELECT.DETAIL);
 
         if (!ride) {
-            return sendError(res, DRIVER_RIDE_MESSAGES.NO_ACTIVE_RIDE, STATUS_CODES.NOT_FOUND);
+            return sendResponse({ res, message: "No active ride.", data: null });
         }
 
         await setCache(cacheKey, ride, DriverTTL.ACTIVE);
@@ -240,6 +261,9 @@ export const acceptRideController = async (req, res) => {
         const { success, booking } = await processRideAccept(booking_id, driverId);
 
         if (!success) {
+            await clearOffer(booking_id, driverId).catch((err) =>
+                logger.error(`[acceptRideController] Failed to clear offer key on ride accept failure:`, err.message)
+            );
             return sendError(res, DRIVER_RIDE_MESSAGES.RIDE_NOT_AVAILABLE, STATUS_CODES.CONFLICT);
         }
 
@@ -359,7 +383,13 @@ export const completePickupController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
         const { otp } = req.body || {};
-        const photos = req.files ? req.files.map(f => `/uploads/pickup/${f.filename}`) : [];
+        let photos = [];
+        if (req.files && req.files.length > 0) {
+            const uploadResults = await uploadMultipleBuffers(req.files, {
+                folder: CLOUDINARY_FOLDERS.BOOKINGS.PICKUP,
+            });
+            photos = uploadResults.map(r => r.secure_url);
+        }
 
         if (!otp) {
             return sendError(res, "Pickup OTP is required.", STATUS_CODES.BAD_REQUEST);
@@ -491,7 +521,13 @@ export const completePickupAtStoreController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
         const { otp } = req.body || {};
-        const photos = req.files ? req.files.map(f => `/uploads/pickup/${f.filename}`) : [];
+        let photos = [];
+        if (req.files && req.files.length > 0) {
+            const uploadResults = await uploadMultipleBuffers(req.files, {
+                folder: CLOUDINARY_FOLDERS.BOOKINGS.STORAGE,
+            });
+            photos = uploadResults.map(r => r.secure_url);
+        }
 
         if (!otp) {
             return sendError(res, "Pickup OTP is required.", STATUS_CODES.BAD_REQUEST);
@@ -509,16 +545,14 @@ export const completePickupAtStoreController = async (req, res) => {
         ]);
 
 
-        // Emit socket event: luggage picked up
+        // Emit socket event: out for return delivery
         try {
             const io = safeGetIO();
             if (io) {
-                const driver = await Driver.findById(driverId).select("first_name last_name").lean();
-                const driverName = driver ? `${driver.first_name} ${driver.last_name}`.trim() : "Driver";
-                emitBookingPickedUp(io, booking_id, booking.userId.toString(), booking.storeId?.toString(), new Date(), driverName);
+                emitBookingOutForReturn(io, booking_id, booking.userId.toString(), driverId, new Date());
             }
         } catch (socketErr) {
-            logger.debug(`[CompletePickup:Socket] Emission skipped: ${socketErr.message}`);
+            logger.debug(`[CompletePickupAtStore:Socket] Emission skipped: ${socketErr.message}`);
         }
 
         return sendResponse({
@@ -574,7 +608,7 @@ export const arriveAtUserReturnController = async (req, res) => {
     }
 };
 
-// CANCEL RIDE
+// CANCEL RIDE — Direct driver cancellation disabled, triggers Critical Support Request
 export const cancelRideController = async (req, res) => {
     try {
         const driverId = req.user.auth_id;
@@ -584,6 +618,21 @@ export const cancelRideController = async (req, res) => {
         const result = await processDriverCancelRide(booking_id, driverId, reason);
 
         if (!result.success) {
+            if (result.reason === "CRITICAL_CANCEL_REQUIRES_SUPPORT") {
+                return sendResponse({
+                    res,
+                    statusCode: STATUS_CODES.OK,
+                    message: result.message || "Direct cancellation is disabled. A critical support request has been created for the Support team to review.",
+                    data: {
+                        requiresSupport: true,
+                        ticketId: result.ticketId,
+                        ticketCode: result.ticketCode,
+                        bookingId: result.bookingId,
+                        leg: result.leg,
+                    }
+                });
+            }
+
             const statusMap = {
                 RIDE_NOT_FOUND: STATUS_CODES.NOT_FOUND,
                 CANNOT_CANCEL_IN_STATUS: STATUS_CODES.CONFLICT,
@@ -598,14 +647,12 @@ export const cancelRideController = async (req, res) => {
 
         return sendResponse({
             res,
-            message: result.action === "CRITICAL_FLAGGED"
-                ? "Cancellation recorded. Ops team has been alerted."
-                : "Ride cancelled. A new driver is being assigned.",
-            data: { bookingId: result.bookingId, action: result.action },
+            message: "Cancellation request received and forwarded to Support.",
+            data: { bookingId: result.bookingId, leg: result.leg },
         });
     } catch (err) {
         logger.error("Cancel Ride Error:", err);
-        return sendError(res, "Failed to cancel ride.");
+        return sendError(res, "Failed to submit cancellation request.");
     }
 };
 
@@ -615,7 +662,13 @@ export const completeDeliveryController = async (req, res) => {
         const driverId = req.user.auth_id;
         const { booking_id } = req.params;
         const { otp } = req.body || {};
-        const photos = req.files ? req.files.map(f => `/uploads/delivery/${f.filename}`) : [];
+        let photos = [];
+        if (req.files && req.files.length > 0) {
+            const uploadResults = await uploadMultipleBuffers(req.files, {
+                folder: CLOUDINARY_FOLDERS.BOOKINGS.DELIVERY,
+            });
+            photos = uploadResults.map(r => r.secure_url);
+        }
 
         if (!otp) {
             return sendError(res, "Delivery OTP is required.", STATUS_CODES.BAD_REQUEST);
@@ -639,7 +692,7 @@ export const completeDeliveryController = async (req, res) => {
             if (io) {
                 const driver = await Driver.findById(driverId).select("first_name last_name").lean();
                 const driverName = driver ? `${driver.first_name} ${driver.last_name}`.trim() : "Driver";
-                emitBookingDelivered(io, booking_id, booking.userId.toString(), booking.storeId?.toString(), new Date(), driverName);
+                emitBookingDelivered(io, booking_id, booking.userId.toString(), booking.storeId?.toString(), new Date(), driverName, driverId);
             }
         } catch (socketErr) {
             logger.debug(`[CompleteDelivery:Socket] Emission skipped: ${socketErr.message}`);
@@ -656,5 +709,81 @@ export const completeDeliveryController = async (req, res) => {
         }
         logger.error("Complete Delivery Error:", err);
         return sendError(res, "Failed to complete delivery.");
+    }
+};
+
+// GET DRIVER SETTLEMENT STATEMENT
+export const getDriverSettlementController = async (req, res) => {
+    try {
+        const driverId = req.user.auth_id;
+        const { booking_id } = req.params;
+        const { format } = req.query;
+
+        let cleanBookingId = booking_id;
+        let requestedLeg = (req.query.type || req.query.rideType || req.query.leg || "").toLowerCase();
+
+        if (booking_id.includes(":")) {
+            const parts = booking_id.split(":");
+            cleanBookingId = parts[0];
+            if (!requestedLeg && parts[1]) {
+                requestedLeg = parts[1].toLowerCase();
+            }
+        }
+
+        if (!mongoose.isValidObjectId(cleanBookingId)) {
+            return sendError(res, "Invalid booking or ride ID.", STATUS_CODES.BAD_REQUEST);
+        }
+
+        const { getDriverPickupSettlementData, getDriverReturnSettlementData, generateDriverStatementHTML } = await import("../../services/invoiceService.js");
+
+        let settlement = null;
+
+        if (requestedLeg === "return") {
+            try {
+                settlement = await getDriverReturnSettlementData(cleanBookingId, driverId);
+            } catch {
+                // Return settlement failed
+            }
+        } else if (requestedLeg === "pickup") {
+            try {
+                settlement = await getDriverPickupSettlementData(cleanBookingId, driverId);
+            } catch {
+                // Pickup settlement failed
+            }
+        } else {
+            // Auto-detect based on driver assignment & completion
+            try {
+                settlement = await getDriverPickupSettlementData(cleanBookingId, driverId);
+            } catch {
+                // Not pickup driver
+            }
+
+            if (!settlement) {
+                try {
+                    settlement = await getDriverReturnSettlementData(cleanBookingId, driverId);
+                } catch {
+                    // Not return driver
+                }
+            }
+        }
+
+        if (!settlement) {
+            return sendError(res, "Unauthorized or no settlement found for this driver ride.", STATUS_CODES.FORBIDDEN);
+        }
+
+        if (format === "html") {
+            const html = generateDriverStatementHTML(settlement);
+            res.setHeader("Content-Type", "text/html");
+            return res.status(STATUS_CODES.OK).send(html);
+        }
+
+        return sendResponse({
+            res,
+            message: "Driver settlement statement fetched successfully.",
+            data: { settlement },
+        });
+    } catch (err) {
+        logger.error("Driver getDriverSettlementController Error:", err);
+        return sendError(res, err.message || "Failed to fetch driver settlement statement.");
     }
 };

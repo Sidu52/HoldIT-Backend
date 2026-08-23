@@ -118,49 +118,87 @@ const BookingSchema = new mongoose.Schema(
         pickupLocation: { type: LocationSchema, required: true },
         storageLocation: { type: LocationSchema, required: true },
         deliveryLocation: { type: LocationSchema, default: null },
+        criticalHandoverLocation: { type: LocationSchema, default: null },
 
         pickup: {
             scheduledAt: Date,
+            driverSearchStatus: {
+                type: String,
+                enum: ["idle", "searching", "assigned", "failed"],
+                default: "idle",
+            },
             assignment: DriverAssignmentSchema,
         },
 
         storage: {
-            storedAt: Date,
+            startedAt: Date,
+            storedAt: Date, // preserved for legacy compatibility
             expectedDurationHours: { type: Number, min: 1 },
             releasedAt: Date,
         },
 
         tipAmount: { type: Number, min: 0, default: 0 },
-        coupenCode: { type: String, maxlength: 50 },
+        couponCode: { type: String, maxlength: 50 },
 
         delivery: {
             requestedAt: Date,
+            driverSearchStatus: {
+                type: String,
+                enum: ["idle", "searching", "assigned", "failed"],
+                default: "idle",
+            },
             assignment: DriverAssignmentSchema,
         },
 
         pricing: {
-            perHourRate: { type: Number, min: 0 },
+            perHourRate: Number,
+            advanceAmount: Number,
+            advanceBreakdown: {
+                platformFee: Number,
+                deliveryFee: Number,
+                handlingFee: Number,
+                packingFee: Number,
+            },
             storageHours: { type: Number, min: 0 },
             distanceCharge: { type: Number, min: 0 },
+            balanceAmount: { type: Number, min: 0 },
             totalAmount: { type: Number, min: 0 },
             currency: { type: String, default: "INR", maxlength: 3 },
-            pricingRuleId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: "PricingRule",
+            pricingRuleId: { type: mongoose.Schema.Types.ObjectId, ref: "PricingRule" },
+
+            // Immutable pricing snapshot for minor unit calculations
+            pricingSnapshot: {
+                pricingRuleId: { type: mongoose.Schema.Types.ObjectId, ref: "PricingRule" },
+                currency: { type: String, default: "INR" },
+                pickupDistanceKm: Number,
+                pickupCustomerRateMinor: Number,
+                pickupCustomerAmountMinor: Number,
+                returnDistanceKm: Number,
+                returnCustomerRateMinor: Number,
+                returnCustomerAmountMinor: Number,
+                platformFeeMinor: Number,
+                handlingFeeMinor: Number,
+                packingFeeMinor: Number,
+                customerStorageHourlyRateMinor: Number,
+                storeStorageHourlyRateMinor: Number,
+                minimumChargeableHours: Number,
+                maximumDailyRateMinor: Number,
+                peakMultiplier: Number,
+                peakHours: mongoose.Schema.Types.Mixed,
+                taxMode: { type: String, default: "EXCLUSIVE" },
+                taxRate: Number,
+                cgstRate: Number,
+                sgstRate: Number,
+                igstRate: Number,
             },
         },
 
         payment: {
-            status: {
-                type: String,
-                enum: ["pending", "paid", "failed", "refunded"],
-                default: "pending",
-                index: true,
-            },
             paidAt: Date,
-            transactionId: { type: String, sparse: true },
-            refundedAt: Date,
-            refundAmount: { type: Number, min: 0 },
+            paymentId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Payment",
+            },
         },
 
         timeline: { type: [TimelineEntrySchema], default: [] },
@@ -172,6 +210,7 @@ const BookingSchema = new mongoose.Schema(
         },
         cancelReason: { type: String, maxlength: 500 },
         isActive: { type: Boolean, default: true, index: true },
+        isReviewed: { type: Boolean, default: false, index: true },
     },
     {
         timestamps: true,

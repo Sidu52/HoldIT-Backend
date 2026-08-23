@@ -1,7 +1,7 @@
 import ServiceableArea from "../../models/ServiceableArea.js";
 import { sendError, sendResponse } from "../../utils/apiResponse.js";
 import { STATUS_CODES } from "../../utils/constants.js";
-import { escapeRegex } from "../../utils/helper.js";
+import { escapeRegex, buildPagination } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
 import { cacheAside, deleteCache, deleteByPattern } from "../../constants/redis/redisOperation.js";
 import { ServiceableKeys, ServiceableTTL } from "../../constants/redis/serviceable.keys.js";
@@ -14,23 +14,76 @@ const invalidateAreaCache = async (id = null) => {
     results.forEach((r) => r.status === "rejected" && logger.warn("[invalidateAreaCache]", r.reason?.message));
 };
 
+import PricingRule from "../../models/PricingRule.js";
+
 // CREATE
 export const createArea = async (req, res) => {
     try {
-        const { name, city, state, pincode, location, service_radius_km, delivery_charge } = req.body;
+        const { name, city, state, pincode, location, service_radius_km, delivery_charge, priceRule } = req.body;
+
+        if (!priceRule) {
+            return sendError(res, "A valid Price Rule configuration is required when adding a new Service Area.", STATUS_CODES.BAD_REQUEST);
+        }
 
         const area = await ServiceableArea.create({
             name, city, state, pincode, location, service_radius_km, delivery_charge,
             created_by: req.user?.auth_id,
         });
 
+        // Initialize active PricingRule for this service area
+        const createdPriceRule = await PricingRule.create({
+            name: priceRule.name || `${name} Default Pricing Rule`,
+            serviceAreaId: area._id,
+            feeBreakdown: {
+                platformFee: priceRule.feeBreakdown?.platformFee ?? 10,
+                handlingFee: priceRule.feeBreakdown?.handlingFee ?? 0,
+                packingFee: priceRule.feeBreakdown?.packingFee ?? 0,
+            },
+            perKmRate: priceRule.perKmRate ?? 12,
+            maxAdvanceDistanceKm: priceRule.maxAdvanceDistanceKm ?? 15,
+            hourlyStorageRate: priceRule.hourlyStorageRate ?? 25,
+            minChargeableHours: priceRule.minChargeableHours ?? 1,
+            maxDailyRate: priceRule.maxDailyRate ?? null,
+            peakMultiplier: priceRule.peakMultiplier ?? 1.0,
+            peakHours: priceRule.peakHours ?? { startHour: null, endHour: null },
+            bagPricing: {
+                small: {
+                    basePrice: priceRule.bagPricing?.small?.basePrice ?? 49,
+                    hourlyRate: priceRule.bagPricing?.small?.hourlyRate ?? 15,
+                },
+                medium: {
+                    basePrice: priceRule.bagPricing?.medium?.basePrice ?? 99,
+                    hourlyRate: priceRule.bagPricing?.medium?.hourlyRate ?? 25,
+                },
+                large: {
+                    basePrice: priceRule.bagPricing?.large?.basePrice ?? 149,
+                    hourlyRate: priceRule.bagPricing?.large?.hourlyRate ?? 40,
+                },
+                other: {
+                    basePrice: priceRule.bagPricing?.other?.basePrice ?? 199,
+                    hourlyRate: priceRule.bagPricing?.other?.hourlyRate ?? 50,
+                },
+            },
+            currency: priceRule.currency || "INR",
+            createdBy: req.user?.auth_id,
+            active: true,
+        });
+
         await invalidateAreaCache();
 
-        return sendResponse({ res, statusCode: STATUS_CODES.CREATED, message: "Area created successfully", data: area });
+        return sendResponse({
+            res,
+            statusCode: STATUS_CODES.CREATED,
+            message: "Service area and price rule created successfully",
+            data: {
+                area,
+                priceRule: createdPriceRule,
+            },
+        });
     } catch (err) {
         if (err.code === 11000) return sendError(res, "Area already exists in this city", STATUS_CODES.CONFLICT);
         logger.error("[createArea] Error:", err);
-        return sendError(res, "Failed to create area");
+        return sendError(res, err.message || "Failed to create area");
     }
 };
 
@@ -67,10 +120,9 @@ export const getAreas = async (req, res) => {
                 ServiceableArea.countDocuments(filter),
             ]);
 
-            const totalPages = Math.ceil(total / limitNum);
             return {
                 areas,
-                pagination: { currentPage: pageNum, totalPages, totalItems: total, itemsPerPage: limitNum, hasNextPage: pageNum < totalPages, hasPrevPage: pageNum > 1 },
+                pagination: buildPagination(pageNum, limitNum, total),
             };
         });
 

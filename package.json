@@ -4,7 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test tests/unit/money.test.js tests/unit/pricing.test.js tests/unit/earnings.test.js tests/unit/driverCancel.test.js tests/unit/forgotPassword.test.js tests/integration/financialFlow.test.js",
     "start": "nodemon app.js"
   },
   "keywords": [],
@@ -17,6 +17,7 @@
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.66.1",
     "chart.js": "^4.5.1",
+    "cloudinary": "^2.10.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
@@ -33,6 +34,7 @@
     "nodemailer": "^7.0.12",
     "nodemon": "^3.1.11",
     "rate-limiter-flexible": "^9.0.1",
+    "razorpay": "^2.9.8",
     "socket.io": "^4.8.3",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",

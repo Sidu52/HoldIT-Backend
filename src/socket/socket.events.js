@@ -53,4 +53,19 @@ export const SOCKET_EVENTS = {
     ADMIN_BOOKING_STATUS: "admin:booking:status_changed",
     ADMIN_STATS_UPDATE: "admin:stats:update",
     ADMIN_ALERT_NO_DRIVER: "admin:alert:no_driver",
+
+    ADMIN_SUBSCRIBE_DRIVER_LOCATION: "admin:subscribe_driver_location",
+    ADMIN_UNSUBSCRIBE_DRIVER_LOCATION: "admin:unsubscribe_driver_location",
+    ADMIN_SUBSCRIBE_DRIVER_LIST: "admin:subscribe_driver_list",
+    ADMIN_UNSUBSCRIBE_DRIVER_LIST: "admin:unsubscribe_driver_list",
+
+    // Support & Live Chat Events
+    SUPPORT_TICKET_CREATED: "support:ticket_created",
+    SUPPORT_NEW_MESSAGE: "support:new_message",
+    SUPPORT_TYPING: "support:typing",
+    SUPPORT_STATUS_UPDATED: "support:status_updated",
+    SUPPORT_TICKET_ESCALATED: "support:ticket_escalated",
+    SUPPORT_TICKET_ASSIGNED: "support:ticket_assigned",
+    SUPPORT_JOIN_ROOM: "support:join_room",
+    SUPPORT_LEAVE_ROOM: "support:leave_room",
 };
