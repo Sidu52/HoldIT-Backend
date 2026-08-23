@@ -19,7 +19,7 @@ import { setAuthCookies } from "../../utils/helper.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import { clearAuthCookies, timingSafeEqual, generateTokenPair, checkOTPRateLimit, generateAndStoreOTP } from "../../helpers/user/authHelper.js";
 import logger from "../../utils/logger.js";
-import NotificationService from "../../services/notificationService.js";
+import NotificationService from "../../services/NotificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 
 // Login / Register

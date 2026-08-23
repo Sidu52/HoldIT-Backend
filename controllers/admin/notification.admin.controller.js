@@ -4,7 +4,7 @@ import { STATUS_CODES, ACCOUNT_STATUS } from "../../utils/constants.js";
 import User from "../../models/User.js";
 import Driver from "../../models/Driver.js";
 import NotificationLog from "../../models/NotificationLog.js";
-import NotificationService from "../../services/notificationService.js";
+import NotificationService from "../../services/NotificationService.js";
 import logger from "../../utils/logger.js";
 
 /**

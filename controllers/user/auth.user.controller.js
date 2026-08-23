@@ -13,7 +13,7 @@ import {
 } from "../../helpers/user/authHelper.js";
 import { setAuthCookies } from "../../utils/helper.js";
 import logger from "../../utils/logger.js";
-import NotificationService from "../../services/notificationService.js";
+import NotificationService from "../../services/NotificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { generateOTP } from "../../utils/otp.js";
 import { getCache, setCache, deleteCache, deleteByPattern, isKeyExist, incrementCache } from "../../constants/redis/redisOperation.js";

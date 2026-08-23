@@ -406,7 +406,7 @@ export const updateBookingStatus = async (bookingId, status, note) => {
         };
 
         if (titleMap[status]) {
-            import("../../services/notificationService.js")
+            import("../../services/NotificationService.js")
                 .then(({ default: NotificationService }) => {
                     NotificationService.sendPushToUser(userId, {
                         title: titleMap[status],

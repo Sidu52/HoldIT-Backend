@@ -25,7 +25,7 @@ import {
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
 import { setAuthCookies } from "../../utils/helper.js";
-import NotificationService from "../../services/notificationService.js";
+import NotificationService from "../../services/NotificationService.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 
 // LOGIN

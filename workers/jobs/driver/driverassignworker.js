@@ -304,7 +304,7 @@ async function handleOfferNextDriver(job) {
         });
 
         // Send Push Notification to Driver for Instant Alert
-        import("../../../services/notificationService.js")
+        import("../../../services/NotificationService.js")
             .then(({ default: NotificationService }) => {
                 NotificationService.sendPushToDriver(nextDriverId, {
                     title: "New Ride Offer 🛵",

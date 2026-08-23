@@ -26,7 +26,7 @@ import {
     checkOTPRateLimit,
     generateAndStoreOTP,
 } from "../../helpers/user/authHelper.js";
-import NotificationService from "../../services/notificationService.js";
+import NotificationService from "../../services/NotificationService.js";
 import { checkServiceability } from "../../helpers/user/addressHelper.js";
 import logger from "../../utils/logger.js";
 
